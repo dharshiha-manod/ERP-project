@@ -1,0 +1,8 @@
+/* Any global overrides go here */
+a {
+  color: inherit;
+}
+
+button:hover {
+  opacity: 0.9;
+}
