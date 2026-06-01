@@ -1,5 +1,7 @@
+import "../styles/Sidebar.css";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+
 
 const navItems = [
   { label: "Home", icon: "🏠", path: "/" },
@@ -10,20 +12,135 @@ const navItems = [
     children: [
       { label: "Users", path: "/users" },
       { label: "Roles", path: "/roles" },
-      { label: "Sales Commission Agents", path: "/agents" },
+      { label: "Sales Commission Agents", path: "/sales-commission-agents" },
     ],
   },
-  { label: "Contacts", icon: "📋", path: "/contacts" },
-  { label: "Products", icon: "📦", path: "/products" },
+  {
+    label: "Contacts",
+    icon: "📋",
+    path: "/contacts",
+    children: [
+      { label: "Suppliers", path: "/contacts?type=supplier" },
+      { label: "Customers", path: "/contacts?type=customer" },
+      { label: "Customer Groups", path: "/customer-group" },
+      { label: "Import Contacts", path: "/contacts/import" },
+    ],
+  },
+  {
+    label: "Products",
+    icon: "📦",
+    path: "/products",
+    children: [
+      { label: "List Products", path: "/products" },
+      { label: "Add Product", path: "/products/create" },
+      { label: "Update Price", path: "/update-product-price" },
+      { label: "Print Labels", path: "/labels/show" },
+      { label: "Variations", path: "/variation-templates" },
+      { label: "Import Products", path: "/import-products" },
+      { label: "Import Opening Stock", path: "/import-opening-stock" },
+      { label: "Selling Price Group", path: "/selling-price-group" },
+      { label: "Units", path: "/units" },
+      { label: "Categories", path: "/taxonomies?type=product" },
+      { label: "Brands", path: "/brands" },
+      { label: "Warranties", path: "/warranties" },
+    ],
+  },
   { label: "Manufacturing", icon: "🏭", path: "/manufacturing" },
-  { label: "Purchases", icon: "⬇️", path: "/purchases" },
-  { label: "Sell", icon: "🛒", path: "/sell" },
-  { label: "Stock Transfers", icon: "🔄", path: "/stock-transfers" },
-  { label: "Stock Adjustment", icon: "📊", path: "/stock-adjustment" },
-  { label: "Expenses", icon: "💸", path: "/expenses" },
-  { label: "Reports", icon: "📈", path: "/reports" },
+  {
+    label: "Purchases",
+    icon: "⬇️",
+    path: "/purchases",
+    children: [
+      { label: "List Purchases", path: "/purchases" },
+      { label: "Add Purchase", path: "/purchases/create" },
+      { label: "List Purchase Return", path: "/purchase-return" },
+    ],
+  },
+  {
+    label: "Sell",
+    icon: "🛒",
+    path: "/sell",
+    children: [
+      { label: "All Sales", path: "/sells" },
+      { label: "Add Sale", path: "/sells/create" },
+      { label: "List POS", path: "/pos" },
+      { label: "POS", path: "/pos/create" },
+      { label: "Add Draft", path: "/sells/create?status=draft" },
+      { label: "List Drafts", path: "/sells/drafts" },
+      { label: "Add Quotation", path: "/sells/create?status=quotation" },
+      { label: "List Quotations", path: "/sells/quotations" },
+      { label: "List Sell Return", path: "/sell-return" },
+      { label: "Shipments", path: "/shipments" },
+      { label: "Discounts", path: "/discount" },
+      { label: "Import Sales", path: "/import-sales" },
+    ],
+  },
+  {
+    label: "Stock Transfers",
+    icon: "🔄",
+    path: "/stock-transfers",
+    children: [
+      { label: "List Stock Transfers", path: "/stock-transfers" },
+      { label: "Add Stock Transfer", path: "/stock-transfers/create" },
+    ],
+  },
+  {
+    label: "Stock Adjustment",
+    icon: "📊",
+    path: "/stock-adjustments",
+    children: [
+      { label: "List Stock Adjustments", path: "/stock-adjustments" },
+      { label: "Add Stock Adjustment", path: "/stock-adjustments/create" },
+    ],
+  },
+  {
+    label: "Expenses",
+    icon: "💸",
+    path: "/expenses",
+    children: [
+      { label: "List Expenses", path: "/expenses" },
+      { label: "Add Expense", path: "/expenses/create" },
+      { label: "Expense Categories", path: "/expense-categories" },
+    ],
+  },
+  {
+    label: "Reports",
+    icon: "📈",
+    path: "/reports",
+    children: [
+      { label: "Profit / Loss Report", path: "/reports/profit-loss" },
+      { label: "Purchase & Sale", path: "/reports/purchase-sell" },
+      { label: "Tax Report", path: "/reports/tax-report" },
+      { label: "Supplier & Customer Report", path: "/reports/customer-supplier" },
+      { label: "Customer Groups Report", path: "/reports/customer-group" },
+      { label: "Stock Report", path: "/reports/stock-report" },
+      { label: "Stock Adjustment Report", path: "/reports/stock-adjustment-report" },
+      { label: "Trending Products", path: "/reports/trending-products" },
+      { label: "Items Report", path: "/reports/items-report" },
+      { label: "Product Purchase Report", path: "/reports/product-purchase-report" },
+      { label: "Product Sell Report", path: "/reports/product-sell-report" },
+      { label: "Purchase Payment Report", path: "/reports/purchase-payment-report" },
+      { label: "Sell Payment Report", path: "/reports/sell-payment-report" },
+      { label: "Expense Report", path: "/reports/expense-report" },
+      { label: "Register Report", path: "/reports/register-report" },
+      { label: "Sales Representative Report", path: "/reports/sales-representative-report" },
+      { label: "Activity Log", path: "/reports/activity-log" },
+    ],
+  },
   { label: "Notification Templates", icon: "🔔", path: "/notifications" },
-  { label: "Settings", icon: "⚙️", path: "/settings" },
+  {
+    label: "Settings",
+    icon: "⚙️",
+    path: "/settings",
+    children: [
+      { label: "Business Settings", path: "/settings/business" },
+      { label: "Tax Rates", path: "/settings/tax-rates" },
+      { label: "Payment Methods", path: "/settings/payment-methods" },
+      { label: "Account Settings", path: "/settings/account" },
+      { label: "Barcode Settings", path: "/settings/barcode" },
+      { label: "Receipt Printer", path: "/settings/receipt-printer" },
+    ],
+  },
   { label: "CRM", icon: "🤝", path: "/crm" },
   { label: "HRM", icon: "👤", path: "/hrm" },
   { label: "Essentials", icon: "⭐", path: "/essentials" },
@@ -31,103 +148,68 @@ const navItems = [
 
 export default function Sidebar() {
   const location = useLocation();
-  const [openMenu, setOpenMenu] = useState("User Management");
+  const [openMenu, setOpenMenu] = useState(null);
 
   return (
-    <aside style={{
-      width: "var(--sidebar-width)",
-      background: "var(--sidebar-bg)",
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      padding: "0",
-      position: "fixed",
-      top: 0,
-      left: 0,
-      zIndex: 100,
-      overflowY: "auto",
-    }}>
+    <aside className="sidebar">
       {/* Logo */}
-      <div style={{
-        padding: "20px 16px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-        color: "#fff",
-        fontWeight: "700",
-        fontSize: "18px",
-        letterSpacing: "0.5px",
-      }}>
-        🌿 Manod ERP
+      <div className="sidebar-logo">
+        <span className="sidebar-logo-icon">🌿</span>
+        <span className="sidebar-logo-text">Manod ERP</span>
+      </div>
+
+      {/* Search */}
+      <div className="sidebar-search">
+        <span className="sidebar-search-icon">🔍</span>
+        <input
+          className="sidebar-search-input"
+          placeholder="Search menu..."
+          type="text"
+        />
       </div>
 
       {/* Nav Items */}
-      <nav style={{ flex: 1, paddingTop: "8px" }}>
+      <nav className="sidebar-nav">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isActive =
+            location.pathname === item.path ||
+            (item.children &&
+              item.children.some((c) => location.pathname === c.path));
           const isOpen = openMenu === item.label;
 
           return (
-            <div key={item.label}>
-              <div
-                onClick={() =>
-                  item.children
-                    ? setOpenMenu(isOpen ? null : item.label)
-                    : null
-                }
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 16px",
-                  cursor: "pointer",
-                  background: isActive ? "var(--sidebar-hover)" : "transparent",
-                  color: isActive ? "#fff" : "var(--sidebar-text)",
-                  borderLeft: isActive ? "3px solid var(--accent-green)" : "3px solid transparent",
-                  transition: "all 0.2s",
-                  fontSize: "14px",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = "var(--sidebar-hover)";
-                  e.currentTarget.style.color = "#fff";
-                }}
-                onMouseLeave={e => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.color = "var(--sidebar-text)";
-                  }
-                }}
-              >
-                {item.children ? (
-                  <span>{item.icon} {item.label}</span>
-                ) : (
-                  <Link
-                    to={item.path}
-                    style={{ color: "inherit", textDecoration: "none", display: "flex", alignItems: "center", gap: "8px", width: "100%" }}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                )}
-                {item.children && (
-                  <span style={{ fontSize: "10px", transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
-                )}
-              </div>
+            <div key={item.label} className="sidebar-item-wrapper">
+              {item.children ? (
+                <div
+                  className={`sidebar-item${isActive ? " active" : ""}${isOpen ? " open" : ""}`}
+                  onClick={() => setOpenMenu(isOpen ? null : item.label)}
+                >
+                  <span className="sidebar-item-icon">{item.icon}</span>
+                  <span className="sidebar-item-label">{item.label}</span>
+                  <span className={`sidebar-chevron${isOpen ? " rotated" : ""}`}>‹</span>
+                </div>
+              ) : (
+                <Link
+                  to={item.path}
+                  className={`sidebar-item${isActive ? " active" : ""}`}
+                >
+                  <span className="sidebar-item-icon">{item.icon}</span>
+                  <span className="sidebar-item-label">{item.label}</span>
+                </Link>
+              )}
 
               {/* Submenu */}
               {item.children && isOpen && (
-                <div style={{ background: "rgba(0,0,0,0.2)" }}>
+                <div className="sidebar-submenu">
                   {item.children.map((child) => (
                     <Link
                       key={child.label}
                       to={child.path}
-                      style={{
-                        display: "block",
-                        padding: "8px 16px 8px 44px",
-                        color: location.pathname === child.path ? "#fff" : "var(--sidebar-text)",
-                        textDecoration: "none",
-                        fontSize: "13px",
-                        background: location.pathname === child.path ? "var(--sidebar-hover)" : "transparent",
-                      }}
+                      className={`sidebar-subitem${
+                        location.pathname === child.path ? " active" : ""
+                      }`}
                     >
+                      <span className="sidebar-subitem-dot" />
                       {child.label}
                     </Link>
                   ))}
