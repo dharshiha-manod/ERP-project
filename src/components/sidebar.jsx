@@ -2,12 +2,10 @@ import "../styles/Sidebar.css";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-
 const navItems = [
   { label: "Home", icon: "🏠", path: "/" },
   {
     label: "User Management",
-    icon: "👥",
     path: "/users",
     children: [
       { label: "Users", path: "/users" },
@@ -31,7 +29,7 @@ const navItems = [
     icon: "📦",
     path: "/products",
     children: [
-      { label: "List Products", path: "/products" },
+      { label: "List Products", path: "/products/" },
       { label: "Add Product", path: "/products/create" },
       { label: "Update Price", path: "/update-product-price" },
       { label: "Print Labels", path: "/labels/show" },
@@ -45,7 +43,7 @@ const navItems = [
       { label: "Warranties", path: "/warranties" },
     ],
   },
-  { label: "Manufacturing", icon: "🏭", path: "/manufacturing" },
+  { label: "Manufacturing", icon: "🏭", path: "/manufacturing/recipe" },
   {
     label: "Purchases",
     icon: "⬇️",
@@ -141,9 +139,41 @@ const navItems = [
       { label: "Receipt Printer", path: "/settings/receipt-printer" },
     ],
   },
+  // ⚠️ CRM: NO children — direct link only, sub-nav is in the horizontal top bar
   { label: "CRM", icon: "🤝", path: "/crm" },
-  { label: "HRM", icon: "👤", path: "/hrm" },
-  { label: "Essentials", icon: "⭐", path: "/essentials" },
+  {
+    label: "HRM",
+    icon: "👥",
+    path: "/hrm",
+    children: [
+      { label: "Dashboard", path: "/hrm" },
+      { label: "Leave Type", path: "/hrm/leave-type" },
+      { label: "Leave", path: "/hrm/leave" },
+      { label: "Attendance", path: "/hrm/attendance" },
+      { label: "Payroll", path: "/hrm/payroll" },
+      { label: "My Payrolls", path: "/hrm/payroll/my" },
+      { label: "Holiday", path: "/hrm/holiday" },
+      { label: "Departments", path: "/hrm/departments" },
+      { label: "Designations", path: "/hrm/designations" },
+      { label: "Sales Targets", path: "/hrm/sales-targets" },
+      { label: "Settings", path: "/hrm/settings" },
+    ],
+  },
+  {
+    label: "Essentials",
+    icon: "✅",
+    path: "/essentials",
+    children: [
+      { label: "Dashboard", path: "/essentials" },
+      { label: "To Do", path: "/essentials/todo" },
+      { label: "Document", path: "/essentials/document" },
+      { label: "Memos", path: "/essentials/memos" },
+      { label: "Reminders", path: "/essentials/reminders" },
+      { label: "Messages", path: "/essentials/messages" },
+      { label: "Knowledge Base", path: "/essentials/knowledge-base" },
+      { label: "Settings", path: "/essentials/settings" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -173,8 +203,9 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
+            (!item.children && item.path !== "/" && location.pathname.startsWith(item.path)) ||
             (item.children &&
-              item.children.some((c) => location.pathname === c.path));
+              item.children.some((c) => location.pathname.startsWith(c.path)));
           const isOpen = openMenu === item.label;
 
           return (
@@ -206,7 +237,10 @@ export default function Sidebar() {
                       key={child.label}
                       to={child.path}
                       className={`sidebar-subitem${
-                        location.pathname === child.path ? " active" : ""
+                        location.pathname === child.path ||
+                        location.pathname.startsWith(child.path + "/")
+                          ? " active"
+                          : ""
                       }`}
                     >
                       <span className="sidebar-subitem-dot" />

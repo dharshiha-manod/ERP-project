@@ -1,4 +1,6 @@
 import { useState } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const initialUsers = [
   { id: 1, username: "Dharshiha", name: "Ms Dharshiha C", role: "Admin", email: "dharshihamanodtechnologies@gmail.com" },
@@ -12,7 +14,7 @@ const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
   servicePinEnabled: false, allowLogin: true, username: "", password: "",
   confirmPassword: "", role: "Admin",
-  accessLocations: "All Locations",
+  accessLocations: +"All Locations",
   salesCommission: "", maxDiscount: "",
   dob: "", gender: "", maritalStatus: "", bloodGroup: "",
   mobile: "", altContact: "", familyContact: "",
@@ -105,6 +107,23 @@ export default function Users() {
 
   const tabs = ["basic", "sales", "personal", "bank", "hrm"];
   const tabLabels = { basic: "Basic Info", sales: "Sales", personal: "Personal", bank: "Bank Details", hrm: "HRM" };
+  const exportPDF = () => {
+  const doc = new jsPDF();
+
+  doc.text("Users List", 14, 15);
+
+  autoTable(doc, {
+    head: [["Username", "Name", "Role", "Email"]],
+    body: users.map((user) => [
+      user.username,
+      user.name,
+      user.role,
+      user.email,
+    ]),
+  });
+
+  doc.save("users.pdf");
+};
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
@@ -131,11 +150,26 @@ export default function Users() {
           <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e2d1e" }}>All Users</div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {["Export CSV", "Export Excel", "Print", "Export PDF"].map(b => (
-              <button key={b} style={{
-                padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5",
-                background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer"
-              }}>{b}</button>
-            ))}
+  <button
+    key={b}
+    onClick={() => {
+      if (b === "Export PDF") exportPDF();
+    }}
+    style={{
+      padding: "6px 12px",
+      borderRadius: "7px",
+      border: "1px solid #d1fae5",
+      background: "#f0fdf4",
+      color: "#2d6a4f",
+      fontSize: "12px",
+      fontWeight: 600,
+      cursor: "pointer"
+    }}
+  >
+    {b}
+  </button>
+))}
+        
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{
               padding: "7px 12px", borderRadius: "8px", border: "1px solid #d1d5db",
               fontSize: "13px", outline: "none", width: "180px"

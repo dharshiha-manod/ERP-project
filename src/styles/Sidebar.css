@@ -16,31 +16,22 @@
 .sidebar {
   width: var(--sidebar-width);
   background: var(--sidebar-bg);
-  min-height: 100vh;
+  height: 100vh;           /* fixed full viewport height */
   display: flex;
   flex-direction: column;
   position: fixed;
   top: 0;
   left: 0;
   z-index: 100;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #c8e6c9 transparent;
+  overflow: hidden;        /* hide overflow on the aside itself */
   border-right: 1px solid var(--sidebar-border);
   font-family: 'Segoe UI', system-ui, sans-serif;
   box-shadow: 2px 0 8px rgba(0,0,0,0.06);
 }
 
-.sidebar::-webkit-scrollbar { width: 3px; }
-.sidebar::-webkit-scrollbar-track { background: transparent; }
-.sidebar::-webkit-scrollbar-thumb {
-  background: #c8e6c9;
-  border-radius: 4px;
-}
-
-/* Logo */
+/* Logo — never scrolls */
 .sidebar-logo {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -57,8 +48,9 @@
   letter-spacing: 0.3px;
 }
 
-/* Search */
+/* Search — never scrolls */
 .sidebar-search {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -82,8 +74,22 @@
 
 .sidebar-search-input::placeholder { color: #a5c8b0; }
 
-/* Nav */
-.sidebar-nav { flex: 1; padding: 6px 0 24px; }
+/* Nav — scrollable area */
+.sidebar-nav {
+  flex: 1;
+  padding: 6px 0 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #c8e6c9 transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: #c8e6c9;
+  border-radius: 4px;
+}
 
 .sidebar-item-wrapper { margin: 1px 10px; }
 
