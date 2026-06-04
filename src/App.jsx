@@ -18,7 +18,6 @@ import Warranties from "./pages/Warranties";
 import Manufacturing from "./pages/Manufacturing";
 import Purchases, { AddPurchasePage } from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
-
 import Contacts, {
   SuppliersPage,
   CustomersPage,
@@ -47,6 +46,9 @@ import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
 
 // Stock Adjustments module
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
+
+// Expenses module
+import { ListExpenses, AddExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 
 import "./App.css";
 
@@ -135,6 +137,12 @@ function App() {
             {/* Stock Adjustments */}
             <Route path="/stock-adjustments" element={<ListStockAdjustments />} />
             <Route path="/stock-adjustments/create" element={<AddStockAdjustment />} />
+
+            {/* Expenses */}
+            <Route path="/expenses" element={<ListExpenses />} />
+            <Route path="/expenses/create" element={<AddExpense />} />
+            <Route path="/import-expenses" element={<ImportExpenses />} />
+            <Route path="/expense-categories" element={<ExpenseCategories />} />
           </Routes>
         </main>
       </div>

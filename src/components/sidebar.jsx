@@ -98,6 +98,7 @@ const navItems = [
     children: [
       { label: "List Expenses", path: "/expenses" },
       { label: "Add Expense", path: "/expenses/create" },
+      { label: "Import Expenses", path: "/import-expenses" },
       { label: "Expense Categories", path: "/expense-categories" },
     ],
   },
