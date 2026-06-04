@@ -63,9 +63,9 @@ const navItems = [
       { label: "Add Sale", path: "/sells/create" },
       { label: "List POS", path: "/pos" },
       { label: "POS", path: "/pos/create" },
-      { label: "Add Draft", path: "/sells/create?status=draft" },
+      { label: "Add Draft", path: "/sells/add-draft" },
       { label: "List Drafts", path: "/sells/drafts" },
-      { label: "Add Quotation", path: "/sells/create?status=quotation" },
+      { label: "Add Quotation", path: "/sells/add-quotation" },
       { label: "List Quotations", path: "/sells/quotations" },
       { label: "List Sell Return", path: "/sell-return" },
       { label: "Shipments", path: "/shipments" },
@@ -139,7 +139,6 @@ const navItems = [
       { label: "Receipt Printer", path: "/settings/receipt-printer" },
     ],
   },
-  // ⚠️ CRM: NO children — direct link only, sub-nav is in the horizontal top bar
   { label: "CRM", icon: "🤝", path: "/crm" },
   {
     label: "HRM",
@@ -182,30 +181,21 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Logo */}
       <div className="sidebar-logo">
         <span className="sidebar-logo-icon">🌿</span>
         <span className="sidebar-logo-text">Manod ERP</span>
       </div>
-
-      {/* Search */}
       <div className="sidebar-search">
         <span className="sidebar-search-icon">🔍</span>
-        <input
-          className="sidebar-search-input"
-          placeholder="Search menu..."
-          type="text"
-        />
+        <input className="sidebar-search-input" placeholder="Search menu..." type="text" />
       </div>
-
-      {/* Nav Items */}
       <nav className="sidebar-nav">
         {navItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
             (!item.children && item.path !== "/" && location.pathname.startsWith(item.path)) ||
             (item.children &&
-              item.children.some((c) => location.pathname.startsWith(c.path)));
+              item.children.some((c) => location.pathname.startsWith(c.path.split("?")[0])));
           const isOpen = openMenu === item.label;
 
           return (
@@ -220,16 +210,11 @@ export default function Sidebar() {
                   <span className={`sidebar-chevron${isOpen ? " rotated" : ""}`}>‹</span>
                 </div>
               ) : (
-                <Link
-                  to={item.path}
-                  className={`sidebar-item${isActive ? " active" : ""}`}
-                >
+                <Link to={item.path} className={`sidebar-item${isActive ? " active" : ""}`}>
                   <span className="sidebar-item-icon">{item.icon}</span>
                   <span className="sidebar-item-label">{item.label}</span>
                 </Link>
               )}
-
-              {/* Submenu */}
               {item.children && isOpen && (
                 <div className="sidebar-submenu">
                   {item.children.map((child) => (
@@ -237,8 +222,8 @@ export default function Sidebar() {
                       key={child.label}
                       to={child.path}
                       className={`sidebar-subitem${
-                        location.pathname === child.path ||
-                        location.pathname.startsWith(child.path + "/")
+                        location.pathname === child.path.split("?")[0] ||
+                        location.pathname.startsWith(child.path.split("?")[0] + "/")
                           ? " active"
                           : ""
                       }`}

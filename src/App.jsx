@@ -18,7 +18,36 @@ import Warranties from "./pages/Warranties";
 import Manufacturing from "./pages/Manufacturing";
 import Purchases, { AddPurchasePage } from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
-import Contacts, { SuppliersPage, CustomersPage, CustomerGroupsPage, ImportContactsPage } from "./pages/Contacts";
+
+import Contacts, {
+  SuppliersPage,
+  CustomersPage,
+  CustomerGroupsPage,
+  ImportContactsPage,
+} from "./pages/Contacts";
+
+// Sell module
+import {
+  AllSales,
+  AddSale,
+  ListPOS,
+  POSCreate,
+  AddDraft,
+  ListDrafts,
+  AddQuotation,
+  ListQuotations,
+  SellReturn,
+  Shipments,
+  Discounts,
+  ImportSales,
+} from "./pages/Sell";
+
+// Stock Transfers module
+import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
+
+// Stock Adjustments module
+import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
+
 import "./App.css";
 
 function App() {
@@ -42,7 +71,7 @@ function App() {
             <Route path="/roles" element={<Roles />} />
             <Route path="/sales-commission-agents" element={<SalesCommissionAgents />} />
 
-            {/* Contacts — query param routing handled inside Contacts component */}
+            {/* Contacts */}
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/customer-group" element={<CustomerGroupsPage />} />
             <Route path="/contacts/import" element={<ImportContactsPage />} />
@@ -68,10 +97,44 @@ function App() {
             {/* Purchases */}
             <Route path="/purchases" element={<Purchases />} />
             <Route path="/purchases/create" element={<AddPurchasePage />} />
-
-            {/* Purchase Return */}
             <Route path="/purchase-return" element={<PurchaseReturn />} />
             <Route path="/purchase-return/create" element={<PurchaseReturn />} />
+
+            {/* Sell */}
+            <Route path="/sells" element={<AllSales />} />
+            <Route path="/sells/create" element={<AddSale />} />
+
+            {/* POS */}
+            <Route path="/pos" element={<ListPOS />} />
+            <Route path="/pos/create" element={<POSCreate />} />
+
+            {/* Drafts */}
+            <Route path="/sells/drafts" element={<ListDrafts />} />
+            <Route path="/sells/add-draft" element={<AddDraft />} />
+
+            {/* Quotations */}
+            <Route path="/sells/quotations" element={<ListQuotations />} />
+            <Route path="/sells/add-quotation" element={<AddQuotation />} />
+
+            {/* Sell Return */}
+            <Route path="/sell-return" element={<SellReturn />} />
+
+            {/* Shipments */}
+            <Route path="/shipments" element={<Shipments />} />
+
+            {/* Discounts */}
+            <Route path="/discount" element={<Discounts />} />
+
+            {/* Import Sales */}
+            <Route path="/import-sales" element={<ImportSales />} />
+
+            {/* Stock Transfers */}
+            <Route path="/stock-transfers" element={<ListStockTransfers />} />
+            <Route path="/stock-transfers/create" element={<AddStockTransfer />} />
+
+            {/* Stock Adjustments */}
+            <Route path="/stock-adjustments" element={<ListStockAdjustments />} />
+            <Route path="/stock-adjustments/create" element={<AddStockAdjustment />} />
           </Routes>
         </main>
       </div>
