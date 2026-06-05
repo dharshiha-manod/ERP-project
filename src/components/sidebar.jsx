@@ -159,21 +159,7 @@ const navItems = [
       { label: "Settings", path: "/hrm/settings" },
     ],
   },
-  {
-    label: "Essentials",
-    icon: "✅",
-    path: "/essentials",
-    children: [
-      { label: "Dashboard", path: "/essentials" },
-      { label: "To Do", path: "/essentials/todo" },
-      { label: "Document", path: "/essentials/document" },
-      { label: "Memos", path: "/essentials/memos" },
-      { label: "Reminders", path: "/essentials/reminders" },
-      { label: "Messages", path: "/essentials/messages" },
-      { label: "Knowledge Base", path: "/essentials/knowledge-base" },
-      { label: "Settings", path: "/essentials/settings" },
-    ],
-  },
+  { label: "Essentials", icon: "✅", path: "/essentials" },
 ];
 
 export default function Sidebar() {

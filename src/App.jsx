@@ -50,6 +50,12 @@ import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustmen
 // Expenses module
 import { ListExpenses, AddExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 
+// Notification Templates
+import NotificationTemplates from "./pages/NotificationTemplates";
+
+// Essentials module — single component handles all sub-tabs
+import Essentials from "./pages/Essentials";
+
 import "./App.css";
 
 function App() {
@@ -143,6 +149,19 @@ function App() {
             <Route path="/expenses/create" element={<AddExpense />} />
             <Route path="/import-expenses" element={<ImportExpenses />} />
             <Route path="/expense-categories" element={<ExpenseCategories />} />
+
+            {/* Notification Templates */}
+            <Route path="/notifications" element={<NotificationTemplates />} />
+
+            {/* ── Essentials (all sub-pages handled by one component via tabs) ── */}
+            <Route path="/essentials"                   element={<Essentials />} />
+            <Route path="/essentials/todo"              element={<Essentials />} />
+            <Route path="/essentials/document"          element={<Essentials />} />
+            <Route path="/essentials/memos"             element={<Essentials />} />
+            <Route path="/essentials/reminders"         element={<Essentials />} />
+            <Route path="/essentials/messages"          element={<Essentials />} />
+            <Route path="/essentials/knowledge-base"    element={<Essentials />} />
+            <Route path="/essentials/settings"          element={<Essentials />} />
           </Routes>
         </main>
       </div>
