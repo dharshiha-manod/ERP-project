@@ -53,8 +53,11 @@ import { ListExpenses, AddExpense, ImportExpenses, ExpenseCategories } from "./p
 // Notification Templates
 import NotificationTemplates from "./pages/NotificationTemplates";
 
-// Essentials module — single component handles all sub-tabs
-import Essentials from "./pages/Essentials";
+// HRM module — exports HRMRoutes and EssentialsRoutes
+import { HRMRoutes, EssentialsRoutes } from "./pages/HRM";
+
+// CRM module — horizontal top nav handles all CRM sub-pages
+import { CRMRoutes } from "./pages/CRM";
 
 import "./App.css";
 
@@ -69,7 +72,7 @@ function App() {
             flex: 1,
             minHeight: "100vh",
             background: "#f0f4f1",
-            padding: "24px",
+            padding: "0",
           }}
         >
           <Routes>
@@ -153,15 +156,14 @@ function App() {
             {/* Notification Templates */}
             <Route path="/notifications" element={<NotificationTemplates />} />
 
-            {/* ── Essentials (all sub-pages handled by one component via tabs) ── */}
-            <Route path="/essentials"                   element={<Essentials />} />
-            <Route path="/essentials/todo"              element={<Essentials />} />
-            <Route path="/essentials/document"          element={<Essentials />} />
-            <Route path="/essentials/memos"             element={<Essentials />} />
-            <Route path="/essentials/reminders"         element={<Essentials />} />
-            <Route path="/essentials/messages"          element={<Essentials />} />
-            <Route path="/essentials/knowledge-base"    element={<Essentials />} />
-            <Route path="/essentials/settings"          element={<Essentials />} />
+            {/* CRM — all sub-routes handled inside CRMRoutes via horizontal nav */}
+            <Route path="/crm/*" element={<CRMRoutes />} />
+
+            {/* HRM — all sub-routes handled inside HRMRoutes */}
+            <Route path="/hrm/*" element={<HRMRoutes />} />
+
+            {/* Essentials — all sub-routes handled inside EssentialsRoutes */}
+            <Route path="/essentials/*" element={<EssentialsRoutes />} />
           </Routes>
         </main>
       </div>

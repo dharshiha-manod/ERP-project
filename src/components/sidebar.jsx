@@ -6,6 +6,7 @@ const navItems = [
   { label: "Home", icon: "🏠", path: "/" },
   {
     label: "User Management",
+    icon: "👤",
     path: "/users",
     children: [
       { label: "Users", path: "/users" },
@@ -38,7 +39,7 @@ const navItems = [
       { label: "Import Opening Stock", path: "/import-opening-stock" },
       { label: "Selling Price Group", path: "/selling-price-group" },
       { label: "Units", path: "/units" },
-      { label: "Categories", path: "/taxonomies?type=product" },
+      { label: "Categories", path: "/taxonomies" },
       { label: "Brands", path: "/brands" },
       { label: "Warranties", path: "/warranties" },
     ],
@@ -57,15 +58,15 @@ const navItems = [
   {
     label: "Sell",
     icon: "🛒",
-    path: "/sell",
+    path: "/sells",
     children: [
       { label: "All Sales", path: "/sells" },
       { label: "Add Sale", path: "/sells/create" },
       { label: "List POS", path: "/pos" },
       { label: "POS", path: "/pos/create" },
-      { label: "Add Draft", path: "/sells/add-draft" },
+      { label: "Add Draft", path: "/sells/create?status=draft" },
       { label: "List Drafts", path: "/sells/drafts" },
-      { label: "Add Quotation", path: "/sells/add-quotation" },
+      { label: "Add Quotation", path: "/sells/create?status=quotation" },
       { label: "List Quotations", path: "/sells/quotations" },
       { label: "List Sell Return", path: "/sell-return" },
       { label: "Shipments", path: "/shipments" },
@@ -98,7 +99,6 @@ const navItems = [
     children: [
       { label: "List Expenses", path: "/expenses" },
       { label: "Add Expense", path: "/expenses/create" },
-      { label: "Import Expenses", path: "/import-expenses" },
       { label: "Expense Categories", path: "/expense-categories" },
     ],
   },
@@ -140,6 +140,7 @@ const navItems = [
       { label: "Receipt Printer", path: "/settings/receipt-printer" },
     ],
   },
+  // CRM: plain link — horizontal top nav handles all sub-pages
   { label: "CRM", icon: "🤝", path: "/crm" },
   {
     label: "HRM",
@@ -159,7 +160,21 @@ const navItems = [
       { label: "Settings", path: "/hrm/settings" },
     ],
   },
-  { label: "Essentials", icon: "✅", path: "/essentials" },
+  {
+    label: "Essentials",
+    icon: "✅",
+    path: "/essentials",
+    children: [
+      { label: "Dashboard", path: "/essentials" },
+      { label: "To Do", path: "/essentials/todo" },
+      { label: "Document", path: "/essentials/document" },
+      { label: "Memos", path: "/essentials/memos" },
+      { label: "Reminders", path: "/essentials/reminders" },
+      { label: "Messages", path: "/essentials/messages" },
+      { label: "Knowledge Base", path: "/essentials/knowledge-base" },
+      { label: "Settings", path: "/essentials/settings" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -168,21 +183,33 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
+      {/* Logo */}
       <div className="sidebar-logo">
         <span className="sidebar-logo-icon">🌿</span>
         <span className="sidebar-logo-text">Manod ERP</span>
       </div>
+
+      {/* Search */}
       <div className="sidebar-search">
         <span className="sidebar-search-icon">🔍</span>
-        <input className="sidebar-search-input" placeholder="Search menu..." type="text" />
+        <input
+          className="sidebar-search-input"
+          placeholder="Search menu..."
+          type="text"
+        />
       </div>
+
+      {/* Nav Items */}
       <nav className="sidebar-nav">
         {navItems.map((item) => {
           const isActive =
             location.pathname === item.path ||
             (!item.children && item.path !== "/" && location.pathname.startsWith(item.path)) ||
             (item.children &&
-              item.children.some((c) => location.pathname.startsWith(c.path.split("?")[0])));
+              item.children.some((c) =>
+                location.pathname === c.path ||
+                location.pathname.startsWith(c.path.split("?")[0] + "/")
+              ));
           const isOpen = openMenu === item.label;
 
           return (
@@ -197,11 +224,16 @@ export default function Sidebar() {
                   <span className={`sidebar-chevron${isOpen ? " rotated" : ""}`}>‹</span>
                 </div>
               ) : (
-                <Link to={item.path} className={`sidebar-item${isActive ? " active" : ""}`}>
+                <Link
+                  to={item.path}
+                  className={`sidebar-item${isActive ? " active" : ""}`}
+                >
                   <span className="sidebar-item-icon">{item.icon}</span>
                   <span className="sidebar-item-label">{item.label}</span>
                 </Link>
               )}
+
+              {/* Submenu */}
               {item.children && isOpen && (
                 <div className="sidebar-submenu">
                   {item.children.map((child) => (
