@@ -14,8 +14,8 @@ const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
   servicePinEnabled: false, allowLogin: true, username: "", password: "",
   confirmPassword: "", role: "Admin",
-  accessLocations: +"All Locations",
-  salesCommission: "", maxDiscount: "",
+  accessLocations: "All Locations",
+  salesCommission: "", maxDiscount: "", allowContacts: "",
   dob: "", gender: "", maritalStatus: "", bloodGroup: "",
   mobile: "", altContact: "", familyContact: "",
   facebook: "", twitter: "", social1: "", social2: "",
@@ -23,20 +23,34 @@ const emptyForm = {
   guardianName: "", idProofName: "", idProofNumber: "",
   permanentAddress: "", currentAddress: "",
   accountHolder: "", accountNumber: "", bankName: "", bankCode: "", branch: "", taxPayerId: "",
-  department: "", designation: "",
+  department: "", designation: "", salaryPeriod: "Per Month",
   primaryWorkLocation: "", basicSalary: "",
 };
+
+const TABS = ["basic", "sales", "personal", "bank", "hrm"];
+const TAB_LABELS = { basic: "Basic Info", sales: "Sales", personal: "Personal", bank: "Bank Details", hrm: "HRM" };
 
 export default function Users() {
   const [users, setUsers] = useState(initialUsers);
   const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState("add"); // add | edit | view
+  const [modalMode, setModalMode] = useState("add");
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
   const [errors, setErrors] = useState({});
   const [showDelete, setShowDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("basic");
   const [search, setSearch] = useState("");
+
+  const currentTabIndex = TABS.indexOf(activeTab);
+  const isFirstTab = currentTabIndex === 0;
+  const isLastTab = currentTabIndex === TABS.length - 1;
+
+  const goNext = () => {
+    if (!isLastTab) setActiveTab(TABS[currentTabIndex + 1]);
+  };
+  const goPrev = () => {
+    if (!isFirstTab) setActiveTab(TABS[currentTabIndex - 1]);
+  };
 
   const openAdd = () => {
     setForm(emptyForm); setErrors({}); setModalMode("add");
@@ -83,7 +97,14 @@ export default function Users() {
 
   const handleSave = () => {
     const e = validate();
-    if (Object.keys(e).length) { setErrors(e); return; }
+    if (Object.keys(e).length) {
+      setErrors(e);
+      // Jump back to basic tab if basic errors exist
+      if (e.firstName || e.email || e.password || e.confirmPassword || e.role) {
+        setActiveTab("basic");
+      }
+      return;
+    }
     const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
     const username = form.username || form.firstName.toLowerCase() + Math.floor(Math.random() * 100);
     if (modalMode === "add") {
@@ -105,25 +126,17 @@ export default function Users() {
     u.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const tabs = ["basic", "sales", "personal", "bank", "hrm"];
-  const tabLabels = { basic: "Basic Info", sales: "Sales", personal: "Personal", bank: "Bank Details", hrm: "HRM" };
   const exportPDF = () => {
-  const doc = new jsPDF();
+    const doc = new jsPDF();
+    doc.text("Users List", 14, 15);
+    autoTable(doc, {
+      head: [["Username", "Name", "Role", "Email"]],
+      body: users.map((user) => [user.username, user.name, user.role, user.email]),
+    });
+    doc.save("users.pdf");
+  };
 
-  doc.text("Users List", 14, 15);
-
-  autoTable(doc, {
-    head: [["Username", "Name", "Role", "Email"]],
-    body: users.map((user) => [
-      user.username,
-      user.name,
-      user.role,
-      user.email,
-    ]),
-  });
-
-  doc.save("users.pdf");
-};
+  const f = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
@@ -150,30 +163,13 @@ export default function Users() {
           <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e2d1e" }}>All Users</div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {["Export CSV", "Export Excel", "Print", "Export PDF"].map(b => (
-  <button
-    key={b}
-    onClick={() => {
-      if (b === "Export PDF") exportPDF();
-    }}
-    style={{
-      padding: "6px 12px",
-      borderRadius: "7px",
-      border: "1px solid #d1fae5",
-      background: "#f0fdf4",
-      color: "#2d6a4f",
-      fontSize: "12px",
-      fontWeight: 600,
-      cursor: "pointer"
-    }}
-  >
-    {b}
-  </button>
-))}
-        
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{
-              padding: "7px 12px", borderRadius: "8px", border: "1px solid #d1d5db",
-              fontSize: "13px", outline: "none", width: "180px"
-            }} />
+              <button key={b} onClick={() => { if (b === "Export PDF") exportPDF(); }}
+                style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                {b}
+              </button>
+            ))}
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+              style={{ padding: "7px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", outline: "none", width: "180px" }} />
           </div>
         </div>
 
@@ -239,10 +235,12 @@ export default function Users() {
         </div>
       )}
 
-      {/* Add/Edit/View Modal */}
+      {/* Add / Edit / View Modal */}
       {showModal && (
         <div style={overlay}>
           <div style={{ ...modalBox, maxWidth: "700px", maxHeight: "90vh", overflowY: "auto" }}>
+
+            {/* Modal Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
               <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#1e2d1e" }}>
                 {modalMode === "add" ? "Add User" : modalMode === "edit" ? "Edit User" : "View User"}
@@ -250,60 +248,100 @@ export default function Users() {
               <button onClick={() => setShowModal(false)} style={{ border: "none", background: "none", fontSize: "22px", cursor: "pointer", color: "#6b7280" }}>×</button>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: "4px", marginBottom: "22px", borderBottom: "2px solid #eaf1ec", paddingBottom: "0" }}>
-              {tabs.map(t => (
-                <button key={t} onClick={() => setActiveTab(t)} style={{
-                  padding: "8px 16px", border: "none", background: "none", cursor: "pointer",
-                  fontSize: "13px", fontWeight: 600,
-                  color: activeTab === t ? "#2d6a4f" : "#9ca3af",
-                  borderBottom: activeTab === t ? "3px solid #2d6a4f" : "3px solid transparent",
-                  marginBottom: "-2px",
-                }}>{tabLabels[t]}</button>
-              ))}
+            {/* Step Progress Bar */}
+            <div style={{ display: "flex", alignItems: "center", marginBottom: "24px" }}>
+              {TABS.map((tab, idx) => {
+                const isDone = idx < currentTabIndex;
+                const isActive = idx === currentTabIndex;
+                return (
+                  <div key={tab} style={{ display: "flex", alignItems: "center", flex: idx < TABS.length - 1 ? 1 : "unset" }}>
+                    {/* Step circle — clickable for view mode, or already-visited steps */}
+                    <div
+                      onClick={() => (modalMode === "view" || idx <= currentTabIndex) && setActiveTab(tab)}
+                      style={{
+                        width: 32, height: 32, borderRadius: "50%",
+                        background: isDone ? "#2d6a4f" : isActive ? "linear-gradient(135deg,#2d6a4f,#40916c)" : "#e5e7eb",
+                        color: isDone || isActive ? "#fff" : "#9ca3af",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: isDone ? "14px" : "13px", fontWeight: 700,
+                        cursor: (modalMode === "view" || idx <= currentTabIndex) ? "pointer" : "default",
+                        boxShadow: isActive ? "0 3px 10px rgba(45,106,79,0.35)" : "none",
+                        flexShrink: 0, transition: "all .2s",
+                        border: isActive ? "2px solid #2d6a4f" : "2px solid transparent",
+                      }}>
+                      {isDone ? "✓" : idx + 1}
+                    </div>
+                    {/* Label below circle */}
+                    <div style={{ position: "relative" }}>
+                      <span style={{
+                        position: "absolute", top: 36, left: "50%", transform: "translateX(-50%)",
+                        fontSize: "10px", fontWeight: isActive ? 700 : 500,
+                        color: isActive ? "#2d6a4f" : isDone ? "#374151" : "#9ca3af",
+                        whiteSpace: "nowrap",
+                      }}>{TAB_LABELS[tab]}</span>
+                    </div>
+                    {/* Connector line */}
+                    {idx < TABS.length - 1 && (
+                      <div style={{
+                        flex: 1, height: 3, margin: "0 6px",
+                        background: isDone ? "#2d6a4f" : "#e5e7eb",
+                        borderRadius: 2, transition: "background .2s",
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            {/* spacer for labels */}
+            <div style={{ height: 20 }} />
+
+            {/* ── Tab Content ── */}
 
             {activeTab === "basic" && (
               <div>
                 <div style={row3}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Prefix</label>
-                    <select disabled={modalMode === "view"} value={form.prefix} onChange={e => setForm({ ...form, prefix: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.prefix} onChange={f("prefix")} style={inp}>
                       <option value="">Select</option>
                       {["Mr", "Mrs", "Ms", "Dr", "Er"].map(p => <option key={p}>{p}</option>)}
                     </select>
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>First Name <span style={{ color: "#dc2626" }}>*</span></label>
-                    <input disabled={modalMode === "view"} value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} style={{ ...inp, borderColor: errors.firstName ? "#dc2626" : "#d1d5db" }} placeholder="First Name" />
+                    <input disabled={modalMode === "view"} value={form.firstName} onChange={f("firstName")}
+                      style={{ ...inp, borderColor: errors.firstName ? "#dc2626" : "#d1d5db" }} placeholder="First Name" />
                     {errors.firstName && <span style={errTxt}>{errors.firstName}</span>}
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Last Name</label>
-                    <input disabled={modalMode === "view"} value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} style={inp} placeholder="Last Name" />
+                    <input disabled={modalMode === "view"} value={form.lastName} onChange={f("lastName")} style={inp} placeholder="Last Name" />
                   </div>
                 </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Email <span style={{ color: "#dc2626" }}>*</span></label>
-                    <input disabled={modalMode === "view"} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={{ ...inp, borderColor: errors.email ? "#dc2626" : "#d1d5db" }} placeholder="Email" />
+                    <input disabled={modalMode === "view"} type="email" value={form.email} onChange={f("email")}
+                      style={{ ...inp, borderColor: errors.email ? "#dc2626" : "#d1d5db" }} placeholder="Email" />
                     {errors.email && <span style={errTxt}>{errors.email}</span>}
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Username</label>
-                    <input disabled={modalMode === "view"} value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} style={inp} placeholder="Leave blank to auto generate" />
+                    <input disabled={modalMode === "view"} value={form.username} onChange={f("username")} style={inp} placeholder="Leave blank to auto generate" />
                   </div>
                 </div>
                 {modalMode !== "view" && (
                   <div style={row2}>
                     <div style={fieldWrap}>
                       <label style={lbl}>Password <span style={{ color: "#dc2626" }}>*</span></label>
-                      <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={{ ...inp, borderColor: errors.password ? "#dc2626" : "#d1d5db" }} placeholder="Password" />
+                      <input type="password" value={form.password} onChange={f("password")}
+                        style={{ ...inp, borderColor: errors.password ? "#dc2626" : "#d1d5db" }} placeholder="Password" />
                       {errors.password && <span style={errTxt}>{errors.password}</span>}
                     </div>
                     <div style={fieldWrap}>
                       <label style={lbl}>Confirm Password <span style={{ color: "#dc2626" }}>*</span></label>
-                      <input type="password" value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} style={{ ...inp, borderColor: errors.confirmPassword ? "#dc2626" : "#d1d5db" }} placeholder="Confirm Password" />
+                      <input type="password" value={form.confirmPassword} onChange={f("confirmPassword")}
+                        style={{ ...inp, borderColor: errors.confirmPassword ? "#dc2626" : "#d1d5db" }} placeholder="Confirm Password" />
                       {errors.confirmPassword && <span style={errTxt}>{errors.confirmPassword}</span>}
                     </div>
                   </div>
@@ -311,7 +349,8 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Role <span style={{ color: "#dc2626" }}>*</span></label>
-                    <select disabled={modalMode === "view"} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
+                    <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
+                      style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
                       <option value="">Select Role</option>
                       <option>Admin</option>
                       <option>Cashier</option>
@@ -320,7 +359,7 @@ export default function Users() {
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Access Locations</label>
-                    <select disabled={modalMode === "view"} value={form.accessLocations} onChange={e => setForm({ ...form, accessLocations: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.accessLocations} onChange={f("accessLocations")} style={inp}>
                       <option>All Locations</option>
                       <option>Manodtechnologies (BL0001)</option>
                     </select>
@@ -333,7 +372,9 @@ export default function Users() {
                     { label: "Allow Login", key: "allowLogin" },
                   ].map(({ label, key }) => (
                     <label key={key} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: modalMode === "view" ? "default" : "pointer" }}>
-                      <input type="checkbox" disabled={modalMode === "view"} checked={form[key]} onChange={e => setForm({ ...form, [key]: e.target.checked })} style={{ width: "16px", height: "16px", accentColor: "#2d6a4f" }} />
+                      <input type="checkbox" disabled={modalMode === "view"} checked={form[key]}
+                        onChange={e => setForm({ ...form, [key]: e.target.checked })}
+                        style={{ width: "16px", height: "16px", accentColor: "#2d6a4f" }} />
                       {label}
                     </label>
                   ))}
@@ -346,16 +387,17 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Sales Commission Percentage (%)</label>
-                    <input disabled={modalMode === "view"} type="number" value={form.salesCommission} onChange={e => setForm({ ...form, salesCommission: e.target.value })} style={inp} placeholder="0.00" />
+                    <input disabled={modalMode === "view"} type="number" value={form.salesCommission} onChange={f("salesCommission")} style={inp} placeholder="0.00" />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Max Sales Discount Percent</label>
-                    <input disabled={modalMode === "view"} type="number" value={form.maxDiscount} onChange={e => setForm({ ...form, maxDiscount: e.target.value })} style={inp} placeholder="0.00" />
+                    <input disabled={modalMode === "view"} type="number" value={form.maxDiscount} onChange={f("maxDiscount")} style={inp} placeholder="0.00" />
                   </div>
                 </div>
                 <div style={fieldWrap}>
                   <label style={lbl}>Allow Selected Contacts</label>
-                  <textarea disabled={modalMode === "view"} value={form.allowContacts} onChange={e => setForm({ ...form, allowContacts: e.target.value })} style={{ ...inp, height: "80px", resize: "vertical" }} placeholder="Enter contact names..." />
+                  <textarea disabled={modalMode === "view"} value={form.allowContacts} onChange={f("allowContacts")}
+                    style={{ ...inp, height: "80px", resize: "vertical" }} placeholder="Enter contact names..." />
                 </div>
               </div>
             )}
@@ -365,18 +407,18 @@ export default function Users() {
                 <div style={row3}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Date of Birth</label>
-                    <input disabled={modalMode === "view"} type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} type="date" value={form.dob} onChange={f("dob")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Gender</label>
-                    <select disabled={modalMode === "view"} value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.gender} onChange={f("gender")} style={inp}>
                       <option value="">Please Select</option>
                       <option>Male</option><option>Female</option><option>Others</option>
                     </select>
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Marital Status</label>
-                    <select disabled={modalMode === "view"} value={form.maritalStatus} onChange={e => setForm({ ...form, maritalStatus: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.maritalStatus} onChange={f("maritalStatus")} style={inp}>
                       <option value="">Marital Status</option>
                       <option>Married</option><option>Unmarried</option><option>Divorced</option>
                     </select>
@@ -385,55 +427,57 @@ export default function Users() {
                 <div style={row3}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Blood Group</label>
-                    <input disabled={modalMode === "view"} value={form.bloodGroup} onChange={e => setForm({ ...form, bloodGroup: e.target.value })} style={inp} placeholder="A+" />
+                    <input disabled={modalMode === "view"} value={form.bloodGroup} onChange={f("bloodGroup")} style={inp} placeholder="A+" />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Mobile Number</label>
-                    <input disabled={modalMode === "view"} value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} style={inp} placeholder="+91" />
+                    <input disabled={modalMode === "view"} value={form.mobile} onChange={f("mobile")} style={inp} placeholder="+91" />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Alternate Contact</label>
-                    <input disabled={modalMode === "view"} value={form.altContact} onChange={e => setForm({ ...form, altContact: e.target.value })} style={inp} placeholder="+91" />
+                    <input disabled={modalMode === "view"} value={form.altContact} onChange={f("altContact")} style={inp} placeholder="+91" />
                   </div>
                 </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Family Contact Number</label>
-                    <input disabled={modalMode === "view"} value={form.familyContact} onChange={e => setForm({ ...form, familyContact: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.familyContact} onChange={f("familyContact")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Guardian Name</label>
-                    <input disabled={modalMode === "view"} value={form.guardianName} onChange={e => setForm({ ...form, guardianName: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.guardianName} onChange={f("guardianName")} style={inp} />
                   </div>
                 </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Facebook Link</label>
-                    <input disabled={modalMode === "view"} value={form.facebook} onChange={e => setForm({ ...form, facebook: e.target.value })} style={inp} placeholder="https://facebook.com/..." />
+                    <input disabled={modalMode === "view"} value={form.facebook} onChange={f("facebook")} style={inp} placeholder="https://facebook.com/..." />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Twitter Link</label>
-                    <input disabled={modalMode === "view"} value={form.twitter} onChange={e => setForm({ ...form, twitter: e.target.value })} style={inp} placeholder="https://twitter.com/..." />
+                    <input disabled={modalMode === "view"} value={form.twitter} onChange={f("twitter")} style={inp} placeholder="https://twitter.com/..." />
                   </div>
                 </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>ID Proof Name</label>
-                    <input disabled={modalMode === "view"} value={form.idProofName} onChange={e => setForm({ ...form, idProofName: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.idProofName} onChange={f("idProofName")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>ID Proof Number</label>
-                    <input disabled={modalMode === "view"} value={form.idProofNumber} onChange={e => setForm({ ...form, idProofNumber: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.idProofNumber} onChange={f("idProofNumber")} style={inp} />
                   </div>
                 </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Permanent Address</label>
-                    <textarea disabled={modalMode === "view"} value={form.permanentAddress} onChange={e => setForm({ ...form, permanentAddress: e.target.value })} style={{ ...inp, height: "70px", resize: "vertical" }} />
+                    <textarea disabled={modalMode === "view"} value={form.permanentAddress} onChange={f("permanentAddress")}
+                      style={{ ...inp, height: "70px", resize: "vertical" }} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Current Address</label>
-                    <textarea disabled={modalMode === "view"} value={form.currentAddress} onChange={e => setForm({ ...form, currentAddress: e.target.value })} style={{ ...inp, height: "70px", resize: "vertical" }} />
+                    <textarea disabled={modalMode === "view"} value={form.currentAddress} onChange={f("currentAddress")}
+                      style={{ ...inp, height: "70px", resize: "vertical" }} />
                   </div>
                 </div>
               </div>
@@ -444,30 +488,30 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Account Holder's Name</label>
-                    <input disabled={modalMode === "view"} value={form.accountHolder} onChange={e => setForm({ ...form, accountHolder: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.accountHolder} onChange={f("accountHolder")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Account Number</label>
-                    <input disabled={modalMode === "view"} value={form.accountNumber} onChange={e => setForm({ ...form, accountNumber: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.accountNumber} onChange={f("accountNumber")} style={inp} />
                   </div>
                 </div>
                 <div style={row3}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Bank Name</label>
-                    <input disabled={modalMode === "view"} value={form.bankName} onChange={e => setForm({ ...form, bankName: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.bankName} onChange={f("bankName")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Bank Identifier Code</label>
-                    <input disabled={modalMode === "view"} value={form.bankCode} onChange={e => setForm({ ...form, bankCode: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.bankCode} onChange={f("bankCode")} style={inp} />
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Branch</label>
-                    <input disabled={modalMode === "view"} value={form.branch} onChange={e => setForm({ ...form, branch: e.target.value })} style={inp} />
+                    <input disabled={modalMode === "view"} value={form.branch} onChange={f("branch")} style={inp} />
                   </div>
                 </div>
                 <div style={fieldWrap}>
                   <label style={lbl}>Tax Payer ID</label>
-                  <input disabled={modalMode === "view"} value={form.taxPayerId} onChange={e => setForm({ ...form, taxPayerId: e.target.value })} style={inp} />
+                  <input disabled={modalMode === "view"} value={form.taxPayerId} onChange={f("taxPayerId")} style={inp} />
                 </div>
               </div>
             )}
@@ -477,7 +521,7 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Department</label>
-                    <select disabled={modalMode === "view"} value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.department} onChange={f("department")} style={inp}>
                       <option value="">Please Select</option>
                       <option>Digital Marketing</option>
                       <option>sales-sales</option>
@@ -485,7 +529,7 @@ export default function Users() {
                   </div>
                   <div style={fieldWrap}>
                     <label style={lbl}>Designation</label>
-                    <select disabled={modalMode === "view"} value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.designation} onChange={f("designation")} style={inp}>
                       <option value="">Please Select</option>
                       <option>sales</option>
                     </select>
@@ -494,7 +538,7 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Primary Work Location</label>
-                    <select disabled={modalMode === "view"} value={form.primaryWorkLocation} onChange={e => setForm({ ...form, primaryWorkLocation: e.target.value })} style={inp}>
+                    <select disabled={modalMode === "view"} value={form.primaryWorkLocation} onChange={f("primaryWorkLocation")} style={inp}>
                       <option value="">Please Select</option>
                       <option>Manodtechnologies (BL0001)</option>
                     </select>
@@ -502,8 +546,9 @@ export default function Users() {
                   <div style={fieldWrap}>
                     <label style={lbl}>Basic Salary</label>
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <input disabled={modalMode === "view"} type="number" value={form.basicSalary} onChange={e => setForm({ ...form, basicSalary: e.target.value })} style={{ ...inp, flex: 1 }} placeholder="0.00" />
-                      <select disabled={modalMode === "view"} value={form.salaryPeriod} onChange={e => setForm({ ...form, salaryPeriod: e.target.value })} style={{ ...inp, width: "120px" }}>
+                      <input disabled={modalMode === "view"} type="number" value={form.basicSalary} onChange={f("basicSalary")}
+                        style={{ ...inp, flex: 1 }} placeholder="0.00" />
+                      <select disabled={modalMode === "view"} value={form.salaryPeriod} onChange={f("salaryPeriod")} style={{ ...inp, width: "120px" }}>
                         <option>Per Month</option>
                         <option>Per Week</option>
                         <option>Per Day</option>
@@ -514,20 +559,43 @@ export default function Users() {
               </div>
             )}
 
-            {/* Footer Buttons */}
-            {modalMode !== "view" && (
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #eaf1ec" }}>
-                <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>Close</button>
-                <button onClick={handleSave} style={primaryBtnStyle}>
-                  {modalMode === "add" ? "Save User" : "Update User"}
-                </button>
+            {/* ── Footer Navigation ── */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginTop: "28px", paddingTop: "16px", borderTop: "1px solid #eaf1ec",
+            }}>
+              {/* Left: Back or Close */}
+              <div>
+                {isFirstTab ? (
+                  <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>✕ Close</button>
+                ) : (
+                  <button onClick={goPrev} style={secondaryBtnStyle}>← Back</button>
+                )}
               </div>
-            )}
-            {modalMode === "view" && (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #eaf1ec" }}>
-                <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>Close</button>
+
+              {/* Right: Next or Save */}
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                {/* Step label */}
+                <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                  Step {currentTabIndex + 1} of {TABS.length}
+                </span>
+
+                {modalMode === "view" ? (
+                  isLastTab ? (
+                    <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>Close</button>
+                  ) : (
+                    <button onClick={goNext} style={primaryBtnStyle}>Next →</button>
+                  )
+                ) : isLastTab ? (
+                  <button onClick={handleSave} style={primaryBtnStyle}>
+                    💾 {modalMode === "add" ? "Save User" : "Update User"}
+                  </button>
+                ) : (
+                  <button onClick={goNext} style={primaryBtnStyle}>Next →</button>
+                )}
               </div>
-            )}
+            </div>
+
           </div>
         </div>
       )}
@@ -535,7 +603,7 @@ export default function Users() {
   );
 }
 
-// Shared style helpers
+// ── Shared style helpers ───────────────────────────────────────────────────────
 const actionBtn = (color, bg) => ({
   padding: "5px 10px", borderRadius: "7px", border: `1px solid ${color}20`,
   background: bg, color, fontSize: "12px", fontWeight: 600, cursor: "pointer",
@@ -564,15 +632,11 @@ const secondaryBtnStyle = {
 };
 
 const fieldWrap = { display: "flex", flexDirection: "column", gap: "5px", flex: 1 };
-
 const lbl = { fontSize: "12px", fontWeight: 600, color: "#374151" };
-
 const inp = {
   padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db",
-  fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box",
-  background: "#fff",
+  fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box", background: "#fff",
 };
-
 const row2 = { display: "flex", gap: "14px", marginBottom: "14px" };
 const row3 = { display: "flex", gap: "14px", marginBottom: "14px" };
 const errTxt = { fontSize: "11px", color: "#dc2626" };
