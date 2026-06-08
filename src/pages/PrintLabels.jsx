@@ -1,292 +1,191 @@
 import { useState, useRef } from "react";
+import * as XLSX from "xlsx";
 
-const PRICE_OPTIONS = ["Inc. tax", "Exc. tax"];
-const BARCODE_SETTINGS = [
-  "20 Labels per Sheet, Sheet Size: 8.5\" x 11\", Label Size: 2.625\" x 1\"",
-  "30 Labels per Sheet, Sheet Size: 8.5\" x 11\", Label Size: 2.625\" x 1\"",
-  "10 Labels per Sheet, Sheet Size: A4, Label Size: 70mm x 29mm",
+const SAMPLE_PRODUCTS = [
+  { id: 1, name: "Samsung Galaxy S24 Ultra", sku: "SAM-S24U-001", barcode: "8901234567890", price: "₹1,06,250", category: "Electronics", unit: "Piece" },
+  { id: 2, name: "Apple iPhone 15 Pro", sku: "APL-IP15P-002", barcode: "8901234567891", price: "₹1,32,000", category: "Electronics", unit: "Piece" },
+  { id: 3, name: "Nike Air Max 270", sku: "NIK-AM270-003", barcode: "8901234567892", price: "₹6,300", category: "Clothing", unit: "Piece" },
+  { id: 4, name: "Sony WH-1000XM5 Headphones", sku: "SNY-WH1000-004", barcode: "8901234567893", price: "₹28,600", category: "Electronics", unit: "Piece" },
+  { id: 5, name: "Bosch Washing Machine 7kg", sku: "BSH-WM7-005", barcode: "8901234567894", price: "₹34,160", category: "Appliances", unit: "Piece" },
+  { id: 6, name: "Adidas Ultraboost 22", sku: "ADI-UB22-006", barcode: "8901234567895", price: "₹10,800", category: "Sports", unit: "Piece" },
+  { id: 7, name: "LG 55\" OLED TV", sku: "LG-OLED55-007", barcode: "8901234567896", price: "₹88,500", category: "Electronics", unit: "Piece" },
+  { id: 8, name: "A4 Copier Paper (500 sheets)", sku: "STA-A4P-009", barcode: "8901234567897", price: "₹282", category: "Stationery", unit: "Pack" },
 ];
 
-// Simulated product search
-const ALL_PRODUCTS = [
-  { id: 1, name: "Product Alpha", sku: "SKU001", price: 150, brand: "Brand A" },
-  { id: 2, name: "Product Beta", sku: "SKU002", price: 200, brand: "Brand B" },
-  { id: 3, name: "Product Gamma", sku: "SKU003", price: 350, brand: "Brand C" },
+const LABEL_SIZES = [
+  { label: "Small (2\" × 1\")", value: "small", width: 160, height: 64 },
+  { label: "Medium (3\" × 1.5\")", value: "medium", width: 220, height: 96 },
+  { label: "Large (4\" × 2\")", value: "large", width: 280, height: 128 },
 ];
+
+const PAPER_SIZES = ["A4", "A5", "Letter"];
 
 export default function PrintLabels() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [labelProducts, setLabelProducts] = useState([]);
-  const [showPreview, setShowPreview] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [labelSize, setLabelSize] = useState("medium");
+  const [paperSize, setPaperSize] = useState("A4");
+  const [showPrice, setShowPrice] = useState(true);
+  const [showSKU, setShowSKU] = useState(true);
+  const [showBarcode, setShowBarcode] = useState(true);
+  const [copies, setCopies] = useState(1);
+  const [search, setSearch] = useState("");
 
-  // Label info options
-  const [options, setOptions] = useState({
-    productName: true, productNameSize: 15,
-    productVariation: true, productVariationSize: 17,
-    productPrice: true, productPriceSize: 17,
-    businessName: true, businessNameSize: 20,
-    packingDate: true, packingDateSize: 12,
-    showPrice: "Inc. tax",
-  });
-  const [barcodeSetting, setBarcodeSetting] = useState(BARCODE_SETTINGS[0]);
+  const filtered = SAMPLE_PRODUCTS.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.sku.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const setOpt = (k, v) => setOptions(o => ({ ...o, [k]: v }));
+  const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map(p => p.id));
 
-  const handleSearch = (q) => {
-    setSearchQuery(q);
-    if (q.trim().length < 1) { setSearchResults([]); return; }
-    setSearchResults(ALL_PRODUCTS.filter(p =>
-      p.name.toLowerCase().includes(q.toLowerCase()) ||
-      p.sku.toLowerCase().includes(q.toLowerCase())
-    ));
+  const selectedProducts = SAMPLE_PRODUCTS.filter(p => selected.includes(p.id));
+  const size = LABEL_SIZES.find(l => l.value === labelSize);
+
+  const handlePrint = () => {
+    if (!selectedProducts.length) { alert("Please select at least one product to print labels."); return; }
+    const labels = [];
+    for (let c = 0; c < copies; c++) {
+      selectedProducts.forEach(p => {
+        labels.push(`
+          <div style="width:${size.width}px;height:${size.height}px;border:1px solid #ccc;padding:6px;margin:4px;display:inline-block;font-family:monospace;font-size:10px;vertical-align:top;box-sizing:border-box;">
+            <div style="font-weight:700;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</div>
+            ${showSKU ? `<div style="color:#555;">SKU: ${p.sku}</div>` : ""}
+            ${showBarcode ? `<div style="font-size:18px;font-family:'Libre Barcode 128',monospace;letter-spacing:2px;overflow:hidden;">${p.barcode}</div><div style="font-size:9px;text-align:center;">${p.barcode}</div>` : ""}
+            ${showPrice ? `<div style="font-weight:700;font-size:13px;color:#2e7d32;">${p.price}</div>` : ""}
+          </div>
+        `);
+      });
+    }
+    const win = window.open("", "_blank");
+    win.document.write(`<html><head><title>Print Labels</title>
+      <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet">
+      <style>body{margin:10px;} @media print{body{margin:0;}}</style>
+    </head><body>${labels.join("")}</body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 500);
   };
 
-  const addProduct = (product) => {
-    if (labelProducts.find(p => p.id === product.id)) return;
-    setLabelProducts(prev => [...prev, { ...product, qty: 1, packingDate: "", priceGroup: "Default" }]);
-    setSearchQuery("");
-    setSearchResults([]);
-  };
-
-  const updateProduct = (id, key, val) => {
-    setLabelProducts(prev => prev.map(p => p.id === id ? { ...p, [key]: val } : p));
-  };
-
-  const removeProduct = (id) => setLabelProducts(prev => prev.filter(p => p.id !== id));
-
-  const handlePreview = () => {
-    if (labelProducts.length === 0) { alert("Please add at least one product."); return; }
-    setShowPreview(true);
+  const handleExportExcel = () => {
+    const data = selectedProducts.length ? selectedProducts : SAMPLE_PRODUCTS;
+    const ws = XLSX.utils.json_to_sheet(data.map(p => ({ Name: p.name, SKU: p.sku, Barcode: p.barcode, Price: p.price, Category: p.category, Unit: p.unit })));
+    ws["!cols"] = [{ wch: 35 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Labels");
+    XLSX.writeFile(wb, "product_labels.xlsx");
   };
 
   return (
-    <div style={s.page}>
-      <h1 style={s.pageTitle}>
-        Print Labels
-        <span style={s.infoIcon} title="Print barcode labels for your products">ℹ</span>
-      </h1>
+    <div style={{ fontFamily: "'Segoe UI', sans-serif", color: "#333" }}>
+      <h2 style={{ fontWeight: 700, fontSize: 24, marginBottom: 4 }}>Print Labels</h2>
+      <p style={{ color: "#888", fontSize: 13, marginBottom: 20 }}>Select products and configure label settings to print barcode labels.</p>
 
-      {/* Add products section */}
-      <div style={s.card}>
-        <h2 style={s.cardTitle}>Add products to generate Labels</h2>
-
-        {/* Search */}
-        <div style={s.searchRow}>
-          <span style={s.searchIcon}>🔍</span>
-          <input style={s.searchInput}
-            placeholder="Enter products name to print labels"
-            value={searchQuery}
-            onChange={e => handleSearch(e.target.value)} />
-        </div>
-
-        {/* Dropdown results */}
-        {searchResults.length > 0 && (
-          <div style={s.dropdown}>
-            {searchResults.map(p => (
-              <div key={p.id} style={s.dropItem} onClick={() => addProduct(p)}
-                onMouseEnter={e => e.currentTarget.style.background = "#f0eeff"}
-                onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
-                <strong>{p.name}</strong> <span style={{ color: "#888", fontSize: 12 }}>({p.sku})</span>
-              </div>
-            ))}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20 }}>
+        {/* Product Selection */}
+        <div style={{ background: "#fff", borderRadius: 8, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h4 style={{ fontWeight: 700, margin: 0 }}>Select Products ({selected.length} selected)</h4>
+            <input placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)}
+              style={{ padding: "6px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, width: 200, outline: "none" }} />
           </div>
-        )}
 
-        {/* Products table */}
-        <div style={s.tableWrap}>
-          <table style={s.table}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={s.theadRow}>
-                <th style={s.th}>Products</th>
-                <th style={s.th}>No. of labels</th>
-                <th style={s.th}>Packing Date</th>
-                <th style={s.th}>Selling Price Group</th>
-                <th style={s.th}></th>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={{ ...th, width: 40 }}>
+                  <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0}
+                    onChange={toggleAll} style={{ accentColor: "#2e7d32" }} />
+                </th>
+                <th style={th}>Product Name</th>
+                <th style={th}>SKU</th>
+                <th style={th}>Barcode</th>
+                <th style={th}>Price</th>
+                <th style={th}>Category</th>
               </tr>
             </thead>
             <tbody>
-              {labelProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={s.noData}>Search and add products above</td>
+              {filtered.map((p, i) => (
+                <tr key={p.id} style={{ borderBottom: "1px solid #f0f0f0", background: selected.includes(p.id) ? "#f0fdf4" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                  <td style={td}>
+                    <input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleSelect(p.id)}
+                      style={{ accentColor: "#2e7d32" }} />
+                  </td>
+                  <td style={{ ...td, fontWeight: 500 }}>{p.name}</td>
+                  <td style={td}><code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{p.sku}</code></td>
+                  <td style={{ ...td, fontFamily: "monospace", fontSize: 11, color: "#555" }}>{p.barcode}</td>
+                  <td style={{ ...td, color: "#2e7d32", fontWeight: 600 }}>{p.price}</td>
+                  <td style={td}><span style={{ background: "#f3f4f6", borderRadius: 20, padding: "2px 10px", fontSize: 11 }}>{p.category}</span></td>
                 </tr>
-              ) : (
-                labelProducts.map(p => (
-                  <tr key={p.id} style={s.row}>
-                    <td style={s.td}><strong>{p.name}</strong><br /><span style={{ color: "#888", fontSize: 12 }}>{p.sku}</span></td>
-                    <td style={s.td}>
-                      <input type="number" min={1} value={p.qty} style={s.numInput}
-                        onChange={e => updateProduct(p.id, "qty", +e.target.value)} />
-                    </td>
-                    <td style={s.td}>
-                      <input type="date" value={p.packingDate} style={s.numInput}
-                        onChange={e => updateProduct(p.id, "packingDate", e.target.value)} />
-                    </td>
-                    <td style={s.td}>
-                      <select style={s.numInput} value={p.priceGroup}
-                        onChange={e => updateProduct(p.id, "priceGroup", e.target.value)}>
-                        <option>Default</option>
-                        <option>Wholesale</option>
-                        <option>Retail</option>
-                      </select>
-                    </td>
-                    <td style={s.td}>
-                      <button style={s.removeBtn} onClick={() => removeProduct(p.id)}>✕</button>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
-      </div>
 
-      {/* Label info options */}
-      <div style={s.card}>
-        <h2 style={s.cardTitle}>Information to show in Labels</h2>
-        <div style={s.optionsGrid}>
-          {[
-            { key: "productName", label: "Product Name", sizeKey: "productNameSize" },
-            { key: "productVariation", label: "Product Variation (recommended)", sizeKey: "productVariationSize" },
-            { key: "productPrice", label: "Product Price", sizeKey: "productPriceSize" },
-            { key: "businessName", label: "Business name", sizeKey: "businessNameSize" },
-            { key: "packingDate", label: "Print packing date", sizeKey: "packingDateSize" },
-          ].map(opt => (
-            <div key={opt.key} style={s.optionCard}>
-              <label style={s.checkLabel}>
-                <input type="checkbox" checked={options[opt.key]}
-                  onChange={e => setOpt(opt.key, e.target.checked)}
-                  style={{ accentColor: "#6c63ff", marginRight: 8 }} />
-                {opt.label}
-              </label>
-              <div style={s.sizeRow}>
-                <span style={s.sizeLabel}>Size</span>
-                <input type="number" style={s.sizeInput} value={options[opt.sizeKey]}
-                  onChange={e => setOpt(opt.sizeKey, +e.target.value)} />
-              </div>
-            </div>
-          ))}
+        {/* Settings Panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 8, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
+            <h4 style={{ fontWeight: 700, margin: "0 0 16px", color: "#1a1a2e" }}>Label Settings</h4>
 
-          {/* Show Price */}
-          <div style={s.optionCard}>
-            <label style={s.checkLabel}>
-              <span style={{ fontWeight: 600 }}>Show Price:</span>
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-              <span style={s.infoIcon2} title="Tax type for price display">ℹ</span>
-              <select style={s.sizeInput} value={options.showPrice}
-                onChange={e => setOpt("showPrice", e.target.value)}>
-                {PRICE_OPTIONS.map(o => <option key={o}>{o}</option>)}
+            <div style={{ marginBottom: 14 }}>
+              <label style={settingLabel}>Label Size</label>
+              <select value={labelSize} onChange={e => setLabelSize(e.target.value)} style={settingInput}>
+                {LABEL_SIZES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
             </div>
-          </div>
-        </div>
 
-        <hr style={s.divider} />
+            <div style={{ marginBottom: 14 }}>
+              <label style={settingLabel}>Paper Size</label>
+              <select value={paperSize} onChange={e => setPaperSize(e.target.value)} style={settingInput}>
+                {PAPER_SIZES.map(p => <option key={p}>{p}</option>)}
+              </select>
+            </div>
 
-        {/* Barcode setting */}
-        <div style={s.barcodeRow}>
-          <span style={s.sizeLabel}>Barcode setting:</span>
-          <div style={s.barcodeSelectRow}>
-            <span style={s.gearIcon}>⚙</span>
-            <select style={s.barcodeSelect} value={barcodeSetting}
-              onChange={e => setBarcodeSetting(e.target.value)}>
-              {BARCODE_SETTINGS.map(b => <option key={b}>{b}</option>)}
-            </select>
+            <div style={{ marginBottom: 14 }}>
+              <label style={settingLabel}>Copies per product</label>
+              <input type="number" min="1" max="100" value={copies} onChange={e => setCopies(+e.target.value)} style={settingInput} />
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <label style={settingLabel}>Show on Label</label>
+              <label style={checkRow}><input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} style={{ accentColor: "#2e7d32" }} /> Show Price</label>
+              <label style={checkRow}><input type="checkbox" checked={showSKU} onChange={e => setShowSKU(e.target.checked)} style={{ accentColor: "#2e7d32" }} /> Show SKU</label>
+              <label style={checkRow}><input type="checkbox" checked={showBarcode} onChange={e => setShowBarcode(e.target.checked)} style={{ accentColor: "#2e7d32" }} /> Show Barcode</label>
+            </div>
           </div>
+
+          {/* Label Preview */}
+          <div style={{ background: "#fff", borderRadius: 8, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
+            <h4 style={{ fontWeight: 700, margin: "0 0 12px", color: "#1a1a2e" }}>Preview</h4>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 12, background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 80 }}>
+              <div style={{ border: "1px dashed #9ca3af", padding: 8, width: size.width * 0.7, minHeight: size.height * 0.7, fontFamily: "monospace", fontSize: 9, background: "#fff" }}>
+                <div style={{ fontWeight: 700, fontSize: 10, marginBottom: 2 }}>Samsung Galaxy S24 Ultra</div>
+                {showSKU && <div style={{ color: "#555", marginBottom: 2 }}>SKU: SAM-S24U-001</div>}
+                {showBarcode && <div style={{ fontSize: 14, letterSpacing: 2, marginBottom: 2 }}>|||||||||||||||||</div>}
+                {showPrice && <div style={{ fontWeight: 700, color: "#2e7d32" }}>₹1,06,250</div>}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <button style={{ background: "linear-gradient(135deg,#2e7d32,#43a047)", color: "#fff", border: "none", borderRadius: 8, padding: "13px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}
+            onClick={handlePrint}>
+            🖨 Print Labels {selected.length > 0 ? `(${selected.length})` : ""}
+          </button>
+          <button style={{ background: "#fff", border: "1px solid #2e7d32", color: "#2e7d32", borderRadius: 8, padding: "11px 0", fontWeight: 600, fontSize: 14, cursor: "pointer", width: "100%" }}
+            onClick={handleExportExcel}>
+            📊 Export to Excel
+          </button>
         </div>
       </div>
 
-      {/* Preview button */}
-      <div style={s.previewRow}>
-        <button style={s.btnPreview} onClick={handlePreview}>Preview</button>
+      <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 12, marginTop: 32 }}>
+        manod tecnologies - V7.0 | Copyright © 2026 All rights reserved.
       </div>
-
-      {/* Preview Modal */}
-      {showPreview && (
-        <div style={s.overlay}>
-          <div style={s.previewModal}>
-            <div style={s.previewHeader}>
-              <span style={{ fontWeight: 700, fontSize: 16 }}>Label Preview</span>
-              <button style={s.closeBtn} onClick={() => setShowPreview(false)}>✕</button>
-            </div>
-            <div style={s.previewBody}>
-              {labelProducts.map(p => (
-                Array.from({ length: Math.min(p.qty, 4) }).map((_, i) => (
-                  <div key={`${p.id}-${i}`} style={s.labelCard}>
-                    {options.businessName && <div style={{ fontSize: options.businessNameSize, fontWeight: 700, color: "#1a1a2e" }}>Manodtechnologies</div>}
-                    {options.productName && <div style={{ fontSize: options.productNameSize, fontWeight: 600 }}>{p.name}</div>}
-                    {options.productVariation && <div style={{ fontSize: options.productVariationSize, color: "#555" }}>{p.sku}</div>}
-                    {options.productPrice && <div style={{ fontSize: options.productPriceSize, color: "#6c63ff", fontWeight: 700 }}>₹{p.price}</div>}
-                    {options.packingDate && p.packingDate && <div style={{ fontSize: options.packingDateSize, color: "#888" }}>Packed: {p.packingDate}</div>}
-                    {/* Barcode visual */}
-                    <div style={s.barcodeSvg}>
-                      {Array.from({ length: 30 }).map((_, bi) => (
-                        <div key={bi} style={{ ...s.barcodeBar, width: bi % 3 === 0 ? 3 : 1, background: bi % 5 === 0 ? "#fff" : "#111" }} />
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 10, letterSpacing: 2, color: "#333" }}>{p.sku}</div>
-                  </div>
-                ))
-              ))}
-            </div>
-            <div style={s.previewFooter}>
-              <button style={s.btnPrint} onClick={() => window.print()}>🖨 Print</button>
-              <button style={s.btnClose} onClick={() => setShowPreview(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={s.footer}>manod tecnologies - V7.0 | Copyright © 2026 All rights reserved.</div>
     </div>
   );
 }
 
-const s = {
-  page: { fontFamily: "'Segoe UI', sans-serif", color: "#222" },
-  pageTitle: { fontSize: 26, fontWeight: 700, color: "#1a1a2e", marginBottom: 24, display: "flex", alignItems: "center", gap: 10 },
-  infoIcon: { fontSize: 16, color: "#6c63ff", cursor: "help" },
-  infoIcon2: { fontSize: 14, color: "#6c63ff", cursor: "help" },
-  card: { background: "#fff", borderRadius: 10, padding: "28px 32px", border: "1px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 20 },
-  cardTitle: { fontSize: 17, fontWeight: 600, color: "#1a1a2e", marginBottom: 20 },
-  searchRow: { display: "flex", alignItems: "center", border: "1px solid #d1d5db", borderRadius: 6, overflow: "hidden", marginBottom: 16, maxWidth: 700, position: "relative" },
-  searchIcon: { padding: "0 12px", fontSize: 16, background: "#f9fafb", borderRight: "1px solid #e5e7eb", lineHeight: "42px" },
-  searchInput: { flex: 1, border: "none", outline: "none", padding: "10px 14px", fontSize: 14, fontFamily: "inherit" },
-  dropdown: { position: "absolute", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, zIndex: 100, width: 480, maxHeight: 200, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,0.12)", marginTop: -8 },
-  dropItem: { padding: "10px 16px", cursor: "pointer", fontSize: 14, transition: "background 0.15s" },
-  tableWrap: { overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 8 },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 14 },
-  theadRow: { background: "#f9fafb" },
-  th: { padding: "11px 14px", textAlign: "left", fontWeight: 600, color: "#374151", borderBottom: "2px solid #e5e7eb" },
-  td: { padding: "10px 14px", borderBottom: "1px solid #f0f0f0", verticalAlign: "middle" },
-  row: { background: "#fff" },
-  noData: { textAlign: "center", padding: 32, color: "#9ca3af", fontSize: 14 },
-  numInput: { border: "1px solid #d1d5db", borderRadius: 5, padding: "6px 10px", fontSize: 13, width: 100, outline: "none" },
-  removeBtn: { background: "none", border: "1px solid #fca5a5", borderRadius: 4, color: "#ef4444", cursor: "pointer", padding: "4px 10px", fontSize: 14 },
-  optionsGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 },
-  optionCard: { border: "1px solid #e5e7eb", borderRadius: 8, padding: "14px 16px", background: "#fafafa" },
-  checkLabel: { display: "flex", alignItems: "center", fontSize: 13, fontWeight: 500, cursor: "pointer", marginBottom: 10 },
-  sizeRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 6 },
-  sizeLabel: { fontSize: 13, fontWeight: 600, color: "#6b7280" },
-  sizeInput: { border: "1px solid #d1d5db", borderRadius: 5, padding: "5px 10px", fontSize: 13, width: 80, outline: "none" },
-  divider: { border: "none", borderTop: "1px solid #f0f0f0", margin: "20px 0" },
-  barcodeRow: { display: "flex", flexDirection: "column", gap: 10 },
-  barcodeSelectRow: { display: "flex", alignItems: "center", gap: 10 },
-  gearIcon: { fontSize: 18, color: "#6b7280" },
-  barcodeSelect: { border: "1px solid #d1d5db", borderRadius: 5, padding: "7px 12px", fontSize: 13, outline: "none", maxWidth: 500 },
-  previewRow: { display: "flex", justifyContent: "center", marginBottom: 24 },
-  btnPreview: { background: "#6c63ff", color: "#fff", border: "none", borderRadius: 8, padding: "13px 48px", fontWeight: 700, fontSize: 16, cursor: "pointer" },
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" },
-  previewModal: { background: "#fff", borderRadius: 10, width: 700, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" },
-  previewHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid #e5e7eb" },
-  closeBtn: { background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#555" },
-  previewBody: { padding: 24, overflowY: "auto", display: "flex", flexWrap: "wrap", gap: 16 },
-  labelCard: { border: "2px solid #e5e7eb", borderRadius: 8, padding: "14px 16px", width: 180, display: "flex", flexDirection: "column", gap: 4, background: "#fff" },
-  barcodeSvg: { display: "flex", height: 36, alignItems: "flex-end", gap: 1, margin: "6px 0" },
-  barcodeBar: { height: "100%", borderRadius: 1 },
-  previewFooter: { display: "flex", justifyContent: "center", gap: 12, padding: "16px 24px", borderTop: "1px solid #e5e7eb" },
-  btnPrint: { background: "#374151", color: "#fff", border: "none", borderRadius: 6, padding: "10px 28px", fontWeight: 600, cursor: "pointer" },
-  btnClose: { background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db", borderRadius: 6, padding: "10px 28px", fontWeight: 600, cursor: "pointer" },
-  footer: { textAlign: "center", color: "#9ca3af", fontSize: 12, marginTop: 32 },
-};
+const th = { textAlign: "left", padding: "10px 12px", fontWeight: 600, borderBottom: "2px solid #e5e7eb", color: "#374151" };
+const td = { padding: "9px 12px", verticalAlign: "middle" };
+const settingLabel = { display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 };
+const settingInput = { width: "100%", padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" };
+const checkRow = { display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", marginBottom: 6, padding: "4px 0" };

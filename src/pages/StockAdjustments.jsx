@@ -50,7 +50,10 @@ const STYLES = `
     transition:transform .15s, box-shadow .15s, filter .15s; text-decoration:none;
   }
   .sa-btn-add:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(59,130,246,.45); filter:brightness(1.06); }
-
+.sa-btn-add-fixed {
+  position: relative;
+  z-index: 10;
+}
   .sa-card { background:var(--surface); border-radius:var(--radius-lg); box-shadow:var(--shadow); border:1px solid var(--border); overflow:hidden; }
   .sa-card-header { padding:18px 24px 0; }
   .sa-card-title { font-family:'Sora',sans-serif; font-size:1rem; font-weight:600; color:var(--green-900); }
@@ -345,7 +348,10 @@ export function ListStockAdjustments() {
           <div className="sa-title">Stock Adjustments</div>
           <div className="sa-breadcrumb">Home / <span>Stock Adjustment</span> / List</div>
         </div>
-        <Link to="/stock-adjustments/create" className="sa-btn-add">
+        <Link
+  to="/stock-adjustments/create"
+  className="sa-btn-add sa-btn-add-fixed"
+>
           <IconPlus /> Add
         </Link>
       </div>
