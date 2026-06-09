@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
 
 // ─── Export Utilities ────────────────────────────────────────────────────────
@@ -311,6 +311,119 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
   );
 }
 
+// ─── ADVANCED FILTER PANEL ────────────────────────────────────────────────────
+function AdvancedFilter({ onFilter, type }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [city, setCity] = useState("");
+  const [payTerm, setPayTerm] = useState("");
+  const [customerGroup, setCustomerGroup] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const applyFilters = () => {
+    onFilter({ name, mobile, city, payTerm, customerGroup, dateFrom, dateTo });
+  };
+
+  const resetFilters = () => {
+    setName(""); setMobile(""); setCity(""); setPayTerm("");
+    setCustomerGroup("All"); setDateFrom(""); setDateTo("");
+    onFilter({});
+  };
+
+  const activeCount = [name, mobile, city, payTerm, dateFrom, dateTo].filter(Boolean).length +
+    (customerGroup !== "All" ? 1 : 0);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 8, marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+      {/* Toggle bar */}
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", cursor: "pointer" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+            {open ? "▲" : "▼"} Filters
+          </span>
+          {activeCount > 0 && (
+            <span style={{ background: "#16a34a", color: "#fff", fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 10 }}>
+              {activeCount} active
+            </span>
+          )}
+        </div>
+        {activeCount > 0 && (
+          <button onClick={(e) => { e.stopPropagation(); resetFilters(); }}
+            style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
+            ✕ Clear all
+          </button>
+        )}
+      </div>
+
+      {/* Filter fields */}
+      {open && (
+        <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginTop: 14 }}>
+            <div>
+              <label style={fLbl}>Name / Business</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Search name..." style={fInp} />
+            </div>
+            <div>
+              <label style={fLbl}>Mobile</label>
+              <input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" style={fInp} />
+            </div>
+            <div>
+              <label style={fLbl}>City / Address</label>
+              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Chennai, Nagercoil" style={fInp} />
+            </div>
+            <div>
+              <label style={fLbl}>Pay Term</label>
+              <select value={payTerm} onChange={(e) => setPayTerm(e.target.value)} style={fInp}>
+                <option value="">All Pay Terms</option>
+                <option>7 days</option>
+                <option>15 days</option>
+                <option>30 days</option>
+                <option>45 days</option>
+                <option>60 days</option>
+              </select>
+            </div>
+            {type === "customer" && (
+              <div>
+                <label style={fLbl}>Customer Group</label>
+                <select value={customerGroup} onChange={(e) => setCustomerGroup(e.target.value)} style={fInp}>
+                  <option>All</option>
+                  <option>VIP</option>
+                  <option>Regular</option>
+                  <option>Wholesale</option>
+                  <option>Retail</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label style={fLbl}>Added From</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={fInp} />
+            </div>
+            <div>
+              <label style={fLbl}>Added To</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={fInp} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button onClick={applyFilters} style={{ background: GREEN, color: "#fff", border: "none", borderRadius: 6, padding: "8px 22px", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: GREEN_SHADOW }}>
+              🔍 Apply Filters
+            </button>
+            <button onClick={resetFilters} style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+              Reset
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+const fLbl = { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 };
+const fInp = { border: "1px solid #d1d5db", borderRadius: 6, padding: "7px 10px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none" };
+
 // ─── SUPPLIERS PAGE ───────────────────────────────────────────────────────────
 const initialSuppliers = [
   { contactType: "Suppliers", contactId: "SUP0001", businessName: "Sri Murugan Traders", name: "Mr Rajan K", email: "rajan@srimurugan.com", taxNumber: "29ABCDE1234F1Z5", payTerm: "30 days", openingBalance: "₹12,500.00", advanceBalance: "₹0.00", addedOn: "12/01/2025", address: "42, Gandhi Nagar, Chennai", mobile: "9876543210", totalPurchaseDue: "₹45,200.00", totalPurchaseReturnDue: "₹0.00" },
@@ -325,13 +438,20 @@ export function SuppliersPage() {
   const [editContact, setEditContact] = useState(null);
   const [search, setSearch] = useState("");
   const [showEntries, setShowEntries] = useState(25);
+  const [filterParams, setFilterParams] = useState({});
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Address", "Mobile", "Total Purchase Due", "Total Purchase Return Due"];
   const [colVisible, setColVisible] = useState({});
 
-  const filtered = contacts.filter((c) =>
-    Object.values(c).join(" ").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = contacts.filter((c) => {
+    const q = search.toLowerCase();
+    const matchSearch = Object.values(c).join(" ").toLowerCase().includes(q);
+    const matchName = !filterParams.name || c.name.toLowerCase().includes(filterParams.name.toLowerCase()) || c.businessName.toLowerCase().includes(filterParams.name.toLowerCase());
+    const matchMobile = !filterParams.mobile || c.mobile.includes(filterParams.mobile);
+    const matchCity = !filterParams.city || c.address.toLowerCase().includes(filterParams.city.toLowerCase());
+    const matchPayTerm = !filterParams.payTerm || c.payTerm === filterParams.payTerm;
+    return matchSearch && matchName && matchMobile && matchCity && matchPayTerm;
+  });
 
   const buildTableHTML = () => `<table border="1" cellpadding="8"><tr>${colList.map((h) => `<th>${h}</th>`).join("")}</tr>
     ${filtered.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.address}</td><td>${c.mobile}</td><td>${c.totalPurchaseDue}</td><td>${c.totalPurchaseReturnDue}</td></tr>`).join("")}</table>`;
@@ -342,8 +462,8 @@ export function SuppliersPage() {
     <div style={pageStyle}>
       <PageHeader title="Suppliers" subtitle="Manage your Suppliers" onAdd={() => { setEditContact(null); setShowModal(true); }} />
 
-      {/* Filters Bar */}
-      <div style={filterBar}><span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>▼ Filters</span></div>
+      {/* Advanced Filters */}
+      <AdvancedFilter onFilter={setFilterParams} type="supplier" />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Suppliers</h3>
@@ -454,13 +574,20 @@ export function CustomersPage() {
   const [editContact, setEditContact] = useState(null);
   const [search, setSearch] = useState("");
   const [showEntries, setShowEntries] = useState(25);
+  const [filterParams, setFilterParams] = useState({});
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Credit Limit", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Customer Group", "Address", "Mobile"];
   const [colVisible, setColVisible] = useState({});
 
-  const filtered = contacts.filter((c) =>
-    Object.values(c).join(" ").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = contacts.filter((c) => {
+    const q = search.toLowerCase();
+    const matchSearch = Object.values(c).join(" ").toLowerCase().includes(q);
+    const matchName = !filterParams.name || c.name.toLowerCase().includes(filterParams.name.toLowerCase());
+    const matchMobile = !filterParams.mobile || c.mobile.includes(filterParams.mobile);
+    const matchGroup = !filterParams.customerGroup || filterParams.customerGroup === "All" || c.customerGroup === filterParams.customerGroup;
+    const matchCity = !filterParams.city || c.address.toLowerCase().includes(filterParams.city.toLowerCase());
+    return matchSearch && matchName && matchMobile && matchGroup && matchCity;
+  });
 
   const buildTableHTML = () => `<table border="1" cellpadding="8"><tr>${colList.map((h) => `<th>${h}</th>`).join("")}</tr>
     ${filtered.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.creditLimit}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.customerGroup}</td><td>${c.address}</td><td>${c.mobile}</td></tr>`).join("")}</table>`;
@@ -471,7 +598,7 @@ export function CustomersPage() {
     <div style={pageStyle}>
       <PageHeader title="Customers" subtitle="Manage your Customers" onAdd={() => { setEditContact(null); setShowModal(true); }} />
 
-      <div style={filterBar}><span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>▼ Filters</span></div>
+      <AdvancedFilter onFilter={setFilterParams} type="customer" />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Customers</h3>
@@ -784,27 +911,13 @@ export default function Contacts() {
   return <SuppliersPage />;
 }
 
-// ─── Scroll hook — true once user has scrolled > 60px ────────────────────────
-function useScrolled(threshold = 60) {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const el = document.getElementById("erp-main-content") || window;
-    const onScroll = () => setScrolled((el.scrollTop ?? el.scrollY ?? 0) > threshold);
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [threshold]);
-  return scrolled;
-}
-
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 const GREEN = "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)";
 const GREEN_SHADOW = "0 3px 10px rgba(34,197,94,0.35)";
 
-const pageStyle = { fontFamily: "'Segoe UI', sans-serif", background: "#f0f4f1", minHeight: "100vh", paddingTop: 76 };
-// stickyHeader is now built inline per page using useScrolled
-const pageTitle = { margin: 0, fontSize: 26, fontWeight: 700, color: "#1a202c" };
+const pageStyle = { fontFamily: "'Segoe UI', sans-serif", background: "#f0f4f1", minHeight: "100vh", padding: 0 };
+const pageTitle = { margin: 0, fontSize: 24, fontWeight: 700, color: "#1a202c" };
 const pageSubtitle = { fontSize: 13, color: "#718096" };
-// addBtn is rendered conditionally via scrolled state — see PageHeader component below
 const filterBar = { background: "#fff", borderRadius: 8, padding: "10px 16px", marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", cursor: "pointer" };
 const card = { background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", marginBottom: 20 };
 const tbl = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
@@ -827,52 +940,37 @@ const editBtnStyle = { background: "#fff", border: "1px solid #d1d5db", borderRa
 const delBtnStyle = { background: "#fff", border: "1px solid #fca5a5", borderRadius: 4, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#dc2626", fontWeight: 500 };
 const greenBtn = { background: GREEN, color: "#fff", border: "none", borderRadius: 6, padding: "10px 28px", fontWeight: 700, fontSize: 14, cursor: "pointer", boxShadow: GREEN_SHADOW };
 const darkBtn = { background: "#374151", color: "#fff", border: "none", borderRadius: 6, padding: "10px 24px", fontSize: 14, cursor: "pointer" };
-const hoverCss = `.tr-hover:hover td { background: #f7fafc !important; } input:focus, select:focus { border-color: #16a34a !important; box-shadow: 0 0 0 2px rgba(34,197,94,0.15); } .add-fab { transition: opacity 0.25s, transform 0.25s; }`;
+const hoverCss = `.tr-hover:hover td { background: #f7fafc !important; } input:focus, select:focus { border-color: #16a34a !important; box-shadow: 0 0 0 2px rgba(34,197,94,0.15); }`;
 
-// ─── Page Header — title always visible, Add button only appears when scrolled ──
+// ─── Page Header — title on left, Add button FIXED top-right always visible ──
 function PageHeader({ title, subtitle, onAdd }) {
-  const scrolled = useScrolled(60);
   return (
     <>
-      {/* Static page title row — NO add button here */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 16px", marginBottom: 4 }}>
-        <div>
-          <h2 style={pageTitle}>{title}</h2>
-          <span style={pageSubtitle}>{subtitle}</span>
-        </div>
-        {/* Add button shown inline ONLY before any scroll happens — fades out once floating takes over */}
-        {onAdd && (
-          <button
-            onClick={onAdd}
-            style={{
-              background: GREEN, color: "#fff", border: "none", borderRadius: 50,
-              padding: "11px 26px", fontSize: 15, fontWeight: 700,
-              cursor: "pointer", boxShadow: GREEN_SHADOW,
-              whiteSpace: "nowrap", flexShrink: 0,
-              opacity: scrolled ? 0 : 1,
-              pointerEvents: scrolled ? "none" : "auto",
-              transition: "opacity 0.25s",
-            }}
-          >
-            ＋ Add
-          </button>
-        )}
+      {/* Page title — always visible */}
+      <div style={{ paddingBottom: 16, marginBottom: 4 }}>
+        <h2 style={pageTitle}>{title}</h2>
+        <span style={pageSubtitle}>{subtitle}</span>
       </div>
 
-      {/* Floating Add button — fixed top-right, slides in only AFTER scrolling 60px */}
+      {/* Add button — fixed to top-right of screen, always visible from page open */}
       {onAdd && (
         <button
           onClick={onAdd}
           style={{
-            position: "fixed", top: 70, right: 28, zIndex: 999,
-            background: GREEN, color: "#fff", border: "none",
-            borderRadius: 50, padding: "12px 28px",
-            fontSize: 15, fontWeight: 700, cursor: "pointer",
-            boxShadow: "0 6px 20px rgba(34,197,94,0.45)",
-            opacity: scrolled ? 1 : 0,
-            transform: scrolled ? "translateY(0)" : "translateY(-10px)",
-            pointerEvents: scrolled ? "auto" : "none",
-            transition: "opacity 0.25s, transform 0.25s",
+            position: "fixed",
+            top: 70,        /* just below the 60px TopHeader */
+            right: 24,
+            zIndex: 400,    /* below TopHeader (500) but above page content */
+            background: GREEN,
+            color: "#fff",
+            border: "none",
+            borderRadius: 50,
+            padding: "10px 24px",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(34,197,94,0.45)",
+            whiteSpace: "nowrap",
           }}
         >
           ＋ Add

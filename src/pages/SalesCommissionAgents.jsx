@@ -56,9 +56,8 @@ const emptyForm = {
   salesThisMonth: 0, totalEarned: 0, joinDate: "", region: "", notes: "",
 };
 
-// ─── Agent Form (Add / Edit) ─────────────────────────────────────
-function AgentFormPage({ onBack, onSave, editAgent }) {
-  function Field({ label, required, children }) {
+// ─── Field Component (MUST be outside AgentFormPage to prevent remount) ──────
+function Field({ label, required, children }) {
   return (
     <div style={fStyles.fieldWrap}>
       <label style={fStyles.label}>
@@ -69,6 +68,9 @@ function AgentFormPage({ onBack, onSave, editAgent }) {
     </div>
   );
 }
+
+// ─── Agent Form (Add / Edit) ─────────────────────────────────────
+function AgentFormPage({ onBack, onSave, editAgent }) {
   const [form, setForm] = useState(editAgent ? { ...editAgent } : { ...emptyForm });
   const isEdit = !!editAgent;
 

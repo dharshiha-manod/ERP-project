@@ -1,14 +1,12 @@
 /**
  * TopHeader.jsx — Manod ERP
- * Fixed:
- *  - paddingTop: 60px added to page content via CSS injection so nothing hides under header
- *  - left: 260px matches sidebar width exactly
- *  - Breathing room: header has proper vertical padding
- *  - Calculator, notifications, account dropdown all unchanged
+ * Updated: added ThemeSwitcher button. All original features kept intact.
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../pages/ThemeContext";       // ← NEW
+import ThemeSwitcher from "./ThemeSwitcher";            // ← NEW
 
 /* ─── outside click hook ─────────────────────────────────────────────────── */
 function useOutsideClick(ref, cb) {
@@ -43,11 +41,7 @@ function Calculator() {
   };
 
   const digit = (d) => {
-    if (fresh) {
-      setDisplay(d === "." ? "0." : String(d));
-      setFresh(false);
-      return;
-    }
+    if (fresh) { setDisplay(d === "." ? "0." : String(d)); setFresh(false); return; }
     setDisplay((prev) => {
       if (d === "." && prev.includes(".")) return prev;
       if (prev === "0" && d !== ".") return String(d);
@@ -60,13 +54,9 @@ function Calculator() {
     if (pending !== null && !fresh) {
       const result = evaluate(pending, cur, op);
       if (result === null) { setDisplay("Error"); reset(); return; }
-      setDisplay(String(result));
-      setPending(result);
-    } else {
-      setPending(cur);
-    }
-    setOp(nextOp);
-    setFresh(true);
+      setDisplay(String(result)); setPending(result);
+    } else { setPending(cur); }
+    setOp(nextOp); setFresh(true);
   };
 
   const equals = () => {
@@ -431,13 +421,10 @@ function IBtn({ children, onClick, active, title, badge = 0 }) {
 
 /* ══════════════════════════════════════════════════════════════════════════
    TOP HEADER  (main export)
-   KEY FIX: injects a global <style> that gives every page content area
-   paddingTop: 68px so nothing hides under the fixed 60px header.
-   Your layout wrapper (the div next to the sidebar) just needs
-   id="erp-main-content" or the global style takes care of it automatically.
 ══════════════════════════════════════════════════════════════════════════ */
 export default function TopHeader({ businessName = "Manodtechnologies" }) {
-  const navigate = useNavigate();
+  const navigate    = useNavigate();
+  const { theme }   = useTheme();      // ← live theme colours
 
   const [profitOpen,  setProfitOpen]  = useState(false);
   const [calcOpen,    setCalcOpen]    = useState(false);
@@ -472,40 +459,32 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
   const name    = user.name || "Dharshiha C";
   const initial = name.charAt(0).toUpperCase();
 
+  /* shared button style for "Today's Profit" and "POS" */
+  const tbBtn = {
+    display: "flex", alignItems: "center", gap: "6px",
+    background: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: "8px", padding: "5px 13px",
+    color: "#fff", fontSize: "12.5px", fontWeight: 700,
+    cursor: "pointer", whiteSpace: "nowrap",
+  };
+
   return (
     <>
-      {/*
-        ── Global spacing fix ──────────────────────────────────────────────
-        Injects CSS so the main content area (beside the sidebar) always
-        has enough top padding to clear this 60px fixed header.
-        The selector targets the direct sibling of the sidebar, or any
-        element with id="erp-main-content".
-      */}
       <style>{`
-        #erp-main-content,
-        .erp-content-area {
-          padding-top: 68px !important;
-        }
-        /* Ensure scroll detection works on the main content wrapper */
-        #erp-main-content {
-          overflow-y: auto;
-          height: 100vh;
-        }
+        #erp-main-content, .erp-content-area { padding-top: 68px !important; }
+        #erp-main-content { overflow-y: auto; height: 100vh; }
+        @keyframes hSpin { to { transform:rotate(360deg); } }
       `}</style>
 
       <div style={{
-        position: "fixed",
-        top: 0,
-        left: "260px",   /* must match your sidebar width exactly */
-        right: 0,
-        height: "60px",
-        zIndex: 500,
-        background: "linear-gradient(90deg, #14532d 0%, #166534 100%)",
-        display: "flex",
-        alignItems: "center",
-        padding: "0 20px",
-        gap: "6px",
+        position: "fixed", top: 0, left: "260px", right: 0,
+        height: "60px", zIndex: 500,
+        background: theme.topbarGradient,   /* ← themed gradient */
+        display: "flex", alignItems: "center",
+        padding: "0 20px", gap: "6px",
         boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+        transition: "background 0.3s ease",
       }}>
 
         {/* Business name + online dot */}
@@ -516,10 +495,8 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
           <span title="Online" style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 7px #4ade80", flexShrink: 0 }} />
         </div>
 
-        {/* Today's Profit button */}
-        <button
-          onClick={() => { closeAll(); setProfitOpen(true); }}
-          style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: "8px", padding: "5px 13px", color: "#fff", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+        {/* Today's Profit */}
+        <button onClick={() => { closeAll(); setProfitOpen(true); }} style={tbBtn}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.26)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}>
           <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -528,10 +505,8 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
           Today's Profit
         </button>
 
-        {/* POS button */}
-        <button
-          onClick={() => navigate("/pos")}
-          style={{ display: "flex", alignItems: "center", gap: "5px", background: "rgba(255,255,255,0.14)", border: "none", borderRadius: "8px", padding: "5px 12px", color: "#fff", fontSize: "12.5px", fontWeight: 700, cursor: "pointer" }}
+        {/* POS */}
+        <button onClick={() => navigate("/pos")} style={{ ...tbBtn, border: "none" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.26)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}>
           <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -539,6 +514,9 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
           </svg>
           POS
         </button>
+
+        {/* ── 🎨 Theme Switcher ── inserted right after POS */}
+        <ThemeSwitcher />
 
         {/* Quick Create */}
         <div ref={quickRef} style={{ position: "relative" }}>
@@ -587,8 +565,7 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
 
         {/* Account */}
         <div ref={accountRef} style={{ position: "relative" }}>
-          <button
-            onClick={only(setAccountOpen)}
+          <button onClick={only(setAccountOpen)}
             style={{ display: "flex", alignItems: "center", gap: "7px", background: accountOpen ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.12)", border: "none", borderRadius: "8px", padding: "4px 10px 4px 5px", cursor: "pointer" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.22)")}
             onMouseLeave={(e) => { if (!accountOpen) e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}>
@@ -601,7 +578,7 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
           {accountOpen && <AccountDropdown onClose={() => setAccountOpen(false)} onSignOut={signOut} />}
         </div>
 
-        {/* Quick sign-out icon */}
+        {/* Quick sign-out */}
         <IBtn title="Sign Out" onClick={signOut}>
           <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#fca5a5" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -609,6 +586,7 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
             <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
         </IBtn>
+
       </div>
 
       {profitOpen && <ProfitModal onClose={() => setProfitOpen(false)} />}

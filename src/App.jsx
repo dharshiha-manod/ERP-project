@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ThemeProvider } from "./pages/ThemeContext";   // ← NEW
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
 import Dashboard from "./pages/Dashboard";
@@ -29,14 +30,9 @@ import { HRMRoutes, EssentialsRoutes } from "./pages/HRM";
 import { CRMRoutes } from "./pages/CRM";
 import Settings from "./pages/Settings";
 import { ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport, CustomerGroupsReport, StockReport, StockAdjustmentReport, TrendingProductsReport, ItemsReport, ProductPurchaseReport, ProductSellReport, PurchasePaymentReport, SellPaymentReport, ExpenseReport, RegisterReport, SalesRepresentativeReport, ActivityLogReport } from "./pages/Reports";
-
-// ── New pages from header ──
 import MyProfile      from "./pages/MyProfile";
 import ChangePassword from "./pages/ChangePassword";
-
-// ── Auth ──
 import Login from "./pages/Login";
-
 import "./App.css";
 
 function isAuthenticated() {
@@ -54,23 +50,17 @@ function AppLayout() {
     <div style={{ display: "flex" }}>
       <Sidebar />
       <TopHeader businessName="Manodtechnologies" />
-      <main style={{ marginLeft: "255px", marginTop: "48px", flex: 1, minHeight: "calc(100vh - 48px)", background: "#f0f4f1", padding: "24px 32px" }}>
+      <main style={{ marginLeft: "255px", marginTop: "60px", flex: 1, minHeight: "calc(100vh - 60px)", background: "var(--manod-page-bg, #f0f4f1)", padding: "24px 32px" }}>
         <Routes>
           <Route path="/"                           element={<Dashboard />} />
           <Route path="/users"                      element={<Users />} />
           <Route path="/roles"                      element={<Roles />} />
           <Route path="/sales-commission-agents"    element={<SalesCommissionAgents />} />
-
-          {/* ── Profile & Password (header dropdown) ── */}
           <Route path="/profile"                    element={<MyProfile />} />
           <Route path="/change-password"            element={<ChangePassword />} />
-
-          {/* ── Contacts ── */}
           <Route path="/contacts"                   element={<Contacts />} />
           <Route path="/customer-group"             element={<CustomerGroupsPage />} />
           <Route path="/contacts/import"            element={<ImportContactsPage />} />
-
-          {/* ── Products ── */}
           <Route path="/products/"                  element={<ListProducts />} />
           <Route path="/products/create"            element={<AddProductPage />} />
           <Route path="/update-product-price"       element={<UpdatePrice />} />
@@ -83,18 +73,12 @@ function AppLayout() {
           <Route path="/taxonomies"                 element={<Categories />} />
           <Route path="/brands"                     element={<Brands />} />
           <Route path="/warranties"                 element={<Warranties />} />
-
-          {/* ── Manufacturing ── */}
           <Route path="/manufacturing"              element={<Manufacturing />} />
           <Route path="/manufacturing/*"            element={<Manufacturing />} />
-
-          {/* ── Purchases ── */}
           <Route path="/purchases"                  element={<Purchases />} />
           <Route path="/purchases/create"           element={<AddPurchasePage />} />
           <Route path="/purchase-return"            element={<PurchaseReturn />} />
           <Route path="/purchase-return/create"     element={<PurchaseReturn />} />
-
-          {/* ── Sell ── */}
           <Route path="/sells"                      element={<AllSales />} />
           <Route path="/sells/create"               element={<AddSale />} />
           <Route path="/pos"                        element={<ListPOS />} />
@@ -107,26 +91,18 @@ function AppLayout() {
           <Route path="/shipments"                  element={<Shipments />} />
           <Route path="/discount"                   element={<Discounts />} />
           <Route path="/import-sales"               element={<ImportSales />} />
-
-          {/* ── Stock ── */}
           <Route path="/stock-transfers"            element={<ListStockTransfers />} />
           <Route path="/stock-transfers/create"     element={<AddStockTransfer />} />
           <Route path="/stock-adjustments"          element={<ListStockAdjustments />} />
           <Route path="/stock-adjustments/create"   element={<AddStockAdjustment />} />
-
-          {/* ── Expenses ── */}
           <Route path="/expenses"                   element={<ListExpenses />} />
           <Route path="/expenses/create"            element={<AddExpense />} />
           <Route path="/import-expenses"            element={<ImportExpenses />} />
           <Route path="/expense-categories"         element={<ExpenseCategories />} />
-
-          {/* ── Misc ── */}
           <Route path="/notifications"              element={<NotificationTemplates />} />
           <Route path="/crm/*"                      element={<CRMRoutes />} />
           <Route path="/hrm/*"                      element={<HRMRoutes />} />
           <Route path="/essentials/*"               element={<EssentialsRoutes />} />
-
-          {/* ── Settings ── */}
           <Route path="/settings"                   element={<Settings defaultTab="business" />} />
           <Route path="/settings/business"          element={<Settings defaultTab="business" />} />
           <Route path="/settings/tax-rates"         element={<Settings defaultTab="taxrates" />} />
@@ -134,8 +110,6 @@ function AppLayout() {
           <Route path="/settings/account"           element={<Settings defaultTab="business" />} />
           <Route path="/settings/barcode"           element={<Settings defaultTab="barcode" />} />
           <Route path="/settings/receipt-printer"   element={<Settings defaultTab="printers" />} />
-
-          {/* ── Reports ── */}
           <Route path="/reports"                      element={<ProfitLossReport />} />
           <Route path="/reports/profit-loss"          element={<ProfitLossReport />} />
           <Route path="/reports/purchase-sale"        element={<PurchaseSaleReport />} />
@@ -162,12 +136,14 @@ function AppLayout() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-        <Route path="/*"     element={<PrivateRoute><AppLayout /></PrivateRoute>} />
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>          {/* ← wraps everything so all components share theme */}
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/*"     element={<PrivateRoute><AppLayout /></PrivateRoute>} />
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

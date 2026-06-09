@@ -1,46 +1,118 @@
 import { useState, useRef } from "react";
 import { Link, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 
-/* ─── shared palette ─── */
+/* ═══════════════════════════════════════════════════════════
+   DESIGN TOKENS  — matches Reports.jsx green palette
+═══════════════════════════════════════════════════════════ */
+const G = {
+  green:   "#2e7d32",
+  green2:  "#43a047",
+  greenBg: "#e8f5e9",
+  white:   "#ffffff",
+  bg:      "#f0f4f1",
+  border:  "#d4e6d5",
+  text:    "#1b2e1c",
+  muted:   "#607d63",
+  rowHov:  "#f4faf4",
+  red:     "#c62828",
+  redBg:   "#fce4ec",
+  amber:   "#e65100",
+  amberBg: "#fff3e0",
+  blue:    "#1565c0",
+  blueBg:  "#e3f2fd",
+  purple:  "#6a1b9a",
+  purpleBg:"#f3e5f5",
+};
+
+/* backward compat alias */
 const C = {
-  green: "#2d6a4f", greenLight: "#52b788", greenBg: "#f0f4f1",
-  white: "#fff", border: "#e2e8f0", text: "#1a202c", muted: "#718096",
-  danger: "#e53e3e", purple: "#553c9a", purpleLight: "#6b46c1",
+  green: G.green, greenLight: G.green2, greenBg: G.greenBg,
+  white: G.white, border: G.border, text: G.text, muted: G.muted,
+  danger: G.red, purple: G.purple, purpleLight: G.purple,
 };
 
-const Btn = ({ children, onClick, variant = "primary", type = "button", style = {} }) => {
-  const base = {
-    padding: "8px 18px", borderRadius: 6, border: "none", cursor: "pointer",
-    fontWeight: 600, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 6, transition: "opacity .15s",
-    ...(variant === "primary" && { background: C.purpleLight, color: "#fff" }),
-    ...(variant === "dark"    && { background: "#2d3748", color: "#fff" }),
-    ...(variant === "green"   && { background: C.green, color: "#fff" }),
-    ...(variant === "outline" && { background: "#fff", color: C.text, border: `1px solid ${C.border}` }),
-    ...(variant === "danger"  && { background: C.danger, color: "#fff" }),
-    ...style,
-  };
-  return <button type={type} style={base} onClick={onClick}>{children}</button>;
-};
-
-const Badge = ({ children, color = C.greenLight }) => (
-  <span style={{ background: color + "22", color, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{children}</span>
+/* ─── Core button (green, matches Reports) ─── */
+const GreenBtn = ({ children, onClick, style = {}, variant = "fill" }) => (
+  <button onClick={onClick} style={{
+    background: variant === "fill" ? G.green : "#fff",
+    color: variant === "fill" ? "#fff" : G.green,
+    border: variant === "fill" ? "none" : `1px solid ${G.green}`,
+    borderRadius: 8, padding: "9px 20px", fontWeight: 700,
+    fontSize: 13, cursor: "pointer", display: "inline-flex",
+    alignItems: "center", gap: 7, fontFamily: "'Inter',sans-serif",
+    transition: "background .15s", ...style,
+  }}
+    onMouseEnter={e => e.currentTarget.style.background = variant === "fill" ? "#1b5e20" : G.greenBg}
+    onMouseLeave={e => e.currentTarget.style.background = variant === "fill" ? G.green : "#fff"}
+  >{children}</button>
 );
 
+const DarkBtn = ({ children, onClick, style = {} }) => (
+  <button onClick={onClick} style={{
+    background: "#fff", color: G.muted, border: `1px solid ${G.border}`,
+    borderRadius: 8, padding: "9px 18px", fontWeight: 600, fontSize: 13,
+    cursor: "pointer", fontFamily: "'Inter',sans-serif", ...style,
+  }}>{children}</button>
+);
+
+const RedBtn = ({ children, onClick }) => (
+  <button onClick={onClick} style={{
+    background: G.redBg, color: G.red, border: "none",
+    borderRadius: 6, padding: "5px 12px", fontWeight: 700,
+    fontSize: 12, cursor: "pointer",
+  }}>{children}</button>
+);
+
+/* ─── Shared UI ─── */
 const Card = ({ children, style = {} }) => (
-  <div style={{ background: C.white, borderRadius: 10, padding: 20, boxShadow: "0 1px 4px #0001", ...style }}>{children}</div>
+  <div style={{ background: G.white, borderRadius: 12, padding: 20, border: `1px solid ${G.border}`, boxShadow: "0 1px 4px rgba(46,125,50,.07)", ...style }}>{children}</div>
 );
 
 const NoData = () => (
-  <div style={{ textAlign: "center", padding: "28px 0", color: C.muted, fontSize: 14 }}>No data available in table</div>
+  <div style={{ textAlign: "center", padding: "32px 0", color: G.muted, fontSize: 14 }}>No data available in table</div>
 );
 
-function Modal({ title, onClose, children }) {
+function StatusPill({ text, map = {} }) {
+  const defaults = {
+    Pending:   { bg: G.amberBg, color: G.amber },
+    "In Progress": { bg: G.blueBg, color: G.blue },
+    Completed: { bg: G.greenBg, color: G.green },
+    "Not Started": { bg: "#f5f5f5", color: G.muted },
+    Paid:      { bg: G.greenBg, color: G.green },
+    Due:       { bg: G.redBg, color: G.red },
+    Approved:  { bg: G.greenBg, color: G.green },
+    Rejected:  { bg: G.redBg, color: G.red },
+  };
+  const s = map[text] || defaults[text] || { bg: "#f5f5f5", color: G.muted };
+  return <span style={{ background: s.bg, color: s.color, borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{text}</span>;
+}
+
+function KpiRow({ cards }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#0007", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: C.white, borderRadius: 10, width: 560, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", padding: 28, position: "relative" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{title}</h3>
-          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, cursor: "pointer", color: C.muted }}>×</button>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 14, marginBottom: 22 }}>
+      {cards.map(c => (
+        <div key={c.label} style={{
+          background: c.accent ? G.green : G.white,
+          border: `1px solid ${c.accent ? "transparent" : G.border}`,
+          borderRadius: 12, padding: "14px 18px",
+          boxShadow: c.accent ? "0 4px 16px rgba(46,125,50,.25)" : "0 1px 4px rgba(46,125,50,.07)",
+        }}>
+          <div style={{ fontSize: 11, color: c.accent ? "rgba(255,255,255,.75)" : G.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>{c.label}</div>
+          <div style={{ fontSize: c.large ? 22 : 18, fontWeight: 800, color: c.accent ? "#fff" : c.color || G.green }}>{c.value}</div>
+          {c.sub && <div style={{ fontSize: 11, color: c.accent ? "rgba(255,255,255,.6)" : G.muted, marginTop: 3 }}>{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, width = 560 }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: G.white, borderRadius: 14, width, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,.18)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: G.text }}>{title}</h3>
+          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, cursor: "pointer", color: G.muted, lineHeight: 1 }}>×</button>
         </div>
         {children}
       </div>
@@ -50,58 +122,79 @@ function Modal({ title, onClose, children }) {
 
 const Field = ({ label, required, children }) => (
   <div style={{ marginBottom: 16 }}>
-    <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
-      {label}{required && <span style={{ color: C.danger }}> *</span>}
+    <label style={{ display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: G.text }}>
+      {label}{required && <span style={{ color: G.red }}> *</span>}
     </label>
     {children}
   </div>
 );
 
-const Input = (props) => (
-  <input {...props} style={{ width: "100%", padding: "8px 12px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 14, boxSizing: "border-box", ...props.style }} />
-);
+const inputStyle = { width: "100%", padding: "9px 12px", border: `1px solid ${G.border}`, borderRadius: 8, fontSize: 14, boxSizing: "border-box", fontFamily: "'Inter',sans-serif", color: G.text, background: "#fafffe", outline: "none" };
+const FInput = (props) => <input {...props} style={{ ...inputStyle, ...props.style }} />;
+const FSelect = ({ children, ...props }) => <select {...props} style={{ ...inputStyle, ...props.style }}>{children}</select>;
+const FTextarea = (props) => <textarea {...props} style={{ ...inputStyle, minHeight: 90, resize: "vertical", ...props.style }} />;
 
-const Select = ({ children, ...props }) => (
-  <select {...props} style={{ width: "100%", padding: "8px 12px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 14, boxSizing: "border-box", ...props.style }}>{children}</select>
-);
+/* ─── Full-featured DataTable with inline edit ─── */
+function HRMTable({ columns, rows, setRows, extraActions }) {
+  const [editIdx, setEditIdx] = useState(null);
+  const [editVals, setEditVals] = useState([]);
 
-const Textarea = (props) => (
-  <textarea {...props} style={{ width: "100%", padding: "8px 12px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 14, minHeight: 90, resize: "vertical", boxSizing: "border-box", ...props.style }} />
-);
+  const startEdit = (i) => { setEditIdx(i); setEditVals([...rows[i]]); };
+  const saveEdit = () => { setRows(r => r.map((row, i) => i === editIdx ? editVals : row)); setEditIdx(null); };
+  const cancelEdit = () => setEditIdx(null);
+  const delRow = (i) => setRows(r => r.filter((_, j) => j !== i));
 
-function DataTable({ columns, rows, onEdit, onDelete, extraActions }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {["Export CSV","Export Excel","Print","Column visibility","Export PDF"].map(t => (
-          <button key={t} style={{ padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: 5, background: C.white, fontSize: 12, cursor: "pointer" }}>{t}</button>
+        {[["CSV", G.green], ["Excel", G.blue], ["Print", G.muted]].map(([t, col]) => (
+          <button key={t} style={{ padding: "6px 14px", border: `1px solid ${G.border}`, borderRadius: 7, background: G.white, fontSize: 12, fontWeight: 600, cursor: "pointer", color: col }}>{t}</button>
         ))}
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
         <thead>
-          <tr style={{ background: "#f7fafc" }}>
-            {columns.map(c => <th key={c} style={{ padding: "10px 14px", textAlign: "left", borderBottom: `1px solid ${C.border}`, fontWeight: 600, color: C.text }}>{c}</th>)}
-            <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: `1px solid ${C.border}`, fontWeight: 600 }}>Action</th>
+          <tr style={{ background: `linear-gradient(90deg,${G.green}18,${G.green2}0e)` }}>
+            {columns.map(c => <th key={c} style={{ padding: "10px 14px", textAlign: "left", borderBottom: `2px solid ${G.border}`, fontWeight: 700, color: G.green, fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", whiteSpace: "nowrap" }}>{c}</th>)}
+            <th style={{ padding: "10px 14px", borderBottom: `2px solid ${G.border}`, fontWeight: 700, color: G.green, fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em" }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0
-            ? <tr><td colSpan={columns.length + 1} style={{ textAlign: "center", padding: 28, color: C.muted }}>No data available in table</td></tr>
+            ? <tr><td colSpan={columns.length + 1} style={{ textAlign: "center", padding: 32, color: G.muted, fontSize: 14 }}>No data available in table</td></tr>
             : rows.map((row, i) => (
-                <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {row.map((cell, j) => <td key={j} style={{ padding: "10px 14px" }}>{cell}</td>)}
-                  <td style={{ padding: "10px 14px" }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {onEdit && <button onClick={() => onEdit(i)} style={{ padding: "4px 12px", background: "#edf2ff", color: C.purpleLight, border: "none", borderRadius: 5, cursor: "pointer", fontWeight: 600, fontSize: 12 }}>✎ Edit</button>}
-                      {onDelete && <button onClick={() => onDelete(i)} style={{ padding: "4px 12px", background: "#fff5f5", color: C.danger, border: "none", borderRadius: 5, cursor: "pointer", fontWeight: 600, fontSize: 12 }}>🗑 Delete</button>}
-                      {extraActions && extraActions(i)}
-                    </div>
+              <tr key={i} style={{ background: i % 2 === 0 ? G.white : G.rowHov, transition: "background .12s" }}
+                onMouseEnter={e => e.currentTarget.style.background = G.greenBg}
+                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? G.white : G.rowHov}
+              >
+                {row.map((cell, j) => (
+                  <td key={j} style={{ padding: "10px 14px", borderBottom: `1px solid ${G.border}`, color: G.text }}>
+                    {editIdx === i
+                      ? <input value={editVals[j] ?? ""} onChange={e => setEditVals(v => v.map((x, k) => k === j ? e.target.value : x))}
+                          style={{ width: "100%", padding: "5px 8px", border: `1px solid ${G.green}`, borderRadius: 5, fontSize: 13, minWidth: 60, outline: "none" }} />
+                      : cell}
                   </td>
-                </tr>
-              ))}
+                ))}
+                <td style={{ padding: "10px 14px", borderBottom: `1px solid ${G.border}` }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {editIdx === i ? (
+                      <>
+                        <GreenBtn onClick={saveEdit} style={{ padding: "5px 14px", fontSize: 12, borderRadius: 6 }}>💾 Save</GreenBtn>
+                        <DarkBtn onClick={cancelEdit} style={{ padding: "5px 12px", fontSize: 12 }}>Cancel</DarkBtn>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEdit(i)} style={{ padding: "5px 12px", background: G.blueBg, color: G.blue, border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 12 }}>✎ Edit</button>
+                        <RedBtn onClick={() => delRow(i)}>🗑 Delete</RedBtn>
+                      </>
+                    )}
+                    {extraActions && extraActions(i)}
+                  </div>
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
-      <div style={{ marginTop: 10, fontSize: 13, color: C.muted }}>Showing {rows.length} to {rows.length} of {rows.length} entries</div>
+      <div style={{ marginTop: 10, fontSize: 13, color: G.muted }}>Showing {rows.length} of {rows.length} entries</div>
     </div>
   );
 }
@@ -125,13 +218,17 @@ const HRM_TABS = [
 function HRMNav() {
   const loc = useLocation();
   return (
-    <div style={{ display: "flex", gap: 0, borderBottom: `2px solid ${C.border}`, marginBottom: 24, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 0, borderBottom: `2px solid ${G.border}`, marginBottom: 24, flexWrap: "wrap", background: G.white }}>
       {HRM_TABS.map(t => {
         const active = loc.pathname === t.path || (t.path !== "/hrm" && loc.pathname.startsWith(t.path));
         return (
-          <Link key={t.label} to={t.path} style={{ padding: "10px 18px", fontSize: 14, fontWeight: active ? 700 : 500, color: active ? C.green : C.muted, textDecoration: "none", borderBottom: active ? `3px solid ${C.green}` : "3px solid transparent", background: "none", whiteSpace: "nowrap" }}>
-            {t.label}
-          </Link>
+          <Link key={t.label} to={t.path} style={{
+            padding: "11px 18px", fontSize: 13.5, fontWeight: active ? 700 : 500,
+            color: active ? G.green : G.muted, textDecoration: "none",
+            borderBottom: active ? `3px solid ${G.green}` : "3px solid transparent",
+            background: active ? G.greenBg : "none", whiteSpace: "nowrap",
+            borderRadius: active ? "6px 6px 0 0" : 0,
+          }}>{t.label}</Link>
         );
       })}
     </div>
@@ -139,105 +236,224 @@ function HRMNav() {
 }
 
 /* ══════════════════════════════════════════
-   HRM DASHBOARD
+   HRM DASHBOARD — ADVANCED
 ══════════════════════════════════════════ */
+const LEAVE_DATA = [
+  { emp: "Priya S.",   type: "Sick Leave",   from: "10-Jun", to: "11-Jun", days: 2, status: "Approved" },
+  { emp: "Rahul M.",   type: "Casual Leave", from: "13-Jun", to: "13-Jun", days: 1, status: "Pending" },
+  { emp: "Ananya K.",  type: "Annual Leave", from: "20-Jun", to: "24-Jun", days: 5, status: "Approved" },
+];
+const ATTENDANCE_DATA = [
+  { emp: "Priya S.",   clockIn: "09:02 AM", clockOut: "06:15 PM", hrs: "9h 13m", status: "Present" },
+  { emp: "Rahul M.",   clockIn: "09:18 AM", clockOut: "06:00 PM", hrs: "8h 42m", status: "Present" },
+  { emp: "Vikram T.",  clockIn: "10:05 AM", clockOut: "—",        hrs: "—",      status: "Late" },
+  { emp: "Deepa R.",   clockIn: "—",        clockOut: "—",        hrs: "—",      status: "Absent" },
+];
+const SALES_TARGET_DATA = [
+  { rep: "Arjun M.",  target: "₹3,50,000", achieved: "₹4,10,000", pct: 117, commission: "₹20,500" },
+  { rep: "Priya S.",  target: "₹3,00,000", achieved: "₹2,60,000", pct: 87,  commission: "₹13,000" },
+  { rep: "Vikram T.", target: "₹2,80,000", achieved: "₹3,20,000", pct: 114, commission: "₹16,000" },
+];
+const BIRTHDAY_DATA = [
+  { name: "Ananya K.", dept: "Warehouse", date: "09 Jun" },
+  { name: "Suresh P.", dept: "Sales",     date: "15 Jun" },
+  { name: "Meera R.",  dept: "HR",        date: "22 Jun" },
+];
+
+function MiniBar({ value, max, color }) {
+  const pct = max ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, background: G.border, borderRadius: 4, height: 8, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, background: color || G.green2, height: "100%", borderRadius: 4 }} />
+      </div>
+      <span style={{ fontSize: 11, color: G.muted, minWidth: 32, textAlign: "right" }}>{pct}%</span>
+    </div>
+  );
+}
+
 function HRMDashboard() {
   const navigate = useNavigate();
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+
   return (
-    <div>
+    <div style={{ fontFamily: "'Inter','Segoe UI',sans-serif" }}>
       <HRMNav />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
+
+      {/* Page header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: G.text }}>HR Dashboard</h2>
+          <p style={{ margin: 0, fontSize: 13, color: G.muted, marginTop: 2 }}>{today}</p>
+        </div>
+        <GreenBtn onClick={() => navigate("/hrm/payroll")} style={{ fontSize: 14, padding: "10px 24px" }}>
+          💰 Run Payroll
+        </GreenBtn>
+      </div>
+
+      {/* KPI row */}
+      <KpiRow cards={[
+        { label: "Total Employees", value: "24",       accent: true,  large: true },
+        { label: "Present Today",   value: "19",       color: G.green },
+        { label: "On Leave Today",  value: "3",        color: G.amber },
+        { label: "Absent Today",    value: "2",        color: G.red },
+        { label: "Pending Leaves",  value: "4",        color: G.blue },
+        { label: "This Month Payroll", value: "₹4.2L", color: G.text },
+      ]} />
+
+      {/* Row 2 — 3 cols */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 18, marginBottom: 18 }}>
+
+        {/* Today Attendance */}
         <Card>
-          <h4 style={{ margin: "0 0 14px", color: C.text }}>🌿 My leaves</h4>
-          <div style={{ color: C.muted, fontSize: 14, textAlign: "center", padding: "18px 0" }}>No data</div>
-        </Card>
-        <Card>
-          <h4 style={{ margin: "0 0 14px", color: C.text }}>🎯 My sales targets</h4>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div><div style={{ fontSize: 12, color: C.muted }}>Target achieved last month:</div><div style={{ color: C.green, fontWeight: 700, fontSize: 16 }}>₹ 0.00</div></div>
-            <div><div style={{ fontSize: 12, color: C.muted }}>Target achieved this month:</div><div style={{ color: C.green, fontWeight: 700, fontSize: 16 }}>₹ 0.00</div></div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: G.text }}>📅 Today's Attendance</h4>
+            <Link to="/hrm/attendance" style={{ fontSize: 12, color: G.green, textDecoration: "none", fontWeight: 600 }}>View all →</Link>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", fontSize: 13, fontWeight: 600, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
-            <span>Targets</span><span>Commission Percent</span>
+          {ATTENDANCE_DATA.map((a, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < ATTENDANCE_DATA.length - 1 ? `1px solid ${G.border}` : "none" }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: G.text }}>{a.emp}</div>
+                <div style={{ fontSize: 11, color: G.muted }}>{a.clockIn} → {a.clockOut}</div>
+              </div>
+              <StatusPill text={a.status} map={{
+                Present: { bg: G.greenBg, color: G.green },
+                Late:    { bg: G.amberBg, color: G.amber },
+                Absent:  { bg: G.redBg,   color: G.red },
+              }} />
+            </div>
+          ))}
+        </Card>
+
+        {/* Leave Requests */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: G.text }}>🌿 Leave Requests</h4>
+            <Link to="/hrm/leave" style={{ fontSize: 12, color: G.green, textDecoration: "none", fontWeight: 600 }}>View all →</Link>
           </div>
-          <div style={{ color: C.muted, fontSize: 13, textAlign: "center", paddingTop: 8 }}>No data</div>
+          {LEAVE_DATA.map((l, i) => (
+            <div key={i} style={{ padding: "8px 0", borderBottom: i < LEAVE_DATA.length - 1 ? `1px solid ${G.border}` : "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: 600, fontSize: 13, color: G.text }}>{l.emp}</span>
+                <StatusPill text={l.status} />
+              </div>
+              <div style={{ fontSize: 11, color: G.muted, marginTop: 2 }}>{l.type} · {l.from}–{l.to} ({l.days}d)</div>
+            </div>
+          ))}
         </Card>
+
+        {/* Birthdays */}
         <Card>
-          <h4 style={{ margin: "0 0 14px", color: C.text }}>🎂 Birthdays</h4>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Today</div>
-          <div style={{ color: C.muted, fontSize: 13, marginBottom: 14 }}>No data</div>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Upcoming</div>
-          <div style={{ color: C.muted, fontSize: 13 }}>No data</div>
+          <h4 style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: G.text }}>🎂 Birthdays this Month</h4>
+          {BIRTHDAY_DATA.map((b, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: i < BIRTHDAY_DATA.length - 1 ? `1px solid ${G.border}` : "none" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: `linear-gradient(135deg,${G.green},${G.green2})`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                {b.name[0]}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: G.text }}>{b.name}</div>
+                <div style={{ fontSize: 11, color: G.muted }}>{b.dept}</div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: G.green, background: G.greenBg, padding: "3px 10px", borderRadius: 20 }}>{b.date}</span>
+            </div>
+          ))}
         </Card>
       </div>
-      <div style={{ marginBottom: 20 }}>
-        <button onClick={() => navigate("/hrm/payroll/my")} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-          💰 My Payrolls
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
-        {[["👥 Users","Today","Upcoming"],["🌿 Leaves","Today","Upcoming"],["🏖️ Holidays","Today","Upcoming"]].map(([title,...subs]) => (
-          <Card key={title}>
-            <h4 style={{ margin: "0 0 14px", color: C.text }}>{title}</h4>
-            {subs.map(s => (<div key={s} style={{ marginBottom: 12 }}><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{s}</div><div style={{ color: C.muted, fontSize: 13 }}>No data</div></div>))}
-          </Card>
-        ))}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20 }}>
+
+      {/* Row 3 — Sales targets + Quick links */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 18 }}>
         <Card>
-          <h4 style={{ margin: "0 0 14px", color: C.text }}>📅 Today's Attendance</h4>
-          <table style={{ width: "100%", fontSize: 13 }}>
-            <thead><tr>{["Employee","Clock In","Clock Out"].map(h=><th key={h} style={{ textAlign:"left", paddingBottom:8, color:C.muted }}>{h}</th>)}</tr></thead>
-            <tbody><tr><td colSpan={3} style={{ textAlign:"center", color:C.muted, paddingTop:12 }}>No data</td></tr></tbody>
-          </table>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: G.text }}>🎯 Sales Targets – June 2026</h4>
+            <Link to="/hrm/sales-targets" style={{ fontSize: 12, color: G.green, textDecoration: "none", fontWeight: 600 }}>Manage →</Link>
+          </div>
+          {SALES_TARGET_DATA.map((s, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: G.text }}>{s.rep}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: s.pct >= 100 ? G.green : G.amber }}>{s.achieved} / {s.target}</span>
+              </div>
+              <MiniBar value={s.pct} max={120} color={s.pct >= 100 ? G.green2 : "#ef5350"} />
+              <div style={{ fontSize: 11, color: G.muted, marginTop: 3 }}>Commission: {s.commission}</div>
+            </div>
+          ))}
         </Card>
-        <Card><h4 style={{ margin: "0 0 14px", color: C.text }}>🎯 Sales targets</h4><NoData /></Card>
+
+        <Card>
+          <h4 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700, color: G.text }}>⚡ Quick Actions</h4>
+          {[
+            { label: "Add Leave",         path: "/hrm/leave",       icon: "🌿" },
+            { label: "Clock In",          path: "/hrm/attendance",  icon: "⬇️" },
+            { label: "Add Holiday",       path: "/hrm/holiday",     icon: "🏖" },
+            { label: "Run Payroll",       path: "/hrm/payroll",     icon: "💰" },
+            { label: "View My Payslip",   path: "/hrm/payroll/my",  icon: "📄" },
+            { label: "HRM Settings",      path: "/hrm/settings",    icon: "⚙️" },
+          ].map(q => (
+            <Link key={q.label} to={q.path} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, marginBottom: 6, background: G.bg, textDecoration: "none", fontSize: 13, fontWeight: 600, color: G.text, transition: "background .15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = G.greenBg}
+              onMouseLeave={e => e.currentTarget.style.background = G.bg}
+            >
+              <span>{q.icon}</span> {q.label}
+              <span style={{ marginLeft: "auto", color: G.muted, fontSize: 14 }}>›</span>
+            </Link>
+          ))}
+        </Card>
       </div>
     </div>
   );
 }
 
-/* ══════════════════════════════════════════ LEAVE TYPE ══════════════════════════════════════════ */
+/* ══════════════════════════════════════════
+   LEAVE TYPE
+══════════════════════════════════════════ */
 function LeaveType() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([
+    ["Sick Leave", "12", "Current financial year"],
+    ["Casual Leave", "8", "Current month"],
+    ["Annual Leave", "20", "Current financial year"],
+    ["Maternity Leave", "90", "None"],
+    ["Paternity Leave", "15", "None"],
+  ]);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ type: "", maxCount: "", interval: "none" });
-  const [editIdx, setEditIdx] = useState(null);
+
   const save = () => {
     if (!form.type) return;
-    if (editIdx !== null) { setRows(r => r.map((x,i) => i===editIdx ? [form.type, form.maxCount||"—"] : x)); setEditIdx(null); }
-    else setRows(r => [...r, [form.type, form.maxCount||"—"]]);
-    setModal(false); setForm({ type:"", maxCount:"", interval:"none" });
+    setRows(r => [...r, [form.type, form.maxCount || "—", form.interval]]);
+    setModal(false); setForm({ type: "", maxCount: "", interval: "none" });
   };
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Leave Type</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Leave Types</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Leave Type</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Types", value: rows.length.toString(), accent: true },
+        { label: "Max Annual Leave", value: "20 days", color: G.green },
+        { label: "Max Sick Leave", value: "12 days", color: G.blue },
+      ]} />
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-          <h3 style={{ margin:0, fontSize:16 }}>All leave types</h3>
-          <Btn onClick={() => { setModal(true); setEditIdx(null); setForm({ type:"", maxCount:"", interval:"none" }); }}>+ Add</Btn>
-        </div>
-        <DataTable columns={["Leave Type","Max Leave Count"]} rows={rows}
-          onEdit={i => { setForm({ type:rows[i][0], maxCount:rows[i][1]==="—"?"":rows[i][1], interval:"none" }); setEditIdx(i); setModal(true); }}
-          onDelete={i => setRows(r => r.filter((_,j) => j!==i))} />
+        <HRMTable columns={["Leave Type", "Max Count", "Interval"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
-        <Modal title={editIdx!==null?"Edit Leave Type":"Add Leave Type"} onClose={() => setModal(false)}>
-          <Field label="Leave Type" required><Input value={form.type} onChange={e => setForm(f=>({...f,type:e.target.value}))} /></Field>
-          <Field label="Max Leave Count"><Input type="number" value={form.maxCount} onChange={e => setForm(f=>({...f,maxCount:e.target.value}))} /></Field>
-          <Field label="Leave count interval">
-            <div style={{ display:"flex", gap:20, marginTop:4 }}>
-              {["Current month","Current financial year","None"].map(v => (
-                <label key={v} style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:14 }}>
-                  <input type="radio" name="interval" checked={form.interval===v.toLowerCase().replace(" ","_")} onChange={() => setForm(f=>({...f,interval:v.toLowerCase().replace(" ","_")}))} />{v}
+        <Modal title="Add Leave Type" onClose={() => setModal(false)}>
+          <Field label="Leave Type" required><FInput value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} placeholder="e.g. Sick Leave" /></Field>
+          <Field label="Max Leave Count"><FInput type="number" value={form.maxCount} onChange={e => setForm(f => ({ ...f, maxCount: e.target.value }))} placeholder="e.g. 12" /></Field>
+          <Field label="Leave Count Interval">
+            <div style={{ display: "flex", gap: 20, marginTop: 4 }}>
+              {["Current month", "Current financial year", "None"].map(v => (
+                <label key={v} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 14 }}>
+                  <input type="radio" name="interval" checked={form.interval === v} onChange={() => setForm(f => ({ ...f, interval: v }))} />{v}
                 </label>
               ))}
             </div>
           </Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:10 }}>
-            <Btn onClick={save}>Save</Btn>
-            <Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
+            <GreenBtn onClick={save}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -245,43 +461,56 @@ function LeaveType() {
   );
 }
 
-/* ══ LEAVE ══ */
+/* ══════════════════════════════════════════
+   LEAVE
+══════════════════════════════════════════ */
 function Leave() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([
+    ["LEV-2026-001", "Sick Leave",   "Priya S.",  "08-Jun – 09-Jun", "Fever",        "Approved"],
+    ["LEV-2026-002", "Casual Leave", "Rahul M.",  "13-Jun – 13-Jun", "Personal work","Pending"],
+    ["LEV-2026-003", "Annual Leave", "Ananya K.", "20-Jun – 24-Jun", "Vacation",     "Approved"],
+  ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
+  const [form, setForm] = useState({ employee: "", leaveType: "", startDate: "", endDate: "", reason: "" });
+
   const save = () => {
-    if (!form.leaveType||!form.startDate||!form.endDate) return;
-    setRows(r => [...r, [`REF-${Date.now()}`, form.leaveType, form.employee||"Self", `${form.startDate} – ${form.endDate}`, form.reason, <Badge color={C.greenLight}>Pending</Badge>]]);
-    setModal(false); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
+    if (!form.leaveType || !form.startDate || !form.endDate) return;
+    setRows(r => [...r, [`LEV-2026-00${r.length + 1}`, form.leaveType, form.employee || "Self", `${form.startDate} – ${form.endDate}`, form.reason, "Pending"]]);
+    setModal(false); setForm({ employee: "", leaveType: "", startDate: "", endDate: "", reason: "" });
   };
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Leave</h2>
-      <Card style={{ marginBottom:14 }}><div style={{ fontWeight:600 }}>🔽 Filters</div></Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Leave Management</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Apply Leave</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Leaves", value: rows.length.toString(), accent: true },
+        { label: "Approved", value: rows.filter(r => r[5] === "Approved").length.toString(), color: G.green },
+        { label: "Pending",  value: rows.filter(r => r[5] === "Pending").length.toString(),  color: G.amber },
+      ]} />
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-          <h3 style={{ margin:0, fontSize:16 }}>All Leaves</h3>
-          <Btn onClick={() => setModal(true)}>+ Add</Btn>
-        </div>
-        <DataTable columns={["Reference No","Leave Type","Employee","Date","Reason","Status"]} rows={rows} onEdit={() => {}} onDelete={i => setRows(r => r.filter((_,j) => j!==i))} />
+        <HRMTable columns={["Ref No", "Leave Type", "Employee", "Date", "Reason", "Status"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
-        <Modal title="Add Leave" onClose={() => setModal(false)}>
-          <Field label="Select employee"><Input value={form.employee} onChange={e => setForm(f=>({...f,employee:e.target.value}))} /></Field>
+        <Modal title="Apply Leave" onClose={() => setModal(false)}>
+          <Field label="Employee"><FInput value={form.employee} onChange={e => setForm(f => ({ ...f, employee: e.target.value }))} placeholder="Employee name" /></Field>
           <Field label="Leave Type" required>
-            <Select value={form.leaveType} onChange={e => setForm(f=>({...f,leaveType:e.target.value}))}>
-              <option value="">Please Select</option><option>Sick Leave</option><option>Casual Leave</option><option>Annual Leave</option>
-            </Select>
+            <FSelect value={form.leaveType} onChange={e => setForm(f => ({ ...f, leaveType: e.target.value }))}>
+              <option value="">Please Select</option>
+              <option>Sick Leave</option><option>Casual Leave</option><option>Annual Leave</option><option>Maternity Leave</option>
+            </FSelect>
           </Field>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <Field label="Start Date" required><Input type="date" value={form.startDate} onChange={e => setForm(f=>({...f,startDate:e.target.value}))} /></Field>
-            <Field label="End Date" required><Input type="date" value={form.endDate} onChange={e => setForm(f=>({...f,endDate:e.target.value}))} /></Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Start Date" required><FInput type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></Field>
+            <Field label="End Date" required><FInput type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></Field>
           </div>
-          <Field label="Reason"><Textarea value={form.reason} onChange={e => setForm(f=>({...f,reason:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={save}>Save</Btn><Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <Field label="Reason"><FTextarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="Reason for leave" /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={save}>Submit</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -289,77 +518,90 @@ function Leave() {
   );
 }
 
-/* ══ ATTENDANCE ══ */
+/* ══════════════════════════════════════════
+   ATTENDANCE
+══════════════════════════════════════════ */
 function Attendance() {
   const [tab, setTab] = useState("Shifts");
-  const [shifts, setShifts] = useState([{ name:"day shift", type:"Fixed shift", start:"14:36", end:"23:36", holiday:"" }]);
-  const [allAtt, setAllAtt] = useState([]);
+  const [shifts, setShifts] = useState([
+    ["Day Shift",   "Fixed shift",    "09:00", "18:00", "Sun"],
+    ["Night Shift", "Fixed shift",    "21:00", "06:00", "Sun"],
+    ["Flex Shift",  "Flexible shift", "08:00", "20:00", "—"],
+  ]);
+  const [allAtt, setAllAtt] = useState([
+    ["Priya S.",  new Date().toLocaleDateString(), "09:02 AM", "06:15 PM", "Present"],
+    ["Rahul M.",  new Date().toLocaleDateString(), "09:18 AM", "06:00 PM", "Present"],
+    ["Vikram T.", new Date().toLocaleDateString(), "10:05 AM", "—",        "Late"],
+  ]);
   const [clockInModal, setClockInModal] = useState(false);
   const [addShiftModal, setAddShiftModal] = useState(false);
   const [clockNote, setClockNote] = useState("");
-  const [shiftForm, setShiftForm] = useState({ name:"", type:"Fixed shift", start:"", end:"", holiday:"", autoClockOut:false });
-  const [editIdx, setEditIdx] = useState(null);
-  const ATABS = ["Shifts","All Attendance","Attendance by shift","Attendance by date","Import Attendance"];
+  const [shiftForm, setShiftForm] = useState({ name: "", type: "Fixed shift", start: "", end: "", holiday: "", auto: false });
+
   const saveShift = () => {
-    if (!shiftForm.name||!shiftForm.start||!shiftForm.end) return;
-    const entry = { name:shiftForm.name, type:shiftForm.type, start:shiftForm.start, end:shiftForm.end, holiday:shiftForm.holiday };
-    if (editIdx!==null) { setShifts(s => s.map((x,i) => i===editIdx?entry:x)); setEditIdx(null); }
-    else setShifts(s => [...s, entry]);
-    setAddShiftModal(false); setShiftForm({ name:"", type:"Fixed shift", start:"", end:"", holiday:"", autoClockOut:false });
+    if (!shiftForm.name || !shiftForm.start || !shiftForm.end) return;
+    setShifts(s => [...s, [shiftForm.name, shiftForm.type, shiftForm.start, shiftForm.end, shiftForm.holiday || "—"]]);
+    setAddShiftModal(false); setShiftForm({ name: "", type: "Fixed shift", start: "", end: "", holiday: "", auto: false });
   };
+
   return (
     <div>
       <HRMNav />
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-        <h2 style={{ margin:0 }}>Attendance</h2>
-        <button onClick={() => setClockInModal(true)} style={{ background:"#2b6cb0", color:"#fff", border:"none", borderRadius:8, padding:"10px 20px", cursor:"pointer", fontWeight:700 }}>⬇ Clock In</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Attendance</h2>
+        <GreenBtn onClick={() => setClockInModal(true)}>⬇ Clock In</GreenBtn>
       </div>
-      <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${C.border}`, marginBottom:20, overflowX:"auto" }}>
-        {ATABS.map(t => (<button key={t} onClick={() => setTab(t)} style={{ padding:"10px 16px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?C.green:C.muted, borderBottom:tab===t?`3px solid ${C.green}`:"3px solid transparent", fontSize:13, whiteSpace:"nowrap" }}>{t}</button>))}
+      <KpiRow cards={[
+        { label: "Present Today", value: allAtt.filter(r=>r[4]==="Present").length.toString(), accent: true },
+        { label: "Late",          value: allAtt.filter(r=>r[4]==="Late").length.toString(),    color: G.amber },
+        { label: "Absent",        value: "1", color: G.red },
+        { label: "Total Shifts",  value: shifts.length.toString(), color: G.blue },
+      ]} />
+      <div style={{ display: "flex", gap: 0, borderBottom: `2px solid ${G.border}`, marginBottom: 20 }}>
+        {["Shifts", "All Attendance", "By Shift", "By Date"].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{ padding: "10px 18px", border: "none", background: "none", cursor: "pointer", fontWeight: tab === t ? 700 : 500, color: tab === t ? G.green : G.muted, borderBottom: tab === t ? `3px solid ${G.green}` : "3px solid transparent", fontSize: 13 }}>{t}</button>
+        ))}
       </div>
-      {tab==="Shifts" && (
+      {tab === "Shifts" && (
         <Card>
-          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
-            <Btn onClick={() => { setAddShiftModal(true); setEditIdx(null); }}>+ Add</Btn>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <GreenBtn onClick={() => setAddShiftModal(true)}>+ Add Shift</GreenBtn>
           </div>
-          <DataTable columns={["Name","Shift Type","Start time","End time","Holiday"]}
-            rows={shifts.map(s => [s.name, s.type, s.start, s.end, s.holiday||"—"])}
-            onEdit={i => { setShiftForm({...shifts[i], autoClockOut:false}); setEditIdx(i); setAddShiftModal(true); }}
-            onDelete={i => setShifts(s => s.filter((_,j) => j!==i))}
-            extraActions={i => (<button style={{ padding:"4px 12px", background:"#e6fffa", color:C.green, border:"none", borderRadius:5, cursor:"pointer", fontWeight:600, fontSize:12 }}>👥 Assign Users</button>)}
+          <HRMTable columns={["Name", "Type", "Start", "End", "Holiday"]} rows={shifts} setShifts={setShifts}
+            setRows={setShifts}
+            extraActions={i => <button style={{ padding: "5px 10px", background: G.greenBg, color: G.green, border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Assign Users</button>}
           />
         </Card>
       )}
-      {tab==="All Attendance" && (<Card><DataTable columns={["Employee","Date","Clock In","Note"]} rows={allAtt.map(a=>[a.emp,a.date,a.time,a.note||"—"])} onEdit={() => {}} onDelete={i => setAllAtt(a => a.filter((_,j) => j!==i))} /></Card>)}
-      {["Attendance by shift","Attendance by date","Import Attendance"].includes(tab) && (<Card><NoData /></Card>)}
+      {tab === "All Attendance" && (
+        <Card>
+          <HRMTable columns={["Employee", "Date", "Clock In", "Clock Out", "Status"]} rows={allAtt} setRows={setAllAtt} />
+        </Card>
+      )}
+      {["By Shift", "By Date"].includes(tab) && <Card><NoData /></Card>}
+
       {clockInModal && (
-        <Modal title="Clock In" onClose={() => setClockInModal(false)}>
-          <p style={{ color:C.muted, fontSize:14 }}>IP Address: 117.200.179.60</p>
-          <Field label="Clock in note:"><Textarea value={clockNote} onChange={e => setClockNote(e.target.value)} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={() => { setAllAtt(a => [...a, { emp:"Admin", time:new Date().toLocaleTimeString(), note:clockNote, date:new Date().toLocaleDateString() }]); setClockInModal(false); setClockNote(""); }}>Submit</Btn>
-            <Btn variant="dark" onClick={() => setClockInModal(false)}>Close</Btn>
+        <Modal title="Clock In" onClose={() => setClockInModal(false)} width={420}>
+          <p style={{ color: G.muted, fontSize: 13, margin: "0 0 16px" }}>IP Address: 192.168.1.10 · {new Date().toLocaleTimeString()}</p>
+          <Field label="Clock In Note"><FTextarea value={clockNote} onChange={e => setClockNote(e.target.value)} placeholder="Optional note..." /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { setAllAtt(a => [...a, ["Admin", new Date().toLocaleDateString(), new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), "—", "Present"]]); setClockInModal(false); setClockNote(""); }}>Submit</GreenBtn>
+            <DarkBtn onClick={() => setClockInModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
       {addShiftModal && (
         <Modal title="Add Shift" onClose={() => setAddShiftModal(false)}>
-          <Field label="Name" required><Input value={shiftForm.name} onChange={e => setShiftForm(f=>({...f,name:e.target.value}))} /></Field>
-          <Field label="Shift Type" required>
-            <Select value={shiftForm.type} onChange={e => setShiftForm(f=>({...f,type:e.target.value}))}>
-              <option>Fixed shift</option><option>Flexible shift</option><option>Rotating shift</option>
-            </Select>
-          </Field>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <Field label="Start time" required><Input type="time" value={shiftForm.start} onChange={e => setShiftForm(f=>({...f,start:e.target.value}))} /></Field>
-            <Field label="End time" required><Input type="time" value={shiftForm.end} onChange={e => setShiftForm(f=>({...f,end:e.target.value}))} /></Field>
+          <Field label="Name" required><FInput value={shiftForm.name} onChange={e => setShiftForm(f => ({ ...f, name: e.target.value }))} placeholder="Shift name" /></Field>
+          <Field label="Shift Type"><FSelect value={shiftForm.type} onChange={e => setShiftForm(f => ({ ...f, type: e.target.value }))}><option>Fixed shift</option><option>Flexible shift</option><option>Rotating shift</option></FSelect></Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Start" required><FInput type="time" value={shiftForm.start} onChange={e => setShiftForm(f => ({ ...f, start: e.target.value }))} /></Field>
+            <Field label="End" required><FInput type="time" value={shiftForm.end} onChange={e => setShiftForm(f => ({ ...f, end: e.target.value }))} /></Field>
           </div>
-          <Field label="Holiday"><Input value={shiftForm.holiday} onChange={e => setShiftForm(f=>({...f,holiday:e.target.value}))} /></Field>
-          <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, cursor:"pointer", fontSize:14 }}>
-            <input type="checkbox" checked={shiftForm.autoClockOut} onChange={e => setShiftForm(f=>({...f,autoClockOut:e.target.checked}))} />Do auto clock out ℹ️
-          </label>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={saveShift}>Submit</Btn><Btn variant="dark" onClick={() => setAddShiftModal(false)}>Close</Btn>
+          <Field label="Holiday"><FInput value={shiftForm.holiday} onChange={e => setShiftForm(f => ({ ...f, holiday: e.target.value }))} placeholder="e.g. Sun" /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={saveShift}>Save</GreenBtn>
+            <DarkBtn onClick={() => setAddShiftModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -367,47 +609,74 @@ function Attendance() {
   );
 }
 
-/* ══ PAYROLL ══ */
+/* ══════════════════════════════════════════
+   PAYROLL
+══════════════════════════════════════════ */
 function Payroll() {
   const [tab, setTab] = useState("All Payrolls");
   const [modal, setModal] = useState(false);
-  const [rows, setRows] = useState([]);
-  const [form, setForm] = useState({ location:"All locations", employee:"", month:"" });
-  const [payComponents, setPayComponents] = useState([]);
+  const [rows, setRows] = useState([
+    ["Priya S.",  "HR",    "Executive", "May 2026", "PAY-001", "₹42,000", "Paid"],
+    ["Rahul M.",  "Sales", "Manager",   "May 2026", "PAY-002", "₹65,000", "Paid"],
+    ["Ananya K.", "Ops",   "Analyst",   "May 2026", "PAY-003", "₹38,500", "Pending"],
+  ]);
+  const [form, setForm] = useState({ employee: "", month: "" });
+  const [payComp, setPayComp] = useState([
+    ["Basic Salary", "Earning",   "₹35,000", "01-Jun-26"],
+    ["HRA",          "Earning",   "₹14,000", "01-Jun-26"],
+    ["PF Deduction", "Deduction", "₹4,200",  "01-Jun-26"],
+    ["Tax (TDS)",    "Deduction", "₹3,800",  "01-Jun-26"],
+  ]);
   const [compModal, setCompModal] = useState(false);
-  const [compForm, setCompForm] = useState({ desc:"", type:"Earning", amount:"", date:"" });
+  const [compForm, setCompForm] = useState({ desc: "", type: "Earning", amount: "", date: "" });
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Payroll</h2>
-      <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${C.border}`, marginBottom:20 }}>
-        {["All Payrolls","All payroll groups","Pay Components"].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?C.green:C.muted, borderBottom:tab===t?`3px solid ${C.green}`:"3px solid transparent", fontSize:14 }}>{t}</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Payroll</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Payroll</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Payrolls", value: rows.length.toString(), accent: true },
+        { label: "Total Payout",   value: "₹1,45,500", color: G.green },
+        { label: "Paid",           value: rows.filter(r=>r[6]==="Paid").length.toString(), color: G.green },
+        { label: "Pending",        value: rows.filter(r=>r[6]==="Pending").length.toString(), color: G.amber },
+      ]} />
+      <div style={{ display: "flex", gap: 0, borderBottom: `2px solid ${G.border}`, marginBottom: 20 }}>
+        {["All Payrolls", "Payroll Groups", "Pay Components"].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{ padding: "10px 18px", border: "none", background: "none", cursor: "pointer", fontWeight: tab === t ? 700 : 500, color: tab === t ? G.green : G.muted, borderBottom: tab === t ? `3px solid ${G.green}` : "3px solid transparent", fontSize: 13 }}>{t}</button>
         ))}
       </div>
-      {tab==="All Payrolls" && (<Card><div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><Btn onClick={() => setModal(true)}>+ Add</Btn></div><DataTable columns={["Employee","Department","Designation","Month/Year","Reference No","Total amount","Payment Status"]} rows={rows} onEdit={() => {}} onDelete={i => setRows(r => r.filter((_,j) => j!==i))} /></Card>)}
-      {tab==="All payroll groups" && <Card><NoData /></Card>}
-      {tab==="Pay Components" && (<Card><div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><Btn onClick={() => setCompModal(true)}>+ Add</Btn></div><DataTable columns={["Description","Type","Amount","Applicable Date"]} rows={payComponents.map(c=>[c.desc,c.type,`₹${c.amount}`,c.date])} onEdit={() => {}} onDelete={i => setPayComponents(p => p.filter((_,j) => j!==i))} /></Card>)}
+      {tab === "All Payrolls" && <Card><HRMTable columns={["Employee", "Dept", "Designation", "Month", "Ref No", "Amount", "Status"]} rows={rows} setRows={setRows} /></Card>}
+      {tab === "Payroll Groups" && <Card><NoData /></Card>}
+      {tab === "Pay Components" && (
+        <Card>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <GreenBtn onClick={() => setCompModal(true)}>+ Add Component</GreenBtn>
+          </div>
+          <HRMTable columns={["Description", "Type", "Amount", "Applicable From"]} rows={payComp} setRows={setPayComp} />
+        </Card>
+      )}
       {modal && (
         <Modal title="Add Payroll" onClose={() => setModal(false)}>
-          <Field label="Location" required><Select value={form.location} onChange={e => setForm(f=>({...f,location:e.target.value}))}><option>All locations</option><option>Manodtechnologies</option></Select></Field>
-          <Field label="Employee" required><Input value={form.employee} onChange={e => setForm(f=>({...f,employee:e.target.value}))} /></Field>
-          <Field label="Month/Year" required><Input type="month" value={form.month} onChange={e => setForm(f=>({...f,month:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={() => { if(form.employee&&form.month){ setRows(r=>[...r,[form.employee,"Sales","Sales",form.month,`REF-${Date.now()}`,"₹0.00",<Badge color={C.greenLight}>Pending</Badge>]]); setModal(false); } }}>Proceed</Btn>
-            <Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <Field label="Employee" required><FInput value={form.employee} onChange={e => setForm(f => ({ ...f, employee: e.target.value }))} placeholder="Employee name" /></Field>
+          <Field label="Month / Year" required><FInput type="month" value={form.month} onChange={e => setForm(f => ({ ...f, month: e.target.value }))} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { if (form.employee && form.month) { setRows(r => [...r, [form.employee, "—", "—", form.month, `PAY-00${r.length + 1}`, "₹0", "Pending"]]); setModal(false); setForm({ employee: "", month: "" }); } }}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
       {compModal && (
         <Modal title="Add Pay Component" onClose={() => setCompModal(false)}>
-          <Field label="Description"><Input value={compForm.desc} onChange={e => setCompForm(f=>({...f,desc:e.target.value}))} /></Field>
-          <Field label="Type"><Select value={compForm.type} onChange={e => setCompForm(f=>({...f,type:e.target.value}))}><option>Earning</option><option>Deduction</option></Select></Field>
-          <Field label="Amount"><Input type="number" value={compForm.amount} onChange={e => setCompForm(f=>({...f,amount:e.target.value}))} /></Field>
-          <Field label="Applicable Date"><Input type="date" value={compForm.date} onChange={e => setCompForm(f=>({...f,date:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={() => { if(compForm.desc){ setPayComponents(p=>[...p,compForm]); setCompModal(false); setCompForm({ desc:"", type:"Earning", amount:"", date:"" }); } }}>Save</Btn>
-            <Btn variant="dark" onClick={() => setCompModal(false)}>Close</Btn>
+          <Field label="Description"><FInput value={compForm.desc} onChange={e => setCompForm(f => ({ ...f, desc: e.target.value }))} /></Field>
+          <Field label="Type"><FSelect value={compForm.type} onChange={e => setCompForm(f => ({ ...f, type: e.target.value }))}><option>Earning</option><option>Deduction</option></FSelect></Field>
+          <Field label="Amount"><FInput type="text" value={compForm.amount} onChange={e => setCompForm(f => ({ ...f, amount: e.target.value }))} placeholder="₹0" /></Field>
+          <Field label="Applicable Date"><FInput type="date" value={compForm.date} onChange={e => setCompForm(f => ({ ...f, date: e.target.value }))} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { if (compForm.desc) { setPayComp(p => [...p, [compForm.desc, compForm.type, compForm.amount, compForm.date]]); setCompModal(false); setCompForm({ desc: "", type: "Earning", amount: "", date: "" }); } }}>Save</GreenBtn>
+            <DarkBtn onClick={() => setCompModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -417,54 +686,61 @@ function Payroll() {
 
 function MyPayrolls() {
   return (
-    <div>
-      <HRMNav />
-      <h2 style={{ marginBottom:16 }}>My Payrolls</h2>
+    <div><HRMNav />
+      <h2 style={{ marginBottom: 16, fontSize: 20, fontWeight: 700, color: G.text }}>My Payrolls</h2>
       <Card><NoData /></Card>
     </div>
   );
 }
 
-/* ══ HOLIDAY ══ */
+/* ══════════════════════════════════════════
+   HOLIDAY
+══════════════════════════════════════════ */
 function Holiday() {
-  const [rows, setRows] = useState([{ name:"shalijah", start:"05/27/2026", end:"05/28/2026", days:2, location:"Manodtechnologies", note:"" }]);
+  const [rows, setRows] = useState([
+    ["Eid Al-Adha",       "27-May-26", "28-May-26", "2 days", "All Locations"],
+    ["Independence Day",  "15-Aug-26", "15-Aug-26", "1 day",  "All Locations"],
+    ["Diwali",            "20-Oct-26", "21-Oct-26", "2 days", "All Locations"],
+    ["Christmas",         "25-Dec-26", "25-Dec-26", "1 day",  "All Locations"],
+  ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ name:"", startDate:"", endDate:"", location:"All", note:"" });
-  const [editIdx, setEditIdx] = useState(null);
+  const [form, setForm] = useState({ name: "", startDate: "", endDate: "", location: "All Locations", note: "" });
+
   const save = () => {
-    if (!form.name||!form.startDate||!form.endDate) return;
-    const s=new Date(form.startDate), e=new Date(form.endDate);
-    const days=Math.max(1,Math.round((e-s)/86400000)+1);
-    const entry={ name:form.name, start:form.startDate, end:form.endDate, days, location:form.location||"All", note:form.note };
-    if (editIdx!==null) { setRows(r=>r.map((x,i)=>i===editIdx?entry:x)); setEditIdx(null); }
-    else setRows(r=>[...r,entry]);
-    setModal(false); setForm({ name:"", startDate:"", endDate:"", location:"All", note:"" });
+    if (!form.name || !form.startDate || !form.endDate) return;
+    const s = new Date(form.startDate), e = new Date(form.endDate);
+    const days = Math.max(1, Math.round((e - s) / 86400000) + 1);
+    setRows(r => [...r, [form.name, form.startDate, form.endDate, `${days} day${days > 1 ? "s" : ""}`, form.location]]);
+    setModal(false); setForm({ name: "", startDate: "", endDate: "", location: "All Locations", note: "" });
   };
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Holiday</h2>
-      <Card style={{ marginBottom:14 }}><div style={{ fontWeight:600 }}>🔽 Filters</div></Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Holidays</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Holiday</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Holidays", value: rows.length.toString(), accent: true },
+        { label: "This Quarter", value: "2", color: G.green },
+        { label: "Total Days Off", value: rows.reduce((s,r)=>s+parseInt(r[3]),0).toString(), color: G.blue },
+      ]} />
       <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-          <h3 style={{ margin:0, fontSize:16 }}>All Holidays</h3>
-          <Btn onClick={() => { setModal(true); setEditIdx(null); setForm({ name:"", startDate:"", endDate:"", location:"All", note:"" }); }}>+ Add</Btn>
-        </div>
-        <DataTable columns={["Name","Date","Business Location","Note"]} rows={rows.map(r=>[r.name,`${r.start} – ${r.end} (${r.days}Days)`,r.location,r.note||"—"])}
-          onEdit={i => { const r=rows[i]; setForm({ name:r.name, startDate:r.start, endDate:r.end, location:r.location, note:r.note }); setEditIdx(i); setModal(true); }}
-          onDelete={i => setRows(r=>r.filter((_,j)=>j!==i))} />
+        <HRMTable columns={["Name", "Start", "End", "Duration", "Location"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
         <Modal title="Add Holiday" onClose={() => setModal(false)}>
-          <Field label="Name" required><Input value={form.name} onChange={e => setForm(f=>({...f,name:e.target.value}))} /></Field>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <Field label="Start Date" required><Input type="date" value={form.startDate} onChange={e => setForm(f=>({...f,startDate:e.target.value}))} /></Field>
-            <Field label="End Date" required><Input type="date" value={form.endDate} onChange={e => setForm(f=>({...f,endDate:e.target.value}))} /></Field>
+          <Field label="Name" required><FInput value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Holiday name" /></Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Start Date" required><FInput type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></Field>
+            <Field label="End Date" required><FInput type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></Field>
           </div>
-          <Field label="Business Location:"><Select value={form.location} onChange={e => setForm(f=>({...f,location:e.target.value}))}><option>All</option><option>Manodtechnologies</option></Select></Field>
-          <Field label="Note:"><Textarea value={form.note} onChange={e => setForm(f=>({...f,note:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={save}>Save</Btn><Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <Field label="Location"><FSelect value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}><option>All Locations</option><option>Manodtechnologies</option><option>Branch 1</option></FSelect></Field>
+          <Field label="Note"><FTextarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} rows={2} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={save}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -472,34 +748,42 @@ function Holiday() {
   );
 }
 
-/* ══ DEPARTMENTS ══ */
+/* ══════════════════════════════════════════
+   DEPARTMENTS
+══════════════════════════════════════════ */
 function Departments() {
-  const [rows, setRows] = useState([{ dept:"sales", id:"sales", desc:"sales" },{ dept:"Digital Marketing", id:"", desc:"" }]);
+  const [rows, setRows] = useState([
+    ["Sales",            "DEPT-SALES", "Handles all outbound and inbound sales"],
+    ["Digital Marketing","DEPT-MKTG",  "Online marketing and brand strategy"],
+    ["Operations",       "DEPT-OPS",   "Warehouse and logistics management"],
+    ["Human Resources",  "DEPT-HR",    "Recruitment, payroll and employee welfare"],
+    ["Finance",          "DEPT-FIN",   "Accounts, billing and financial planning"],
+  ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ dept:"", id:"", desc:"" });
-  const [editIdx, setEditIdx] = useState(null);
-  const save = () => {
-    if (!form.dept) return;
-    if (editIdx!==null) { setRows(r=>r.map((x,i)=>i===editIdx?form:x)); setEditIdx(null); }
-    else setRows(r=>[...r,form]);
-    setModal(false); setForm({ dept:"", id:"", desc:"" });
-  };
+  const [form, setForm] = useState({ dept: "", id: "", desc: "" });
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Departments</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Departments</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Department</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Departments", value: rows.length.toString(), accent: true },
+        { label: "Active", value: rows.length.toString(), color: G.green },
+      ]} />
       <Card>
-        <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><Btn onClick={() => { setModal(true); setEditIdx(null); setForm({ dept:"", id:"", desc:"" }); }}>+ Add</Btn></div>
-        <DataTable columns={["Department","Department ID","Description"]} rows={rows.map(r=>[r.dept,r.id||"—",r.desc||"—"])}
-          onEdit={i => { setForm(rows[i]); setEditIdx(i); setModal(true); }} onDelete={i => setRows(r=>r.filter((_,j)=>j!==i))} />
+        <HRMTable columns={["Department", "Dept ID", "Description"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
         <Modal title="Add Department" onClose={() => setModal(false)}>
-          <Field label="Department" required><Input value={form.dept} onChange={e => setForm(f=>({...f,dept:e.target.value}))} /></Field>
-          <Field label="Department ID:"><Input value={form.id} onChange={e => setForm(f=>({...f,id:e.target.value}))} /></Field>
-          <Field label="Description:"><Textarea value={form.desc} onChange={e => setForm(f=>({...f,desc:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={save}>Save</Btn><Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <Field label="Department Name" required><FInput value={form.dept} onChange={e => setForm(f => ({ ...f, dept: e.target.value }))} placeholder="e.g. Sales" /></Field>
+          <Field label="Department ID"><FInput value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value }))} placeholder="e.g. DEPT-SALES" /></Field>
+          <Field label="Description"><FTextarea value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} placeholder="Brief description" /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { if (form.dept) { setRows(r => [...r, [form.dept, form.id || "—", form.desc || "—"]]); setModal(false); setForm({ dept: "", id: "", desc: "" }); } }}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -507,33 +791,37 @@ function Departments() {
   );
 }
 
-/* ══ DESIGNATIONS ══ */
+/* ══════════════════════════════════════════
+   DESIGNATIONS
+══════════════════════════════════════════ */
 function Designations() {
-  const [rows, setRows] = useState([{ desig:"sales", desc:"sales" }]);
+  const [rows, setRows] = useState([
+    ["Sales Executive",     "Handles day-to-day customer sales and CRM"],
+    ["Sales Manager",       "Manages sales team and targets"],
+    ["HR Executive",        "Recruitment and employee onboarding"],
+    ["Warehouse Analyst",   "Stock management and audits"],
+    ["Finance Executive",   "Invoicing and account reconciliation"],
+  ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ desig:"", desc:"" });
-  const [editIdx, setEditIdx] = useState(null);
-  const save = () => {
-    if (!form.desig) return;
-    if (editIdx!==null) { setRows(r=>r.map((x,i)=>i===editIdx?form:x)); setEditIdx(null); }
-    else setRows(r=>[...r,form]);
-    setModal(false); setForm({ desig:"", desc:"" });
-  };
+  const [form, setForm] = useState({ desig: "", desc: "" });
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Designations</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Designations</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Designation</GreenBtn>
+      </div>
       <Card>
-        <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><Btn onClick={() => { setModal(true); setEditIdx(null); setForm({ desig:"", desc:"" }); }}>+ Add</Btn></div>
-        <DataTable columns={["Designation","Description"]} rows={rows.map(r=>[r.desig,r.desc||"—"])}
-          onEdit={i => { setForm(rows[i]); setEditIdx(i); setModal(true); }} onDelete={i => setRows(r=>r.filter((_,j)=>j!==i))} />
+        <HRMTable columns={["Designation", "Description"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
-        <Modal title={editIdx!==null?"Edit Designation":"Add Designation"} onClose={() => setModal(false)}>
-          <Field label="Designation" required><Input value={form.desig} onChange={e => setForm(f=>({...f,desig:e.target.value}))} /></Field>
-          <Field label="Description:"><Textarea value={form.desc} onChange={e => setForm(f=>({...f,desc:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={save}>Save</Btn><Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+        <Modal title="Add Designation" onClose={() => setModal(false)}>
+          <Field label="Designation" required><FInput value={form.desig} onChange={e => setForm(f => ({ ...f, desig: e.target.value }))} placeholder="e.g. Sales Executive" /></Field>
+          <Field label="Description"><FTextarea value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { if (form.desig) { setRows(r => [...r, [form.desig, form.desc || "—"]]); setModal(false); setForm({ desig: "", desc: "" }); } }}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -541,28 +829,43 @@ function Designations() {
   );
 }
 
-/* ══ SALES TARGETS ══ */
+/* ══════════════════════════════════════════
+   SALES TARGETS
+══════════════════════════════════════════ */
 function SalesTargets() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState([
+    ["Arjun Mehta",  "₹3,50,000", "5%", "Jun 2026"],
+    ["Priya Singh",  "₹3,00,000", "4%", "Jun 2026"],
+    ["Vikram Rao",   "₹2,80,000", "5%", "Jun 2026"],
+    ["Sneha Nair",   "₹2,50,000", "4%", "Jun 2026"],
+  ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ user:"", target:"", commission:"", month:"" });
+  const [form, setForm] = useState({ user: "", target: "", commission: "", month: "" });
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>Sales Targets</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: G.text }}>Sales Targets</h2>
+        <GreenBtn onClick={() => setModal(true)}>+ Add Target</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label: "Total Reps",     value: rows.length.toString(), accent: true },
+        { label: "Total Target",   value: "₹12,80,000", color: G.green },
+        { label: "Total Commission Budget", value: "₹57,600", color: G.blue },
+      ]} />
       <Card>
-        <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><Btn onClick={() => setModal(true)}>+ Add</Btn></div>
-        <DataTable columns={["User","Target","Commission %","Month/Year"]} rows={rows} onEdit={() => {}} onDelete={i => setRows(r=>r.filter((_,j)=>j!==i))} />
+        <HRMTable columns={["User", "Target Amount", "Commission %", "Month"]} rows={rows} setRows={setRows} />
       </Card>
       {modal && (
         <Modal title="Add Sales Target" onClose={() => setModal(false)}>
-          <Field label="User" required><Input value={form.user} onChange={e => setForm(f=>({...f,user:e.target.value}))} /></Field>
-          <Field label="Target Amount" required><Input type="number" value={form.target} onChange={e => setForm(f=>({...f,target:e.target.value}))} /></Field>
-          <Field label="Commission %"><Input type="number" value={form.commission} onChange={e => setForm(f=>({...f,commission:e.target.value}))} /></Field>
-          <Field label="Month/Year"><Input type="month" value={form.month} onChange={e => setForm(f=>({...f,month:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <Btn onClick={() => { if(form.user&&form.target){ setRows(r=>[...r,[form.user,`₹${form.target}`,`${form.commission}%`,form.month]]); setModal(false); setForm({ user:"", target:"", commission:"", month:"" }); } }}>Save</Btn>
-            <Btn variant="dark" onClick={() => setModal(false)}>Close</Btn>
+          <Field label="User" required><FInput value={form.user} onChange={e => setForm(f => ({ ...f, user: e.target.value }))} placeholder="Employee name" /></Field>
+          <Field label="Target Amount" required><FInput value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="₹0" /></Field>
+          <Field label="Commission %"><FInput type="number" value={form.commission} onChange={e => setForm(f => ({ ...f, commission: e.target.value }))} placeholder="5" /></Field>
+          <Field label="Month / Year"><FInput type="month" value={form.month} onChange={e => setForm(f => ({ ...f, month: e.target.value }))} /></Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <GreenBtn onClick={() => { if (form.user && form.target) { setRows(r => [...r, [form.user, form.target, `${form.commission}%`, form.month]]); setModal(false); setForm({ user: "", target: "", commission: "", month: "" }); } }}>Save</GreenBtn>
+            <DarkBtn onClick={() => setModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -570,41 +873,48 @@ function SalesTargets() {
   );
 }
 
-/* ══ HRM SETTINGS ══ */
+/* ══════════════════════════════════════════
+   HRM SETTINGS
+══════════════════════════════════════════ */
 function HRMSettings() {
-  const [form, setForm] = useState({ workDays:"5", workHours:"8", overtimeRate:"1.5", currency:"INR", payslipNote:"", leaveApproval:"manager", attendanceMode:"manual" });
+  const [form, setForm] = useState({ workDays: "5", workHours: "8", overtimeRate: "1.5", currency: "INR", payslipNote: "Thank you for your service.", leaveApproval: "manager", attendanceMode: "manual" });
   const [saved, setSaved] = useState(false);
+  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
+
   return (
     <div>
       <HRMNav />
-      <h2 style={{ marginBottom:16 }}>HRM Settings</h2>
-      <Card style={{ maxWidth:700 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <Field label="Working Days per Week"><Select value={form.workDays} onChange={e => setForm(f=>({...f,workDays:e.target.value}))}>{["5","6","7"].map(v=><option key={v}>{v}</option>)}</Select></Field>
-          <Field label="Working Hours per Day"><Input type="number" value={form.workHours} onChange={e => setForm(f=>({...f,workHours:e.target.value}))} /></Field>
-          <Field label="Overtime Rate Multiplier"><Input type="number" step="0.1" value={form.overtimeRate} onChange={e => setForm(f=>({...f,overtimeRate:e.target.value}))} /></Field>
-          <Field label="Currency"><Select value={form.currency} onChange={e => setForm(f=>({...f,currency:e.target.value}))}>{["INR","USD","EUR","GBP"].map(v=><option key={v}>{v}</option>)}</Select></Field>
-          <Field label="Leave Approval"><Select value={form.leaveApproval} onChange={e => setForm(f=>({...f,leaveApproval:e.target.value}))}><option value="manager">Manager Approval</option><option value="hr">HR Approval</option><option value="auto">Auto Approve</option></Select></Field>
-          <Field label="Attendance Mode"><Select value={form.attendanceMode} onChange={e => setForm(f=>({...f,attendanceMode:e.target.value}))}><option value="manual">Manual Clock In/Out</option><option value="biometric">Biometric</option><option value="gps">GPS Based</option></Select></Field>
+      <h2 style={{ marginBottom: 18, fontSize: 20, fontWeight: 700, color: G.text }}>HRM Settings</h2>
+      <Card style={{ maxWidth: 700 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 20, fontSize: 15, fontWeight: 700, borderBottom: `1px solid ${G.border}`, paddingBottom: 12, color: G.text }}>General Configuration</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Field label="Working Days / Week"><FSelect value={form.workDays} onChange={e => setForm(f => ({ ...f, workDays: e.target.value }))}>{["5","6","7"].map(v=><option key={v}>{v}</option>)}</FSelect></Field>
+          <Field label="Working Hours / Day"><FInput type="number" value={form.workHours} onChange={e => setForm(f => ({ ...f, workHours: e.target.value }))} /></Field>
+          <Field label="Overtime Rate Multiplier"><FInput type="number" step="0.1" value={form.overtimeRate} onChange={e => setForm(f => ({ ...f, overtimeRate: e.target.value }))} /></Field>
+          <Field label="Currency"><FSelect value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>{["INR","USD","EUR","GBP"].map(v=><option key={v}>{v}</option>)}</FSelect></Field>
+          <Field label="Leave Approval"><FSelect value={form.leaveApproval} onChange={e => setForm(f => ({ ...f, leaveApproval: e.target.value }))}><option value="manager">Manager</option><option value="hr">HR Dept</option><option value="auto">Auto Approve</option></FSelect></Field>
+          <Field label="Attendance Mode"><FSelect value={form.attendanceMode} onChange={e => setForm(f => ({ ...f, attendanceMode: e.target.value }))}><option value="manual">Manual Clock In/Out</option><option value="biometric">Biometric</option><option value="gps">GPS Based</option></FSelect></Field>
         </div>
-        <Field label="Payslip Footer Note"><Textarea value={form.payslipNote} onChange={e => setForm(f=>({...f,payslipNote:e.target.value}))} /></Field>
-        <div style={{ display:"flex", gap:10, alignItems:"center", marginTop:8 }}>
-          <Btn onClick={() => { setSaved(true); setTimeout(()=>setSaved(false),2000); }} variant="green">💾 Save Settings</Btn>
-          {saved && <span style={{ color:C.green, fontSize:13, fontWeight:600 }}>✓ Saved!</span>}
+        <Field label="Payslip Footer Note"><FTextarea value={form.payslipNote} onChange={e => setForm(f => ({ ...f, payslipNote: e.target.value }))} /></Field>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10 }}>
+          <GreenBtn onClick={save} style={{ fontSize: 14, padding: "10px 28px" }}>💾 Save Settings</GreenBtn>
+          {saved && <span style={{ color: G.green, fontSize: 13, fontWeight: 700, background: G.greenBg, padding: "6px 14px", borderRadius: 8 }}>✓ Settings saved!</span>}
         </div>
       </Card>
     </div>
   );
 }
 
-const FONT_HEAD = "'DM Sans', 'Nunito', sans-serif";
-const FONT_BODY = "'Inter', 'Segoe UI', sans-serif";
+
+const FONT      = "'Inter','Segoe UI',system-ui,-apple-system,sans-serif";
+const FONT_HEAD = FONT;
+const FONT_BODY = FONT;
 const GREEN      = "#1a6b3c";
-const GREEN2     = "#28a745";
-const GREEN_LITE = "#e8f5ee";
+const GREEN2     = "#22863a";
+const GREEN_LITE = "#eaf3ea";
 const NAVY       = "#0f2027";
-const BTN_GRAD   = "linear-gradient(135deg,#1a6b3c 0%,#22c55e 100%)";
-const SHADOW     = "0 2px 12px rgba(26,107,60,.10)";
+const BTN_GRAD   = "#1a6b3c";
+const SHADOW     = "0 1px 3px rgba(0,0,0,.08)";
 
 /* ─── Sample / Mock Data ─── */
 const SAMPLE_TODOS = [
@@ -664,8 +974,17 @@ function injectStyles() {
   if (stylesInjected) return;
   stylesInjected = true;
   const s = document.createElement("style");
+  const tabler = document.createElement('link');
+  tabler.rel = 'stylesheet';
+  tabler.href = 'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css';
+  document.head.appendChild(tabler);
+  const gf = document.createElement('link');
+  gf.rel = 'stylesheet';
+  gf.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap';
+  document.head.appendChild(gf);
   s.textContent = `
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; }
+    .ess-wrap { font-family:'Inter','Segoe UI',system-ui,sans-serif; color:#111827; font-size:14px; line-height:1.5; }
 
     .ess-wrap { font-family:${FONT_BODY}; color:#222; }
 
@@ -679,7 +998,7 @@ function injectStyles() {
     .ess-tab.active { color:${GREEN}; border-bottom-color:${GREEN}; background:${GREEN_LITE}; border-radius:6px 6px 0 0; }
 
     /* ── Page header ── */
-    .ess-title { font-size:21px; font-weight:700; color:#111827; font-family:${FONT_HEAD}; letter-spacing:-.02em; }
+    .ess-title { font-size:20px; font-weight:600; color:#111827; font-family:'Inter',sans-serif; letter-spacing:-.01em; }
     .ess-sub   { font-size:13px; color:#9ca3af; margin-top:2px; }
     .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; }
 
@@ -687,17 +1006,17 @@ function injectStyles() {
     .ess-card { background:#fff; border-radius:12px; box-shadow:${SHADOW}; padding:20px; margin-bottom:18px; border:1px solid #f0f4f1; }
 
     /* ── Buttons ── */
-    .btn-add { background:${BTN_GRAD}; color:#fff; border:none; border-radius:8px;
-                padding:10px 22px; font-size:13.5px; font-weight:600; cursor:pointer;
-                display:inline-flex; align-items:center; gap:6px; font-family:${FONT_BODY};
-                box-shadow:0 3px 12px rgba(26,107,60,.30); transition:.2s; letter-spacing:.01em; }
-    .btn-add:hover { transform:translateY(-1px); box-shadow:0 5px 16px rgba(26,107,60,.40); }
-    .btn-save { background:${BTN_GRAD}; color:#fff; border:none; border-radius:8px;
-                 padding:10px 28px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:${FONT_BODY}; transition:.2s; }
-    .btn-save:hover { opacity:.9; }
-    .btn-cancel { background:#374151; color:#fff; border:none; border-radius:8px;
-                   padding:10px 22px; font-size:13.5px; font-weight:600; cursor:pointer; font-family:${FONT_BODY}; transition:.2s; }
-    .btn-cancel:hover { background:#1f2937; }
+    .btn-add { background:#1a6b3c; color:#fff; border:none; border-radius:7px;
+                padding:9px 20px; font-size:13.5px; font-weight:500; cursor:pointer;
+                display:inline-flex; align-items:center; gap:7px; font-family:'Inter',sans-serif;
+                transition:background .15s; letter-spacing:0; }
+    .btn-add:hover { background:#145530; }
+    .btn-save { background:#1a6b3c; color:#fff; border:none; border-radius:7px;
+                 padding:9px 24px; font-size:13.5px; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
+    .btn-save:hover { background:#145530; }
+    .btn-cancel { background:#fff; color:#374151; border:1px solid #d1d5db; border-radius:7px;
+                   padding:9px 20px; font-size:13.5px; font-weight:500; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
+    .btn-cancel:hover { background:#f9fafb; }
 
     /* ── Export bar ── */
     .export-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -713,8 +1032,8 @@ function injectStyles() {
 
     /* ── Table ── */
     .ess-table { width:100%; border-collapse:collapse; font-size:13.5px; }
-    .ess-table th { background:#f8faf9; color:#374151; font-weight:600; padding:11px 14px;
-                     text-align:left; border-bottom:2px solid #e5e7eb; white-space:nowrap; font-family:${FONT_HEAD}; font-size:13px; }
+    .ess-table th { background:#f8faf9; color:#6b7280; font-weight:500; padding:10px 14px;
+                     text-align:left; border-bottom:1px solid #e5e7eb; white-space:nowrap; font-family:'Inter',sans-serif; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
     .ess-table td { padding:11px 14px; border-bottom:1px solid #f3f4f6; color:#374151; vertical-align:middle; }
     .ess-table tr:hover td { background:#f0faf4; }
     .no-data { text-align:center; color:#9ca3af; padding:40px; font-size:14px; }
@@ -788,8 +1107,9 @@ function injectStyles() {
     .msg-input { flex:1; border:1px solid #d1d5db; border-radius:8px; padding:10px 14px;
                   font-family:${FONT_BODY}; font-size:13.5px; outline:none; transition:.2s; }
     .msg-input:focus { border-color:${GREEN}; box-shadow:0 0 0 3px rgba(26,107,60,.10); }
-    .msg-send { background:${BTN_GRAD}; color:#fff; border:none; border-radius:8px;
-                 padding:10px 18px; font-size:20px; cursor:pointer; line-height:1; }
+    .msg-send { background:#1a6b3c; color:#fff; border:none; border-radius:7px;
+                 padding:10px 16px; font-size:16px; cursor:pointer; line-height:1; transition:background .15s; }
+    .msg-send:hover { background:#145530; }
 
     /* ── Rich text mock ── */
     .rich-toolbar { border:1px solid #d1d5db; border-radius:8px 8px 0 0; background:#f9fafb;
@@ -824,8 +1144,10 @@ function injectStyles() {
     .pag-btn:hover { background:#f3f4f6; }
 
     /* ── Action icon buttons ── */
-    .act-btn { background:none; border:none; cursor:pointer; padding:4px 6px; border-radius:5px; font-size:15px; transition:.15s; }
-    .act-btn:hover { background:#f3f4f6; }
+    .act-btn { background:none; border:none; cursor:pointer; padding:5px 7px; border-radius:6px; font-size:15px; transition:.15s; color:#6b7280; display:inline-flex; align-items:center; }
+    .act-btn:hover { background:#f3f4f6; color:#374151; }
+    .act-btn.edit-del { color:#9ca3af; }
+    .act-btn.edit-del:hover { background:#fee2e2; color:#dc2626; }
   `;
   document.head.appendChild(s);
 }
@@ -853,11 +1175,11 @@ function EssExportBar({ data = [], columns = [], filename = "export" }) {
   const [visible,  setVisible]  = useState(() => Object.fromEntries(columns.map(c => [c.key, true])));
   return (
     <div className="export-bar">
-      <button className="exp-btn csv"   onClick={toCSV}>   📄 CSV   </button>
-      <button className="exp-btn excel" onClick={toCSV}>   📊 Excel </button>
-      <button className="exp-btn print" onClick={toPrint}> 🖨 Print  </button>
+      <button className="exp-btn csv"   onClick={toCSV}><i className="ti ti-file-text" style={{fontSize:14}}></i> CSV</button>
+      <button className="exp-btn excel" onClick={toCSV}><i className="ti ti-table" style={{fontSize:14}}></i> Excel</button>
+      <button className="exp-btn print" onClick={toPrint}><i className="ti ti-printer" style={{fontSize:14}}></i> Print</button>
       <div style={{ position:"relative" }}>
-        <button className="exp-btn col" onClick={() => setShowCols(v => !v)}>⠿ Columns</button>
+        <button className="exp-btn col" onClick={() => setShowCols(v => !v)}><i className="ti ti-columns" style={{fontSize:14}}></i> Columns</button>
         {showCols && (
           <div style={{ position:"absolute", top:"110%", left:0, background:"#fff", border:"1px solid #e5e7eb",
                          borderRadius:10, padding:14, zIndex:100, minWidth:190, boxShadow:"0 8px 24px rgba(0,0,0,.12)" }}>
@@ -870,7 +1192,7 @@ function EssExportBar({ data = [], columns = [], filename = "export" }) {
           </div>
         )}
       </div>
-      <button className="exp-btn pdf" onClick={toPrint}>📑 PDF</button>
+      <button className="exp-btn pdf" onClick={toPrint}><i className="ti ti-file-type-pdf" style={{fontSize:14}}></i> PDF</button>
     </div>
   );
 }
@@ -989,7 +1311,7 @@ function TodoModal({ onClose, onSave }) {
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-box">
-        <div className="modal-title">Add Task <button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-title">Add Task <button className="modal-close" onClick={onClose}><i className="ti ti-x" style={{fontSize:18,verticalAlign:"middle"}}></i></button></div>
         <div className="form-group">
           <label className="form-label">Task Name *</label>
           <input className="form-control" value={form.task} onChange={set("task")} placeholder="Enter task name" />
@@ -1053,7 +1375,7 @@ function EssTodoPage() {
       ...t,
       priority:    priorityBadge(t.priority),
       statusBadge: statusBadge(t.status),
-      actions:     <><button className="act-btn" title="Edit">✏️</button><button className="act-btn" title="Delete">🗑️</button></>,
+      actions:     <><button className="act-btn" title="Edit"><i className="ti ti-edit"></i></button><button className="act-btn edit-del" title="Delete"><i className="ti ti-trash"></i></button></>,
     }))
   );
   return (
@@ -1067,7 +1389,7 @@ function EssTodoPage() {
             statusBadge: statusBadge(f.status||"Not Started"),
             startDate: f.startDate, endDate: f.endDate, hours: f.hours,
             assignedBy:"Admin", assignedTo: f.assignedTo,
-            actions: <><button className="act-btn">✏️</button><button className="act-btn">🗑️</button></>
+            actions: <><button className="act-btn"><i className="ti ti-edit"></i></button><button className="act-btn edit-del"><i className="ti ti-trash"></i></button></>
           }])}
         />
       )}
@@ -1076,7 +1398,7 @@ function EssTodoPage() {
           <div className="ess-title">📋 To-Do List</div>
           <div className="ess-sub">{todos.length} tasks total</div>
         </div>
-        <button className="btn-add" onClick={() => setShowModal(true)}>＋ Add Task</button>
+        <button className="btn-add" onClick={() => setShowModal(true)}><i className="ti ti-plus" style={{fontSize:15}}></i> Add Task</button>
       </div>
       <EssFilterBar filters={[
         { label:"Assigned To", options:["All","Priya S.","Rahul M.","Ananya K.","Vikram T.","Deepa R."] },
@@ -1109,7 +1431,7 @@ function EssDocumentPage() {
     SAMPLE_DOCS.map(d => ({
       ...d,
       size:    `${(Math.random()*4+0.5).toFixed(1)} MB`,
-      actions: <><button className="act-btn" title="Download">⬇️</button><button className="act-btn" title="Delete">🗑️</button></>,
+      actions: <><button className="act-btn" title="Download"><i className="ti ti-download"></i></button><button className="act-btn edit-del" title="Delete"><i className="ti ti-trash"></i></button></>,
     }))
   );
   const handleSubmit = () => {
@@ -1118,7 +1440,7 @@ function EssDocumentPage() {
       name: file.name, description: desc,
       uploadedDate: new Date().toLocaleDateString("en-IN"),
       size: `${(file.size/1048576).toFixed(1)} MB`,
-      actions: <><button className="act-btn">⬇️</button><button className="act-btn">🗑️</button></>
+      actions: <><button className="act-btn"><i className="ti ti-download"></i></button><button className="act-btn edit-del"><i className="ti ti-trash"></i></button></>
     }]);
     setFile(null); setDesc(""); setShowForm(false);
   };
@@ -1129,7 +1451,7 @@ function EssDocumentPage() {
           <div className="ess-title">📁 Documents</div>
           <div className="ess-sub">Manage shared files and attachments</div>
         </div>
-        <button className="btn-add" onClick={() => setShowForm(v => !v)}>＋ Upload</button>
+        <button className="btn-add" onClick={() => setShowForm(v => !v)}><i className="ti ti-upload" style={{fontSize:15}}></i> Upload</button>
       </div>
       {showForm && (
         <div className="ess-card">
@@ -1175,7 +1497,7 @@ function MemoModal({ onClose, onSave }) {
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-box">
-        <div className="modal-title">Add Memo <button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-title">Add Memo <button className="modal-close" onClick={onClose}><i className="ti ti-x" style={{fontSize:18,verticalAlign:"middle"}}></i></button></div>
         <div className="form-group">
           <label className="form-label">Heading *</label>
           <input className="form-control" value={heading} onChange={e => setHeading(e.target.value)} placeholder="Memo heading" />
@@ -1198,7 +1520,7 @@ function EssMemosPage() {
   const [memos, setMemos] = useState(
     SAMPLE_MEMOS.map(m => ({
       ...m,
-      actions: <><button className="act-btn">✏️</button><button className="act-btn">🗑️</button></>
+      actions: <><button className="act-btn"><i className="ti ti-edit"></i></button><button className="act-btn edit-del"><i className="ti ti-trash"></i></button></>
     }))
   );
   return (
@@ -1209,7 +1531,7 @@ function EssMemosPage() {
           onSave={m => setMemos(ms => [...ms, {
             heading: m.heading, description: m.desc,
             createdDate: new Date().toLocaleDateString("en-IN"),
-            actions: <><button className="act-btn">✏️</button><button className="act-btn">🗑️</button></>
+            actions: <><button className="act-btn"><i className="ti ti-edit"></i></button><button className="act-btn edit-del"><i className="ti ti-trash"></i></button></>
           }])}
         />
       )}
@@ -1218,7 +1540,7 @@ function EssMemosPage() {
           <div className="ess-title">📝 Memos</div>
           <div className="ess-sub">Internal announcements and notices</div>
         </div>
-        <button className="btn-add" onClick={() => setShowModal(true)}>＋ Add Memo</button>
+        <button className="btn-add" onClick={() => setShowModal(true)}><i className="ti ti-plus" style={{fontSize:15}}></i> Add Memo</button>
       </div>
       <div className="ess-card">
         <EssDataTable columns={MEMO_COLS} data={memos} />
@@ -1234,7 +1556,7 @@ function ReminderModal({ onClose, onSave }) {
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth:480 }}>
-        <div className="modal-title">Add Reminder <button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-title">Add Reminder <button className="modal-close" onClick={onClose}><i className="ti ti-x" style={{fontSize:18,verticalAlign:"middle"}}></i></button></div>
         <div className="form-group">
           <label className="form-label">Event Name *</label>
           <input className="form-control" value={form.name} onChange={set("name")} placeholder="e.g. Monthly Payroll Run" />
@@ -1295,7 +1617,7 @@ function EssRemindersPage() {
           <div className="ess-title">🗓️ Reminders</div>
           <div className="ess-sub">{events.length} upcoming events</div>
         </div>
-        <button className="btn-add" onClick={() => setShowModal(true)}>＋ Add Reminder</button>
+        <button className="btn-add" onClick={() => setShowModal(true)}><i className="ti ti-plus" style={{fontSize:15}}></i> Add Reminder</button>
       </div>
       <div className="ess-card cal-wrap" style={{ padding:22 }}>
         <div className="cal-nav">
@@ -1345,7 +1667,7 @@ function EssRemindersPage() {
               <div style={{ fontWeight:600, fontSize:14, color:"#111827" }}>{ev.name}</div>
               <div style={{ fontSize:12, color:"#9ca3af" }}>{ev.date} · {ev.startTime}{ev.endTime ? `–${ev.endTime}` : ""} · {ev.repeat}</div>
             </div>
-            <button className="act-btn">🗑️</button>
+            <button className="act-btn edit-del"><i className="ti ti-trash"></i></button>
           </div>
         ))}
       </div>
@@ -1393,7 +1715,7 @@ function EssMessagesPage() {
         <div className="msg-input-row">
           <input className="msg-input" placeholder="Type a message..." value={input}
             onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter" && send()} />
-          <button className="msg-send" onClick={send}>➤</button>
+          <button className="msg-send" onClick={send}><i className="ti ti-send" style={{fontSize:16}}></i></button>
         </div>
       </div>
     </div>
@@ -1427,7 +1749,7 @@ function EssKnowledgePage() {
           <div className="ess-title">📚 Knowledge Base</div>
           <div className="ess-sub">{articles.length} articles</div>
         </div>
-        <button className="btn-add" onClick={() => setShowForm(v => !v)}>＋ Add Article</button>
+        <button className="btn-add" onClick={() => setShowForm(v => !v)}><i className="ti ti-plus" style={{fontSize:15}}></i> Add Article</button>
       </div>
       {showForm && (
         <div className="ess-card">
@@ -1473,8 +1795,8 @@ function EssKnowledgePage() {
               </div>
             </div>
             <div style={{ display:"flex", gap:4, marginLeft:16 }}>
-              <button className="act-btn">✏️</button>
-              <button className="act-btn">🗑️</button>
+              <button className="act-btn"><i className="ti ti-edit"></i></button>
+              <button className="act-btn edit-del"><i className="ti ti-trash"></i></button>
             </div>
           </div>
         </div>
@@ -1590,13 +1912,13 @@ function EssentialsSettingsPage() {
 
 /* ═══════════════════════════════ MAIN COMPONENT ═══════════════════════════════ */
 const TABS = [
-  { key:"To Do"       },
-  { key:"Document"},
-  { key:"Memos" },
-  { key:"Reminders" },
-  { key:"Messages" },
-  { key:"Knowledge Base" },
-  { key:"Settings" },
+  { key:"To Do",         icon:"✅" },
+  { key:"Document",      icon:"📁" },
+  { key:"Memos",         icon:"📝" },
+  { key:"Reminders",     icon:"🗓️" },
+  { key:"Messages",      icon:"💬" },
+  { key:"Knowledge Base",icon:"📚" },
+  { key:"Settings",      icon:"⚙️" },
 ];
 
 
@@ -1604,14 +1926,14 @@ const TABS = [
    ESSENTIALS NAV
 ══════════════════════════════════════════ */
 const ESS_TABS = [
-  { label: "Essentials",     path: "/essentials" },
-  { label: "To Do",          path: "/essentials/todo" },
-  { label: "Document",       path: "/essentials/document"},
-  { label: "Memos",          path: "/essentials/memos" },
-  { label: "Reminders",      path: "/essentials/reminders" },
-  { label: "Messages",       path: "/essentials/messages" },
-  { label: "Knowledge Base", path: "/essentials/knowledge-base" },
-  { label: "Settings",       path: "/essentials/settings" },
+  { label: "Essentials",     path: "/essentials",              icon: "🏠" },
+  { label: "To Do",          path: "/essentials/todo",         icon: "✅" },
+  { label: "Document",       path: "/essentials/document",     icon: "📁" },
+  { label: "Memos",          path: "/essentials/memos",        icon: "📝" },
+  { label: "Reminders",      path: "/essentials/reminders",    icon: "🗓️" },
+  { label: "Messages",       path: "/essentials/messages",     icon: "💬" },
+  { label: "Knowledge Base", path: "/essentials/knowledge-base", icon: "📚" },
+  { label: "Settings",       path: "/essentials/settings",     icon: "⚙️" },
 ];
 
 function EssentialsNav() {
@@ -1649,12 +1971,12 @@ function EssentialsNav() {
 ══════════════════════════════════════════ */
 function EssentialsDashboard() {
   const cards = [
-    {  label:"To Do",         path:"/essentials/todo",          count:"7 tasks",   color:"#d1fae5", accent:"#1a6b3c" },
-    {  label:"Documents",     path:"/essentials/document",      count:"6 files",   color:"#dbeafe", accent:"#1d4ed8" },
-    { label:"Memos",         path:"/essentials/memos",         count:"5 memos",   color:"#fef9c3", accent:"#713f12" },
-    {  label:"Reminders",    path:"/essentials/reminders",     count:"6 events",  color:"#ede9fe", accent:"#6d28d9" },
-    {  label:"Messages",      path:"/essentials/messages",      count:"5 messages",color:"#e0f2fe", accent:"#0369a1" },
-    {  label:"Knowledge Base",path:"/essentials/knowledge-base",count:"4 articles",color:"#fce7f3", accent:"#9d174d" },
+    { icon:"✅", label:"To Do",         path:"/essentials/todo",          count:"7 tasks",   color:"#d1fae5", accent:"#1a6b3c" },
+    { icon:"📁", label:"Documents",     path:"/essentials/document",      count:"6 files",   color:"#dbeafe", accent:"#1d4ed8" },
+    { icon:"📝", label:"Memos",         path:"/essentials/memos",         count:"5 memos",   color:"#fef9c3", accent:"#713f12" },
+    { icon:"🗓️", label:"Reminders",    path:"/essentials/reminders",     count:"6 events",  color:"#ede9fe", accent:"#6d28d9" },
+    { icon:"💬", label:"Messages",      path:"/essentials/messages",      count:"5 messages",color:"#e0f2fe", accent:"#0369a1" },
+    { icon:"📚", label:"Knowledge Base",path:"/essentials/knowledge-base",count:"4 articles",color:"#fce7f3", accent:"#9d174d" },
   ];
   return (
     <div>

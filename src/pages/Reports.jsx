@@ -249,7 +249,7 @@ function ReportPage({ icon, label, description, children }) {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
       <div style={{ background: `linear-gradient(135deg, ${C.green1}, ${C.green2})`, padding: "18px 30px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 2px 12px rgba(46,125,50,0.2)" }}>
-        <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 10px", fontSize: 24 }}>{icon}</div>
+        <div style={{ background: "rgba(255, 255, 255, 0.15)", borderRadius: 10, padding: "8px 10px", fontSize: 24 }}>{icon}</div>
         <div>
           <h1 style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 900, letterSpacing: "0.3px" }}>{label}</h1>
           <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 2 }}>{description}</p>
