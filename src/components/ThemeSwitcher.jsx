@@ -1,213 +1,141 @@
 import { useState } from "react";
-import { useTheme, themes } from "./ThemeContext";
+import { useTheme, themes } from "../pages/ThemeContext";
 
 export default function ThemeSwitcher() {
-  const { themeKey, setThemeKey, theme } = useTheme();
+  const { themeKey, setThemeKey } = useTheme();
   const [open, setOpen] = useState(false);
-
-  const handleSelect = (key) => {
-    setThemeKey(key);
-    setTimeout(() => setOpen(false), 200);
-  };
 
   return (
     <>
-      {/* Trigger Button — place this in your TopHeader */}
+      {/* Button — sits inside TopHeader */}
       <button
         onClick={() => setOpen(true)}
         title="Change Theme"
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          background: "rgba(255,255,255,0.15)",
-          border: "1px solid rgba(255,255,255,0.25)",
-          borderRadius: "8px",
-          padding: "5px 12px",
-          cursor: "pointer",
-          color: theme.topbarText,
-          fontSize: "13px",
-          fontWeight: 500,
-          transition: "background 0.2s",
+          display: "flex", alignItems: "center", gap: "5px",
+          background: "rgba(255,255,255,0.14)",
+          border: "1px solid rgba(255,255,255,0.22)",
+          borderRadius: "8px", padding: "5px 12px",
+          color: "#fff", fontSize: "12.5px", fontWeight: 700,
+          cursor: "pointer", whiteSpace: "nowrap",
         }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.25)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.15)"}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.26)"}
+        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.14)"}
       >
-        <span style={{ fontSize: "16px" }}>🎨</span>
-        <span>Theme</span>
+        🎨 Theme
       </button>
 
-      {/* Modal Overlay */}
+      {/* Modal */}
       {open && (
         <div
           onClick={() => setOpen(false)}
           style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            backdropFilter: "blur(4px)",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            position: "fixed", inset: 0,
+            background: "rgba(0,0,0,0.50)",
+            zIndex: 4000,
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: "#fff",
-              borderRadius: "20px",
-              padding: "32px",
-              width: "520px",
-              maxWidth: "95vw",
-              boxShadow: "0 25px 60px rgba(0,0,0,0.25)",
-              animation: "fadeUp 0.22s ease",
+              background: "#fff", borderRadius: "20px",
+              padding: "28px", width: "520px", maxWidth: "95vw",
+              boxShadow: "0 25px 60px rgba(0,0,0,0.30)",
+              animation: "tmFadeUp 0.2s ease",
             }}
           >
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#1a202c" }}>
-                  🎨 Choose Your Theme
-                </h2>
-                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6b7280" }}>
-                  Personalise your ERP experience
-                </p>
+                <p style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#111827" }}>🎨 Choose Your Theme</p>
+                <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#6b7280" }}>Click any theme — the whole app updates instantly</p>
               </div>
               <button
                 onClick={() => setOpen(false)}
-                style={{
-                  background: "#f3f4f6",
-                  border: "none",
-                  borderRadius: "8px",
-                  width: "34px",
-                  height: "34px",
-                  cursor: "pointer",
-                  fontSize: "18px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#6b7280",
-                }}
-              >
-                ×
-              </button>
+                style={{ background: "#f3f4f6", border: "none", borderRadius: "8px", width: "32px", height: "32px", cursor: "pointer", fontSize: "18px", color: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >×</button>
             </div>
 
             {/* Theme Grid */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "12px",
-            }}>
-              {Object.entries(themes).map(([key, t]) => (
-                <button
-                  key={key}
-                  onClick={() => handleSelect(key)}
-                  style={{
-                    border: themeKey === key ? `2.5px solid ${t.accent}` : "2.5px solid transparent",
-                    borderRadius: "14px",
-                    padding: "0",
-                    cursor: "pointer",
-                    background: "none",
-                    position: "relative",
-                    boxShadow: themeKey === key ? `0 0 0 3px ${t.accent}33` : "0 2px 8px rgba(0,0,0,0.08)",
-                    transition: "all 0.18s ease",
-                    overflow: "hidden",
-                  }}
-                  onMouseEnter={e => {
-                    if (themeKey !== key) e.currentTarget.style.transform = "translateY(-2px)";
-                  }}
-                  onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
-                >
-                  {/* Mini preview */}
-                  <div style={{ borderRadius: "12px", overflow: "hidden" }}>
-                    {/* Sidebar strip */}
-                    <div style={{
-                      display: "flex",
-                      height: "70px",
-                    }}>
-                      <div style={{
-                        width: "28%",
-                        background: t.sidebar,
-                        padding: "6px 5px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "4px",
-                      }}>
-                        <div style={{ background: t.accent, borderRadius: "3px", height: "5px", width: "70%" }} />
-                        <div style={{ background: t.sidebarActive, borderRadius: "3px", height: "4px", width: "90%" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>
+              {Object.entries(themes).map(([key, t]) => {
+                const active = key === themeKey;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => { setThemeKey(key); setOpen(false); }}
+                    style={{
+                      border: `2.5px solid ${active ? t.accent : "transparent"}`,
+                      borderRadius: "14px", padding: 0, cursor: "pointer",
+                      background: "none", overflow: "hidden",
+                      boxShadow: active
+                        ? `0 0 0 3px ${t.accent}40`
+                        : "0 2px 8px rgba(0,0,0,0.09)",
+                      transition: "all 0.18s ease",
+                    }}
+                    onMouseEnter={e => { if (!active) e.currentTarget.style.transform = "translateY(-2px)"; }}
+                    onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}
+                  >
+                    {/* Mini ERP preview */}
+                    <div style={{ display: "flex", height: "68px" }}>
+                      {/* Sidebar strip */}
+                      <div style={{ width: "30%", background: t.sidebar, padding: "7px 6px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <div style={{ background: "rgba(255,255,255,0.9)", borderRadius: "3px", height: "5px", width: "65%" }} />
+                        <div style={{ background: t["--sb-active-bg"], borderRadius: "3px", height: "14px", width: "100%" }} />
                         <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: "3px", height: "4px", width: "80%" }} />
-                        <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "3px", height: "4px", width: "75%" }} />
+                        <div style={{ background: "rgba(255,255,255,0.10)", borderRadius: "3px", height: "4px", width: "70%" }} />
                       </div>
+                      {/* Main area */}
                       <div style={{ flex: 1, background: t.pageBg, padding: "5px" }}>
-                        {/* Topbar */}
-                        <div style={{ background: t.topbar, borderRadius: "4px", height: "10px", marginBottom: "5px" }} />
-                        {/* Cards */}
+                        <div style={{
+                          background: t.topbarGradient,
+                          borderRadius: "4px", height: "11px", marginBottom: "5px"
+                        }} />
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px" }}>
                           {[0,1,2,3].map(i => (
                             <div key={i} style={{
-                              background: t.cardBg,
-                              borderRadius: "4px",
-                              height: "16px",
+                              background: "#fff", borderRadius: "4px", height: "16px",
                               borderTop: `2px solid ${t.accent}`,
-                              boxShadow: `0 1px 3px ${t.shadow}`,
+                              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
                             }} />
                           ))}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Label */}
-                  <div style={{
-                    padding: "8px 10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    background: themeKey === key ? `${t.accent}15` : "#f9fafb",
-                    borderTop: "1px solid #f0f0f0",
-                  }}>
-                    <span style={{ fontSize: "14px" }}>{t.emoji}</span>
-                    <span style={{
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: themeKey === key ? t.brand : "#374151",
+                    {/* Label */}
+                    <div style={{
+                      padding: "7px 10px", display: "flex", alignItems: "center", gap: "6px",
+                      background: active ? `${t.accent}15` : "#f9fafb",
+                      borderTop: "1px solid #f0f0f0",
                     }}>
-                      {t.name}
-                    </span>
-                    {themeKey === key && (
-                      <span style={{
-                        marginLeft: "auto",
-                        background: t.accent,
-                        color: "#fff",
-                        borderRadius: "10px",
-                        fontSize: "10px",
-                        padding: "1px 7px",
-                        fontWeight: 700,
-                      }}>Active</span>
-                    )}
-                  </div>
-                </button>
-              ))}
+                      <span style={{ fontSize: "14px" }}>{t.emoji}</span>
+                      <span style={{ fontSize: "11.5px", fontWeight: 700, color: active ? t.accent : "#374151" }}>
+                        {t.name}
+                      </span>
+                      {active && (
+                        <span style={{
+                          marginLeft: "auto", background: t.accent, color: "#fff",
+                          borderRadius: "10px", fontSize: "9px", padding: "1px 7px", fontWeight: 800,
+                        }}>Active</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Footer */}
-            <p style={{
-              margin: "20px 0 0",
-              textAlign: "center",
-              fontSize: "12px",
-              color: "#9ca3af",
-            }}>
-              Your preference is saved automatically
+            <p style={{ margin: "16px 0 0", textAlign: "center", fontSize: "11.5px", color: "#9ca3af" }}>
+              Preference saved automatically
             </p>
           </div>
         </div>
       )}
 
       <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
+        @keyframes tmFadeUp {
+          from { opacity: 0; transform: translateY(14px); }
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>

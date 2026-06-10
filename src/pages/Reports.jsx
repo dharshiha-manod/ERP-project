@@ -231,7 +231,6 @@ function Pagination({ total, page, perPage, onPage }) {
   );
 }
 
-// ─── Chart bar for simple inline visualisation ───────────────────────────────
 function MiniBar({ value, max, color }) {
   const pct = max ? Math.round((value / max) * 100) : 0;
   return (
@@ -244,18 +243,21 @@ function MiniBar({ value, max, color }) {
   );
 }
 
-// ─── Page shell ──────────────────────────────────────────────────────────────
+// ─── Page shell — UPDATED: clean white header, no green gradient ──────────────
 function ReportPage({ icon, label, description, children }) {
+  // Build breadcrumb from label
+  const breadcrumb = label;
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Segoe UI', Tahoma, sans-serif" }}>
-      <div style={{ background: `linear-gradient(135deg, ${C.green1}, ${C.green2})`, padding: "18px 30px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 2px 12px rgba(46,125,50,0.2)" }}>
-        <div style={{ background: "rgba(255, 255, 255, 0.15)", borderRadius: 10, padding: "8px 10px", fontSize: 24 }}>{icon}</div>
-        <div>
-          <h1 style={{ margin: 0, color: "#fff", fontSize: 18, fontWeight: 900, letterSpacing: "0.3px" }}>{label}</h1>
-          <p style={{ margin: 0, color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 2 }}>{description}</p>
-        </div>
-        <div style={{ marginLeft: "auto", color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
-          📅 {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+      {/* Clean white header — matches Stock Adjustments page style */}
+      <div style={{ background: "#ffffff", borderBottom: `1px solid ${C.border}`, padding: "20px 30px 16px" }}>
+        <h1 style={{ margin: 0, color: C.text, fontSize: 22, fontWeight: 800, letterSpacing: "-0.2px" }}>{label}</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+          <span style={{ fontSize: 12, color: C.muted, cursor: "default" }}>Home</span>
+          <span style={{ fontSize: 12, color: C.muted }}>/</span>
+          <span style={{ fontSize: 12, color: C.muted, cursor: "default" }}>Reports</span>
+          <span style={{ fontSize: 12, color: C.muted }}>/</span>
+          <span style={{ fontSize: 12, color: C.green1, fontWeight: 600 }}>{breadcrumb}</span>
         </div>
       </div>
       <div style={{ padding: "24px 30px" }}>{children}</div>
@@ -470,7 +472,6 @@ export function CustomerGroupsReport() {
       ]} />
       <ActionBar onExportCSV={() => exportCSV(COLS, CG_DATA, "customer-groups")} onExportExcel={() => exportCSV(COLS, CG_DATA, "customer-groups")} onPrint={() => printTable(COLS, CG_DATA, "Customer Groups Report")} />
       <FilterBar fields={["Date Range", "Customer Group"]} filters={filters} onChange={handle} onRun={() => {}} />
-      {/* Visual comparison */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
         <div style={{ fontWeight: 800, fontSize: 13, color: C.text, marginBottom: 12 }}>📊 Sales by Group</div>
         {CG_DATA.map((r) => (
@@ -917,7 +918,6 @@ export function SalesRepresentativeReport() {
   const [page, setPage] = useState(1); const PER = 5;
   const handle = (k, v) => { k === "__reset__" ? setFilters({}) : setFilters((p) => ({ ...p, [k]: v })); setPage(1); };
   const COLS = ["Representative", "Territory", "Total Sales", "Target", "Achievement", "Commission", "Orders", "Avg Order", "Growth"];
-  const maxSales = 4100000;
   return (
     <ReportPage icon="🧑‍💼" label="Sales Representative Report" description="Performance metrics per sales representative">
       <KpiCards cards={[
@@ -994,7 +994,6 @@ export function ActivityLogReport() {
         { label: "Modules", value: [...new Set(ACT_DATA.map((r) => r.module))].length.toString(), color: C.blue },
         { label: "Admin Actions", value: ACT_DATA.filter((r) => r.role === "Administrator").length.toString(), color: C.purple },
       ]} />
-      {/* Live search */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
         <div style={{ flex: 1, position: "relative" }}>
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 14 }}>🔍</span>
@@ -1002,7 +1001,6 @@ export function ActivityLogReport() {
             style={{ ...inputSt, width: "100%", paddingLeft: 34, fontSize: 13, boxSizing: "border-box" }} />
         </div>
       </div>
-      {/* Timeline view */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
         <div style={{ fontWeight: 800, fontSize: 13, color: C.text, marginBottom: 14 }}>🕐 Activity Timeline</div>
         {filtered.slice(0, 5).map((r, i) => (

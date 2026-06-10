@@ -335,7 +335,7 @@ export default function Dashboard() {
         <div style={{ position:"relative" }}>
           <div style={{ color: C.accentLt, fontSize: 13, marginBottom: 4, letterSpacing: "0.3px" }}>{today}</div>
           <h1 style={{ color:"#fff", fontSize: 30, fontWeight: 900, margin: 0, letterSpacing: "-0.5px" }}>
-            Welcome back, Dharshiha 👋
+            Welcome back, Admin 👋
           </h1>
           <p style={{ color: C.accentLt, margin: "6px 0 0", fontSize: 14 }}>
             Here's your business snapshot for <strong style={{ color:"#fff" }}>Manodtechnologies</strong>

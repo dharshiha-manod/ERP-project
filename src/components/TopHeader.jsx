@@ -373,8 +373,8 @@ function AccountDropdown({ onClose, onSignOut }) {
         </div>
       </div>
       <MenuRow icon="👤" label="My Profile"       onClick={() => go("/profile")} />
-      <MenuRow icon="🔑" label="Change Password"  onClick={() => go("/change-password")} />
       <MenuRow icon="⚙️" label="Settings"         onClick={() => go("/settings")} />
+      <MenuRow icon="🔑" label="Change Password"  onClick={() => go("/change-password")} />
       <div style={{ height: "1px", background: "#f0f0f0" }} />
       <button onClick={onSignOut}
         style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", padding: "10px 16px", background: "none", border: "none", fontSize: "13px", fontWeight: 700, color: "#dc2626", cursor: "pointer" }}
@@ -480,7 +480,7 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
       <div style={{
         position: "fixed", top: 0, left: "260px", right: 0,
         height: "60px", zIndex: 500,
-        background: theme.topbarGradient,   /* ← themed gradient */
+        background: "var(--manod-topbar)",   /* ← themed gradient via CSS var */
         display: "flex", alignItems: "center",
         padding: "0 20px", gap: "6px",
         boxShadow: "0 2px 12px rgba(0,0,0,0.3)",

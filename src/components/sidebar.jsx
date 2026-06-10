@@ -1,12 +1,11 @@
 import "../styles/Sidebar.css";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useTheme } from "../pages/ThemeContext";   // ← NEW
 import {
   Home, Users, BookUser, Package, Factory, ShoppingCart,
   BadgeDollarSign, ArrowLeftRight, SlidersHorizontal, Wallet,
   BarChart3, Bell, Settings, HeartHandshake, BriefcaseBusiness,
-  ClipboardCheck, Search, ChevronDown,
+  ClipboardCheck, Search, ChevronDown, ClipboardList,
 } from "lucide-react";
 
 /* ── Nav Data ─────────────────────────────────────────────────────────────── */
@@ -47,6 +46,15 @@ const navItems = [
     ],
   },
   { label: "Manufacturing", icon: Factory, path: "/manufacturing/recipe" },
+  // ── Production Planning ────────────────────────────────────────────────────
+  {
+    label: "Production Planning", icon: ClipboardList, path: "/production-planning",
+    children: [
+      { label: "Work Orders", path: "/production-planning" },
+      { label: "Resources", path: "/production-planning?tab=resources" },
+      { label: "Schedule", path: "/production-planning?tab=schedule" },
+    ],
+  },
   {
     label: "Purchases", icon: ShoppingCart, path: "/purchases",
     children: [
@@ -174,8 +182,7 @@ function checkActive(item, pathname) {
 
 /* ── Component ───────────────────────────────────────────────────────────── */
 export default function Sidebar() {
-  const location  = useLocation();
-  const { theme } = useTheme();          // ← read live theme colours
+  const location = useLocation();
   const [openMenu, setOpenMenu] = useState(null);
   const [search,   setSearch]   = useState("");
 
@@ -188,59 +195,28 @@ export default function Sidebar() {
       )
     : navItems;
 
-  /* ── inline style helpers so Sidebar.css keeps its layout rules ── */
-  const sidebarStyle = {
-    background:   theme.sidebar,
-    borderRight:  `1px solid rgba(255,255,255,0.06)`,
-    transition:   "background 0.3s ease",
-  };
-
-  const itemStyle = (active) => ({
-    color:      active ? theme.accent : theme.sidebarText,
-    background: active ? `${theme.accent}22` : "transparent",
-    transition: "background 0.15s, color 0.15s",
-  });
-
-  const subItemStyle = (active) => ({
-    color:      active ? theme.accent : theme.sidebarSubText,
-    background: active ? `${theme.accent}18` : "transparent",
-    fontWeight: active ? 700 : 400,
-  });
-
-  const searchStyle = {
-    background: "rgba(255,255,255,0.08)",
-    border:     "1px solid rgba(255,255,255,0.12)",
-    color:      theme.sidebarText,
-  };
-
-  const logoSubStyle  = { color: theme.sidebarSubText };
-  const logoTextStyle = { color: theme.accent };
-
   return (
-    <aside className="sidebar" style={sidebarStyle}>
+    <aside className="sidebar">
 
       {/* ── Logo ── */}
       <div className="sidebar-logo">
-        <div className="sidebar-logo-icon" style={{ background: theme.accent }}>
+        <div className="sidebar-logo-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M12 2C8.2 2 5 4.8 5 9c0 5.8 7 13 7 13s7-7.2 7-13c0-4.2-3.2-7-7-7z" fill="white" opacity="0.9"/>
             <circle cx="12" cy="9" r="2.5" fill="rgba(26,61,43,0.7)"/>
           </svg>
         </div>
         <div>
-          <div className="sidebar-logo-text" style={logoTextStyle}>Manod ERP</div>
-          <div className="sidebar-logo-sub"  style={logoSubStyle}>Inventory System</div>
+          <div className="sidebar-logo-text">Manod ERP</div>
+          <div className="sidebar-logo-sub">Inventory System</div>
         </div>
       </div>
 
       {/* ── Search ── */}
       <div className="sidebar-search">
-        <span className="sidebar-search-icon" style={{ color: theme.sidebarSubText }}>
-          <Search size={14} />
-        </span>
+        <span className="sidebar-search-icon"><Search size={14} /></span>
         <input
           className="sidebar-search-input"
-          style={searchStyle}
           placeholder="Search menu..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -259,10 +235,7 @@ export default function Sidebar() {
               {item.children ? (
                 <div
                   className={`sidebar-item${active ? " active" : ""}`}
-                  style={itemStyle(active)}
                   onClick={() => setOpenMenu(open ? null : item.label)}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = theme.sidebarHover; }}
-                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
                 >
                   <span className="sidebar-item-icon">
                     {Icon && <Icon size={16} strokeWidth={1.8} />}
@@ -276,9 +249,6 @@ export default function Sidebar() {
                 <Link
                   to={item.path}
                   className={`sidebar-item${active ? " active" : ""}`}
-                  style={itemStyle(active)}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = theme.sidebarHover; }}
-                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
                 >
                   <span className="sidebar-item-icon">
                     {Icon && <Icon size={16} strokeWidth={1.8} />}
@@ -301,13 +271,8 @@ export default function Sidebar() {
                           key={child.label}
                           to={child.path}
                           className={`sidebar-subitem${ca ? " active" : ""}`}
-                          style={subItemStyle(ca)}
-                          onMouseEnter={e => { if (!ca) e.currentTarget.style.background = theme.sidebarHover; }}
-                          onMouseLeave={e => { if (!ca) e.currentTarget.style.background = "transparent"; }}
                         >
-                          <span className="sidebar-subitem-dot"
-                            style={{ background: ca ? theme.accent : theme.sidebarSubText }}
-                          />
+                          <span className="sidebar-subitem-dot" />
                           {child.label}
                         </Link>
                       );
@@ -320,13 +285,13 @@ export default function Sidebar() {
       </nav>
 
       {/* ── User Card ── */}
-      <div className="sidebar-user" style={{ borderTop: `1px solid rgba(255,255,255,0.08)` }}>
-        <div className="sidebar-user-avatar" style={{ background: theme.accent }}>A</div>
+      <div className="sidebar-user">
+        <div className="sidebar-user-avatar">A</div>
         <div>
-          <div className="sidebar-user-name"  style={{ color: theme.sidebarText }}>Admin User</div>
-          <div className="sidebar-user-role"  style={{ color: theme.sidebarSubText }}>Administrator</div>
+          <div className="sidebar-user-name">Admin User</div>
+          <div className="sidebar-user-role">Administrator</div>
         </div>
-        <div className="sidebar-user-arrow" style={{ color: theme.sidebarSubText }}>
+        <div className="sidebar-user-arrow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M9 18l6-6-6-6"/>
           </svg>

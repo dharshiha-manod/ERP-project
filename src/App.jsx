@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ThemeProvider } from "./pages/ThemeContext";   // ← NEW
+import { ThemeProvider } from "./pages/ThemeContext";
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
 import Dashboard from "./pages/Dashboard";
@@ -33,6 +33,8 @@ import { ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport
 import MyProfile      from "./pages/MyProfile";
 import ChangePassword from "./pages/ChangePassword";
 import Login from "./pages/Login";
+// ── NEW: Production Planning ──────────────────────────────────────────────
+import ProductionPlanning from "./pages/ProductionPlanning";
 import "./App.css";
 
 function isAuthenticated() {
@@ -50,7 +52,15 @@ function AppLayout() {
     <div style={{ display: "flex" }}>
       <Sidebar />
       <TopHeader businessName="Manodtechnologies" />
-      <main style={{ marginLeft: "255px", marginTop: "60px", flex: 1, minHeight: "calc(100vh - 60px)", background: "var(--manod-page-bg, #f0f4f1)", padding: "24px 32px" }}>
+      <main style={{
+        marginLeft: "260px",
+        marginTop: "60px",
+        flex: 1,
+        minHeight: "calc(100vh - 60px)",
+        background: "var(--manod-page-bg, #f0f4f1)",
+        padding: "24px 32px",
+        transition: "background 0.3s ease",
+      }}>
         <Routes>
           <Route path="/"                           element={<Dashboard />} />
           <Route path="/users"                      element={<Users />} />
@@ -128,6 +138,9 @@ function AppLayout() {
           <Route path="/reports/register"             element={<RegisterReport />} />
           <Route path="/reports/sales-representative" element={<SalesRepresentativeReport />} />
           <Route path="/reports/activity-log"         element={<ActivityLogReport />} />
+          {/* ── Production Planning ────────────────────────────────── */}
+          <Route path="/production-planning"          element={<ProductionPlanning />} />
+          <Route path="/production-planning/*"        element={<ProductionPlanning />} />
         </Routes>
       </main>
     </div>
@@ -136,7 +149,7 @@ function AppLayout() {
 
 function App() {
   return (
-    <ThemeProvider>          {/* ← wraps everything so all components share theme */}
+    <ThemeProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
