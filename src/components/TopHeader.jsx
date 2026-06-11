@@ -1,6 +1,6 @@
 /**
  * TopHeader.jsx — Manod ERP
- * Updated: added ThemeSwitcher button. All original features kept intact.
+ * Updated: added ThemeSwitcher button and Admin User profile click. All original features kept intact.
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";

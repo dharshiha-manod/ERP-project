@@ -36,24 +36,30 @@ const STYLES = `
 
   .sa-page { font-family:'DM Sans',sans-serif; color:var(--text-dark); background:var(--bg); min-height:100vh; }
 
-  .sa-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+  /* ── FIXED HEADER: always shows title + Add button together ── */
+  .sa-header {
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    margin-bottom:24px;
+    gap: 16px;
+  }
   .sa-title { font-family:'Sora',sans-serif; font-size:1.75rem; font-weight:700; color:var(--green-900); letter-spacing:-.5px; }
   .sa-breadcrumb { font-size:.78rem; color:var(--text-light); margin-top:2px; }
   .sa-breadcrumb span { color:var(--green-600); font-weight:500; }
 
+  /* Add button — inline in header, always visible */
   .sa-btn-add {
-    display:inline-flex; align-items:center; gap:8px;
-    background:linear-gradient(135deg, var(--green-600) 0%, var(--accent) 100%);
-    color:#fff; border:none; border-radius:var(--radius); padding:10px 22px;
-    font-family:'DM Sans',sans-serif; font-size:.9rem; font-weight:600; cursor:pointer;
-    box-shadow:0 4px 14px rgba(59,130,246,.35);
-    transition:transform .15s, box-shadow .15s, filter .15s; text-decoration:none;
+    display:inline-flex; align-items:center; gap:8px; flex-shrink:0;
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    color:#fff; border:none; border-radius:50px; padding:11px 26px;
+    font-family:'DM Sans',sans-serif; font-size:.95rem; font-weight:700; cursor:pointer;
+    box-shadow: 0 3px 10px rgba(34,197,94,0.35);
+    transition:transform .15s, box-shadow .15s; text-decoration:none;
+    white-space:nowrap; margin-top: 4px;
   }
-  .sa-btn-add:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(59,130,246,.45); filter:brightness(1.06); }
-.sa-btn-add-fixed {
-  position: relative;
-  z-index: 10;
-}
+  .sa-btn-add:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(34,197,94,0.45); }
+
   .sa-card { background:var(--surface); border-radius:var(--radius-lg); box-shadow:var(--shadow); border:1px solid var(--border); overflow:hidden; }
   .sa-card-header { padding:18px 24px 0; }
   .sa-card-title { font-family:'Sora',sans-serif; font-size:1rem; font-weight:600; color:var(--green-900); }
@@ -90,7 +96,6 @@ const STYLES = `
   .sa-dropdown-item { display:flex; align-items:center; gap:8px; padding:9px 16px; font-size:.82rem; color:var(--text-mid); cursor:pointer; transition:background .12s; }
   .sa-dropdown-item:hover { background:var(--green-50); color:var(--green-800); }
 
-  /* column visibility panel */
   .sa-col-panel {
     position:absolute; top:calc(100% + 6px); left:0; background:var(--surface);
     border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-lg);
@@ -126,7 +131,6 @@ const STYLES = `
   .sa-page-btn:hover:not(:disabled) { background:var(--green-100); border-color:var(--green-400); color:var(--green-800); }
   .sa-page-btn:disabled { opacity:.4; cursor:default; }
 
-  /* ── FORM ── */
   .sa-form-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:24px; border-bottom:1px solid var(--border); }
   @media(max-width:900px){ .sa-form-grid{grid-template-columns:1fr 1fr;} }
   @media(max-width:580px){ .sa-form-grid{grid-template-columns:1fr;} }
@@ -161,20 +165,15 @@ const STYLES = `
   .sa-save-section { display:flex; justify-content:center; padding:24px; }
   .sa-btn-save {
     display:inline-flex; align-items:center; gap:10px;
-    background:linear-gradient(135deg, var(--green-800) 0%, var(--green-600) 50%, var(--green-400) 100%);
+    background:linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
     color:#fff; border:none; border-radius:var(--radius);
     padding:13px 52px; font-family:'Sora',sans-serif; font-size:1rem; font-weight:600;
     cursor:pointer; letter-spacing:.3px;
-    box-shadow:0 4px 18px rgba(30,58,37,.45);
-    transition:transform .15s, box-shadow .15s, filter .15s;
+    box-shadow:0 4px 18px rgba(34,197,94,0.4);
+    transition:transform .15s, box-shadow .15s;
     position:relative; overflow:hidden;
   }
-  .sa-btn-save::after {
-    content:''; position:absolute; top:-50%; left:-60%; width:60%; height:200%;
-    background:rgba(255,255,255,.18); transform:skewX(-20deg); transition:left .4s ease;
-  }
-  .sa-btn-save:hover::after { left:120%; }
-  .sa-btn-save:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(30,58,37,.55); filter:brightness(1.06); }
+  .sa-btn-save:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(34,197,94,0.5); }
   .sa-btn-save:active { transform:scale(.97); }
 
   .sa-back-link { display:inline-flex; align-items:center; gap:6px; font-size:.83rem; font-weight:500; color:var(--green-600); text-decoration:none; margin-bottom:8px; transition:color .12s; }
@@ -193,9 +192,6 @@ const STYLES = `
   }
 `;
 
-/* ─────────────────────────────────────────────
-   ICONS
-───────────────────────────────────────────── */
 const IconCSV     = () => <svg viewBox="0 0 16 16" fill="none" width="15" height="15"><rect width="16" height="16" rx="2" fill="#16a34a"/><text x="2" y="12" fontSize="7" fill="#fff" fontWeight="bold" fontFamily="sans-serif">CSV</text></svg>;
 const IconExcel   = () => <svg viewBox="0 0 16 16" fill="none" width="15" height="15"><rect width="16" height="16" rx="2" fill="#15803d"/><text x="1" y="12" fontSize="7" fill="#fff" fontWeight="bold" fontFamily="sans-serif">XLS</text></svg>;
 const IconPrint   = () => <svg viewBox="0 0 16 16" fill="none" width="15" height="15"><rect x="2" y="5" width="12" height="8" rx="1.5" fill="none" stroke="#1d4ed8" strokeWidth="1.3"/><rect x="4" y="9" width="8" height="3.5" rx=".8" fill="#1d4ed8"/><path d="M4 5V2.5a.5.5 0 01.5-.5h7a.5.5 0 01.5.5V5" stroke="#1d4ed8" strokeWidth="1.3"/><circle cx="12" cy="7.5" r=".8" fill="#1d4ed8"/></svg>;
@@ -209,9 +205,6 @@ const IconBack    = () => <svg viewBox="0 0 16 16" fill="none" width="14" height
 const IconSave    = () => <svg viewBox="0 0 20 20" fill="none" width="18" height="18"><path d="M4 17h12a1 1 0 001-1V6.5L13.5 3H4a1 1 0 00-1 1v12a1 1 0 001 1z" stroke="#fff" strokeWidth="1.5"/><rect x="6" y="11" width="8" height="5" rx=".5" stroke="#fff" strokeWidth="1.3"/><rect x="7" y="3" width="4" height="3.5" rx=".3" stroke="#fff" strokeWidth="1.2"/></svg>;
 const IconInfo    = () => <svg viewBox="0 0 16 16" fill="none" width="13" height="13" style={{opacity:.55}}><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/><path d="M8 7v4M8 5.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>;
 
-/* ─────────────────────────────────────────────
-   INJECT STYLES ONCE
-───────────────────────────────────────────── */
 let stylesInjected = false;
 function ensureStyles() {
   if (stylesInjected) return;
@@ -221,21 +214,15 @@ function ensureStyles() {
   stylesInjected = true;
 }
 
-/* ─────────────────────────────────────────────
-   EXPORT HELPERS
-───────────────────────────────────────────── */
 const ALL_COLUMNS = ["Date","Reference No","Location","Adjustment Type","Total Amount","Total Amount Recovered","Reason","Added By"];
 
 function downloadFile(content, filename, mime) {
   const blob = new Blob([content], { type: mime });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  a.href     = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function exportCSV(rows, visibleCols) {
@@ -243,24 +230,17 @@ function exportCSV(rows, visibleCols) {
   const colMap  = { "Date":"date","Reference No":"ref","Location":"location","Adjustment Type":"type","Total Amount":"total","Total Amount Recovered":"recovered","Reason":"reason","Added By":"addedBy" };
   const lines   = [headers.join(",")];
   rows.forEach(r => {
-    const vals = headers.map(h => {
-      const v = r[colMap[h]] ?? "";
-      return `"${String(v).replace(/"/g,'""')}"`;
-    });
-    lines.push(vals.join(","));
+    lines.push(headers.map(h => `"${String(r[colMap[h]]??"").replace(/"/g,'""')}"`).join(","));
   });
   downloadFile(lines.join("\n"), "stock-adjustments.csv", "text/csv;charset=utf-8;");
 }
 
 function exportExcel(rows, visibleCols) {
-  // Build a simple HTML table that Excel can open
   const headers = ALL_COLUMNS.filter(c => visibleCols[c]);
   const colMap  = { "Date":"date","Reference No":"ref","Location":"location","Adjustment Type":"type","Total Amount":"total","Total Amount Recovered":"recovered","Reason":"reason","Added By":"addedBy" };
-  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table>`;
+  let html = `<html><head><meta charset="UTF-8"></head><body><table>`;
   html += "<tr>" + headers.map(h => `<th><b>${h}</b></th>`).join("") + "</tr>";
-  rows.forEach(r => {
-    html += "<tr>" + headers.map(h => `<td>${r[colMap[h]] ?? ""}</td>`).join("") + "</tr>";
-  });
+  rows.forEach(r => { html += "<tr>" + headers.map(h => `<td>${r[colMap[h]]??""}</td>`).join("") + "</tr>"; });
   html += "</table></body></html>";
   downloadFile(html, "stock-adjustments.xls", "application/vnd.ms-excel");
 }
@@ -268,57 +248,44 @@ function exportExcel(rows, visibleCols) {
 function exportPDF(rows, visibleCols, scope) {
   const headers = ALL_COLUMNS.filter(c => visibleCols[c]);
   const colMap  = { "Date":"date","Reference No":"ref","Location":"location","Adjustment Type":"type","Total Amount":"total","Total Amount Recovered":"recovered","Reason":"reason","Added By":"addedBy" };
-  const printRows = scope === "Selected Rows" ? rows.filter(r => r._selected) : rows;
-
-  const tableRows = printRows.map(r =>
-    "<tr>" + headers.map(h => `<td style="padding:7px 10px;border:1px solid #d1fae5;font-size:12px;">${r[colMap[h]] ?? ""}</td>`).join("") + "</tr>"
+  const tableRows = rows.map(r =>
+    "<tr>" + headers.map(h => `<td style="padding:7px 10px;border:1px solid #d1fae5;font-size:12px;">${r[colMap[h]]??""}</td>`).join("") + "</tr>"
   ).join("");
-
   const html = `<!DOCTYPE html><html><head><title>Stock Adjustments</title>
-  <style>
-    body{font-family:sans-serif;padding:24px;color:#0f1f14;}
-    h2{color:#1e3a25;margin-bottom:16px;}
-    table{width:100%;border-collapse:collapse;}
-    th{background:#1e3a25;color:#fff;padding:9px 10px;text-align:left;font-size:12px;}
-    tr:nth-child(even){background:#f2faf5;}
-    @media print{button{display:none}}
-  </style></head><body>
-  <h2>Stock Adjustments — ${scope}</h2>
+  <style>body{font-family:sans-serif;padding:24px}h2{color:#1e3a25}table{width:100%;border-collapse:collapse}th{background:#1e3a25;color:#fff;padding:9px 10px;text-align:left;font-size:12px}tr:nth-child(even){background:#f2faf5}</style>
+  </head><body><h2>Stock Adjustments — ${scope}</h2>
   <p style="font-size:12px;color:#6b7f72;margin-bottom:12px;">Exported on ${new Date().toLocaleDateString()}</p>
   <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${tableRows}</tbody></table>
-  <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
-  </body></html>`;
-
-  const w = window.open("", "_blank", "width=900,height=600");
+  <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script></body></html>`;
+  const w = window.open("","_blank","width=900,height=600");
   if (w) { w.document.write(html); w.document.close(); }
 }
 
-/* ─────────────────────────────────────────────
-   DEMO DATA
-───────────────────────────────────────────── */
 const DEMO_DATA = [
-  { id:1, date:"05/28/2026", ref:"SA-2026-001", location:"Main Store",  type:"Normal",   total:"₹4,250.00",  recovered:"₹1,000.00", reason:"Damaged goods", addedBy:"Admin",      _selected:false },
+  { id:1, date:"05/28/2026", ref:"SA-2026-001", location:"Main Store",  type:"Normal",   total:"₹4,250.00",  recovered:"₹1,000.00", reason:"Damaged goods", addedBy:"Admin",       _selected:false },
   { id:2, date:"05/30/2026", ref:"SA-2026-002", location:"Warehouse A", type:"Abnormal", total:"₹12,800.00", recovered:"₹0.00",      reason:"Theft",         addedBy:"Dharshiha C", _selected:false },
-  { id:3, date:"06/01/2026", ref:"SA-2026-003", location:"Main Store",  type:"Normal",   total:"₹560.00",    recovered:"₹560.00",    reason:"Expiry",        addedBy:"Admin",      _selected:false },
+  { id:3, date:"06/01/2026", ref:"SA-2026-003", location:"Main Store",  type:"Normal",   total:"₹560.00",    recovered:"₹560.00",    reason:"Expiry",        addedBy:"Admin",       _selected:false },
 ];
 
 const DEFAULT_VIS = Object.fromEntries(ALL_COLUMNS.map(c => [c, true]));
 
-/* ═════════════════════════════════════════════
+const actionBtn = { border:"none", background:"none", cursor:"pointer", fontSize:".9rem", padding:"3px 5px", borderRadius:"5px", transition:"background .12s" };
+
+/* ═══════════════════════════════════════
    LIST STOCK ADJUSTMENTS
-═════════════════════════════════════════════ */
+═══════════════════════════════════════ */
 export function ListStockAdjustments() {
   ensureStyles();
-  const [pdfOpen,    setPdfOpen]    = useState(false);
-  const [colOpen,    setColOpen]    = useState(false);
-  const [search,     setSearch]     = useState("");
-  const [rows,       setRows]       = useState(DEMO_DATA);
-  const [toast,      setToast]      = useState(null);
-  const [visibleCols,setVisibleCols]= useState(DEFAULT_VIS);
-  const [pageSize,   setPageSize]   = useState(25);
-  const [page,       setPage]       = useState(1);
+  const [pdfOpen,     setPdfOpen]     = useState(false);
+  const [colOpen,     setColOpen]     = useState(false);
+  const [search,      setSearch]      = useState("");
+  const [rows,        setRows]        = useState(DEMO_DATA);
+  const [toast,       setToast]       = useState(null);
+  const [visibleCols, setVisibleCols] = useState(DEFAULT_VIS);
+  const [pageSize,    setPageSize]    = useState(25);
+  const [page,        setPage]        = useState(1);
 
-  const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(null),2200); };
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
 
   const filtered = rows.filter(r =>
     r.ref.toLowerCase().includes(search.toLowerCase()) ||
@@ -327,31 +294,22 @@ export function ListStockAdjustments() {
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated  = filtered.slice((page-1)*pageSize, page*pageSize);
+  const paginated  = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleDelete = (id) => {
-    setRows(r => r.filter(x => x.id !== id));
-    showToast("🗑 Record deleted");
-  };
-
-  const toggleCol = (col) =>
-    setVisibleCols(v => ({ ...v, [col]: !v[col] }));
-
-  /* close dropdowns on outside click */
-  const closeAll = () => { setPdfOpen(false); setColOpen(false); };
+  const handleDelete = (id) => { setRows(r => r.filter(x => x.id !== id)); showToast("🗑 Record deleted"); };
+  const toggleCol    = (col) => setVisibleCols(v => ({ ...v, [col]: !v[col] }));
+  const closeAll     = () => { setPdfOpen(false); setColOpen(false); };
 
   return (
     <div className="sa-page" onClick={closeAll}>
-      {/* Header */}
+
+      {/* ── Header — title LEFT, Add button RIGHT, always visible ── */}
       <div className="sa-header">
         <div>
           <div className="sa-title">Stock Adjustments</div>
           <div className="sa-breadcrumb">Home / <span>Stock Adjustment</span> / List</div>
         </div>
-        <Link
-  to="/stock-adjustments/create"
-  className="sa-btn-add sa-btn-add-fixed"
->
+        <Link to="/stock-adjustments/create" className="sa-btn-add">
           <IconPlus /> Add
         </Link>
       </div>
@@ -365,64 +323,49 @@ export function ListStockAdjustments() {
         <div className="sa-toolbar">
           <div className="sa-toolbar-left">
             <span className="sa-show-label">Show</span>
-            <select className="sa-show-select" value={pageSize} onChange={e=>{setPageSize(+e.target.value);setPage(1);}}>
-              {[10,25,50,100].map(n=><option key={n}>{n}</option>)}
+            <select className="sa-show-select" value={pageSize} onChange={e => { setPageSize(+e.target.value); setPage(1); }}>
+              {[10, 25, 50, 100].map(n => <option key={n}>{n}</option>)}
             </select>
             <span className="sa-show-label">entries</span>
           </div>
 
-          <div className="sa-export-group" onClick={e=>e.stopPropagation()}>
-            {/* CSV */}
-            <button className="sa-export-btn" title="Export CSV"
-              onClick={()=>{ exportCSV(filtered, visibleCols); showToast("✅ CSV downloaded"); }}>
+          <div className="sa-export-group" onClick={e => e.stopPropagation()}>
+            <button className="sa-export-btn" onClick={() => { exportCSV(filtered, visibleCols); showToast("✅ CSV downloaded"); }}>
               <IconCSV /> Export CSV
             </button>
-
-            {/* Excel */}
-            <button className="sa-export-btn" title="Export Excel"
-              onClick={()=>{ exportExcel(filtered, visibleCols); showToast("✅ Excel downloaded"); }}>
+            <button className="sa-export-btn" onClick={() => { exportExcel(filtered, visibleCols); showToast("✅ Excel downloaded"); }}>
               <IconExcel /> Export Excel
             </button>
-
-            {/* Print */}
-            <button className="sa-export-btn" title="Print"
-              onClick={()=>{ showToast("🖨 Sending to printer…"); setTimeout(()=>window.print(), 300); }}>
+            <button className="sa-export-btn" onClick={() => { showToast("🖨 Printing…"); setTimeout(() => window.print(), 300); }}>
               <IconPrint /> Print
             </button>
-
-            {/* Column Visibility */}
             <div className="sa-dropdown">
-              <button className="sa-export-btn" title="Toggle columns"
-                onClick={e=>{ e.stopPropagation(); setColOpen(o=>!o); setPdfOpen(false); }}>
+              <button className="sa-export-btn" onClick={e => { e.stopPropagation(); setColOpen(o => !o); setPdfOpen(false); }}>
                 <IconColumns /> Column visibility
               </button>
               {colOpen && (
-                <div className="sa-col-panel" onClick={e=>e.stopPropagation()}>
-                  {ALL_COLUMNS.map(col=>(
+                <div className="sa-col-panel" onClick={e => e.stopPropagation()}>
+                  {ALL_COLUMNS.map(col => (
                     <label key={col} className="sa-col-item">
-                      <input type="checkbox" checked={!!visibleCols[col]} onChange={()=>toggleCol(col)} />
+                      <input type="checkbox" checked={!!visibleCols[col]} onChange={() => toggleCol(col)} />
                       {col}
                     </label>
                   ))}
                 </div>
               )}
             </div>
-
-            {/* Export PDF */}
             <div className="sa-dropdown">
-              <button className="sa-export-btn" title="Export PDF"
-                onClick={e=>{ e.stopPropagation(); setPdfOpen(o=>!o); setColOpen(false); }}>
+              <button className="sa-export-btn" onClick={e => { e.stopPropagation(); setPdfOpen(o => !o); setColOpen(false); }}>
                 <IconPDF /> Export PDF ▾
               </button>
               {pdfOpen && (
-                <div className="sa-dropdown-menu" onClick={e=>e.stopPropagation()}>
-                  {["Current Page","All Pages","Selected Rows"].map(opt=>(
+                <div className="sa-dropdown-menu" onClick={e => e.stopPropagation()}>
+                  {["Current Page", "All Pages", "Selected Rows"].map(opt => (
                     <div key={opt} className="sa-dropdown-item"
-                      onClick={()=>{
-                        const scope = opt;
-                        const exportRows = scope === "Current Page" ? paginated : filtered;
-                        exportPDF(exportRows, visibleCols, scope);
-                        showToast(`✅ PDF opened — ${scope}`);
+                      onClick={() => {
+                        const exportRows = opt === "Current Page" ? paginated : filtered;
+                        exportPDF(exportRows, visibleCols, opt);
+                        showToast(`✅ PDF — ${opt}`);
                         setPdfOpen(false);
                       }}>
                       <IconPDF /> {opt}
@@ -437,7 +380,7 @@ export function ListStockAdjustments() {
             <div className="sa-search-wrap">
               <IconSearch />
               <input className="sa-search-input" placeholder="Search..." value={search}
-                onChange={e=>{setSearch(e.target.value);setPage(1);}} />
+                onChange={e => { setSearch(e.target.value); setPage(1); }} />
             </div>
           </div>
         </div>
@@ -448,52 +391,46 @@ export function ListStockAdjustments() {
             <thead>
               <tr>
                 <th>Action <IconSort /></th>
-                {ALL_COLUMNS.filter(c=>visibleCols[c]).map(h=>(
-                  <th key={h}>{h} <IconSort /></th>
-                ))}
+                {ALL_COLUMNS.filter(c => visibleCols[c]).map(h => <th key={h}>{h} <IconSort /></th>)}
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 ? (
-                <tr><td colSpan={ALL_COLUMNS.length+1}>
-                  <div className="sa-empty">
-                    <div className="sa-empty-icon">📦</div>
-                    No data available in table
-                  </div>
+                <tr><td colSpan={ALL_COLUMNS.length + 1}>
+                  <div className="sa-empty"><div className="sa-empty-icon">📦</div>No data available in table</div>
                 </td></tr>
-              ) : paginated.map(row=>(
+              ) : paginated.map(row => (
                 <tr key={row.id}>
                   <td>
-                    <div style={{display:"flex",gap:5}}>
-                      <button style={actionBtn} title="View"   onClick={()=>showToast("👁 Viewing "+row.ref)}>👁</button>
-                      <button style={actionBtn} title="Edit"   onClick={()=>showToast("✏️ Editing "+row.ref)}>✏️</button>
-                      <button style={actionBtn} title="Delete" onClick={()=>handleDelete(row.id)}>🗑</button>
+                    <div style={{ display: "flex", gap: 5 }}>
+                      <button style={actionBtn} title="View"   onClick={() => showToast("👁 Viewing " + row.ref)}>👁</button>
+                      <button style={actionBtn} title="Edit"   onClick={() => showToast("✏️ Editing " + row.ref)}>✏️</button>
+                      <button style={actionBtn} title="Delete" onClick={() => handleDelete(row.id)}>🗑</button>
                     </div>
                   </td>
-                  {visibleCols["Date"]                    && <td>{row.date}</td>}
-                  {visibleCols["Reference No"]            && <td style={{fontWeight:600,color:"var(--green-700)"}}>{row.ref}</td>}
-                  {visibleCols["Location"]                && <td>{row.location}</td>}
-                  {visibleCols["Adjustment Type"]         && <td><span className={`sa-badge sa-badge--${row.type==="Normal"?"normal":"abnormal"}`}>{row.type}</span></td>}
-                  {visibleCols["Total Amount"]            && <td style={{fontWeight:600}}>{row.total}</td>}
-                  {visibleCols["Total Amount Recovered"]  && <td>{row.recovered}</td>}
-                  {visibleCols["Reason"]                  && <td>{row.reason}</td>}
-                  {visibleCols["Added By"]                && <td>{row.addedBy}</td>}
+                  {visibleCols["Date"]                   && <td>{row.date}</td>}
+                  {visibleCols["Reference No"]           && <td style={{ fontWeight: 600, color: "var(--green-700)" }}>{row.ref}</td>}
+                  {visibleCols["Location"]               && <td>{row.location}</td>}
+                  {visibleCols["Adjustment Type"]        && <td><span className={`sa-badge sa-badge--${row.type === "Normal" ? "normal" : "abnormal"}`}>{row.type}</span></td>}
+                  {visibleCols["Total Amount"]           && <td style={{ fontWeight: 600 }}>{row.total}</td>}
+                  {visibleCols["Total Amount Recovered"] && <td>{row.recovered}</td>}
+                  {visibleCols["Reason"]                 && <td>{row.reason}</td>}
+                  {visibleCols["Added By"]               && <td>{row.addedBy}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* Footer */}
         <div className="sa-footer">
           <span>
-            {filtered.length===0
+            {filtered.length === 0
               ? "Showing 0 to 0 of 0 entries"
-              : `Showing ${(page-1)*pageSize+1} to ${Math.min(page*pageSize,filtered.length)} of ${filtered.length} entries`}
+              : `Showing ${(page - 1) * pageSize + 1} to ${Math.min(page * pageSize, filtered.length)} of ${filtered.length} entries`}
           </span>
           <div className="sa-pagination">
-            <button className="sa-page-btn" disabled={page<=1}       onClick={()=>setPage(p=>p-1)}>Previous</button>
-            <button className="sa-page-btn" disabled={page>=totalPages} onClick={()=>setPage(p=>p+1)}>Next</button>
+            <button className="sa-page-btn" disabled={page <= 1}        onClick={() => setPage(p => p - 1)}>Previous</button>
+            <button className="sa-page-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
           </div>
         </div>
       </div>
@@ -503,14 +440,9 @@ export function ListStockAdjustments() {
   );
 }
 
-const actionBtn = {
-  border:"none", background:"none", cursor:"pointer",
-  fontSize:".9rem", padding:"3px 5px", borderRadius:"5px", transition:"background .12s",
-};
-
-/* ═════════════════════════════════════════════
+/* ═══════════════════════════════════════
    ADD STOCK ADJUSTMENT
-═════════════════════════════════════════════ */
+═══════════════════════════════════════ */
 export function AddStockAdjustment() {
   ensureStyles();
   const navigate = useNavigate();
@@ -519,27 +451,31 @@ export function AddStockAdjustment() {
   const [recovered, setRecovered] = useState("0");
   const [reason,    setReason]    = useState("");
   const [toast,     setToast]     = useState(null);
-  const [form,      setForm]      = useState({ location:"", refNo:"", date:new Date().toLocaleString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(",",""), adjType:"" });
+  const [form,      setForm]      = useState({
+    location: "", refNo: "",
+    date: new Date().toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", ""),
+    adjType: ""
+  });
 
-  const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(null),2500); };
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const handleProductSearch = (e) => {
     e.preventDefault();
     if (!searchVal.trim()) return;
-    setProducts(p => [...p, { id:Date.now(), name:searchVal, qty:1, unitPrice:0, subtotal:0 }]);
+    setProducts(p => [...p, { id: Date.now(), name: searchVal, qty: 1, unitPrice: 0, subtotal: 0 }]);
     setSearchVal("");
   };
 
-  const updateQty   = (id,val) => setProducts(p=>p.map(r=>r.id===id?{...r,qty:+val,subtotal:+(+val*r.unitPrice).toFixed(2)}:r));
-  const updatePrice = (id,val) => setProducts(p=>p.map(r=>r.id===id?{...r,unitPrice:+val,subtotal:+(r.qty*+val).toFixed(2)}:r));
-  const removeProduct = (id)   => setProducts(p=>p.filter(r=>r.id!==id));
+  const updateQty     = (id, val) => setProducts(p => p.map(r => r.id === id ? { ...r, qty: +val, subtotal: +(+val * r.unitPrice).toFixed(2) } : r));
+  const updatePrice   = (id, val) => setProducts(p => p.map(r => r.id === id ? { ...r, unitPrice: +val, subtotal: +(r.qty * +val).toFixed(2) } : r));
+  const removeProduct = (id)      => setProducts(p => p.filter(r => r.id !== id));
 
-  const totalAmount = products.reduce((s,r)=>s+r.subtotal,0).toFixed(2);
+  const totalAmount = products.reduce((s, r) => s + r.subtotal, 0).toFixed(2);
 
   const handleSave = () => {
     if (!form.location || !form.adjType) { showToast("⚠️ Please fill all required fields"); return; }
     showToast("✅ Stock Adjustment saved successfully!");
-    setTimeout(()=>navigate("/stock-adjustments"), 1500);
+    setTimeout(() => navigate("/stock-adjustments"), 1500);
   };
 
   return (
@@ -553,36 +489,31 @@ export function AddStockAdjustment() {
       </div>
 
       <div className="sa-card">
-        {/* Top form */}
         <div className="sa-form-grid">
           <div className="sa-field">
             <label className="sa-label">Business Location <span className="req">*</span></label>
-            <select className="sa-select" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}>
+            <select className="sa-select" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}>
               <option value="">Please Select</option>
-              <option>Main Store</option>
-              <option>Warehouse A</option>
-              <option>Warehouse B</option>
+              <option>Main Store</option><option>Warehouse A</option><option>Warehouse B</option>
             </select>
           </div>
           <div className="sa-field">
             <label className="sa-label">Reference No</label>
-            <input className="sa-input" placeholder="Auto-generated" value={form.refNo} onChange={e=>setForm(f=>({...f,refNo:e.target.value}))} />
+            <input className="sa-input" placeholder="Auto-generated" value={form.refNo} onChange={e => setForm(f => ({ ...f, refNo: e.target.value }))} />
           </div>
           <div className="sa-field">
             <label className="sa-label">Date <span className="req">*</span></label>
-            <input className="sa-input" type="text" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
+            <input className="sa-input" type="text" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
           </div>
           <div className="sa-field">
-            <label className="sa-label">Adjustment type <span className="req">*</span><IconInfo /></label>
-            <select className="sa-select" value={form.adjType} onChange={e=>setForm(f=>({...f,adjType:e.target.value}))}>
+            <label className="sa-label">Adjustment type <span className="req">*</span> <IconInfo /></label>
+            <select className="sa-select" value={form.adjType} onChange={e => setForm(f => ({ ...f, adjType: e.target.value }))}>
               <option value="">Please Select</option>
-              <option>Normal</option>
-              <option>Abnormal</option>
+              <option>Normal</option><option>Abnormal</option>
             </select>
           </div>
         </div>
 
-        {/* Product search */}
         <div className="sa-product-section">
           <form className="sa-product-search-wrap" onSubmit={handleProductSearch}>
             <button type="submit" className="sa-product-search-btn">
@@ -592,7 +523,7 @@ export function AddStockAdjustment() {
               </svg>
             </button>
             <input className="sa-product-search-input" placeholder="Search products for stock adjustment"
-              value={searchVal} onChange={e=>setSearchVal(e.target.value)} />
+              value={searchVal} onChange={e => setSearchVal(e.target.value)} />
           </form>
 
           <table className="sa-product-table">
@@ -600,43 +531,40 @@ export function AddStockAdjustment() {
               <tr><th>Product</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th><th>🗑</th></tr>
             </thead>
             <tbody>
-              {products.length===0 ? (
-                <tr><td colSpan={5} style={{textAlign:"center",padding:"28px",color:"var(--text-light)",fontSize:".85rem"}}>
+              {products.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: "center", padding: "28px", color: "var(--text-light)", fontSize: ".85rem" }}>
                   No products added. Search above to add products.
                 </td></tr>
-              ) : products.map(p=>(
+              ) : products.map(p => (
                 <tr key={p.id}>
-                  <td style={{fontWeight:500}}>{p.name}</td>
-                  <td><input type="number" className="sa-input" style={{width:90}} value={p.qty} min={1} onChange={e=>updateQty(p.id,e.target.value)} /></td>
-                  <td><input type="number" className="sa-input" style={{width:110}} value={p.unitPrice} min={0} onChange={e=>updatePrice(p.id,e.target.value)} /></td>
-                  <td style={{fontWeight:600}}>₹{p.subtotal.toFixed(2)}</td>
-                  <td><button className="sa-del-btn" onClick={()=>removeProduct(p.id)}><IconTrash /></button></td>
+                  <td style={{ fontWeight: 500 }}>{p.name}</td>
+                  <td><input type="number" className="sa-input" style={{ width: 90 }} value={p.qty} min={1} onChange={e => updateQty(p.id, e.target.value)} /></td>
+                  <td><input type="number" className="sa-input" style={{ width: 110 }} value={p.unitPrice} min={0} onChange={e => updatePrice(p.id, e.target.value)} /></td>
+                  <td style={{ fontWeight: 600 }}>₹{p.subtotal.toFixed(2)}</td>
+                  <td><button className="sa-del-btn" onClick={() => removeProduct(p.id)}><IconTrash /></button></td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3} style={{textAlign:"right"}}>Total Amount:</td>
-                <td>₹{totalAmount}</td>
-                <td></td>
+                <td colSpan={3} style={{ textAlign: "right" }}>Total Amount:</td>
+                <td>₹{totalAmount}</td><td></td>
               </tr>
             </tfoot>
           </table>
         </div>
 
-        {/* Bottom fields */}
         <div className="sa-bottom-grid">
           <div className="sa-field">
             <label className="sa-label">Total amount recovered <IconInfo /></label>
-            <input className="sa-input" type="number" value={recovered} onChange={e=>setRecovered(e.target.value)} />
+            <input className="sa-input" type="number" value={recovered} onChange={e => setRecovered(e.target.value)} />
           </div>
           <div className="sa-field">
             <label className="sa-label">Reason</label>
-            <textarea className="sa-textarea" placeholder="Enter reason for adjustment…" value={reason} onChange={e=>setReason(e.target.value)} />
+            <textarea className="sa-textarea" placeholder="Enter reason for adjustment…" value={reason} onChange={e => setReason(e.target.value)} />
           </div>
         </div>
 
-        {/* Save */}
         <div className="sa-save-section">
           <button className="sa-btn-save" onClick={handleSave}>
             <IconSave /> Save

@@ -1,18 +1,21 @@
 import "../styles/Sidebar.css";
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Home, Users, BookUser, Package, Factory, ShoppingCart,
   BadgeDollarSign, ArrowLeftRight, SlidersHorizontal, Wallet,
   BarChart3, Bell, Settings, HeartHandshake, BriefcaseBusiness,
-  ClipboardCheck, Search, ChevronDown, ClipboardList,
+  ClipboardCheck, Search, ChevronDown, ClipboardList, Lock,
 } from "lucide-react";
+import { hasFeature, FEATURES, getPlanLabel } from "../planAccess";
 
 /* ── Nav Data ─────────────────────────────────────────────────────────────── */
+// Each item now has a `feature` key — controls visibility based on plan.
+// Items with no `feature` key are always shown.
 const navItems = [
-  { label: "Home", icon: Home, path: "/" },
+  { label: "Home", icon: Home, path: "/", feature: FEATURES.DASHBOARD },
   {
-    label: "User Management", icon: Users, path: "/users",
+    label: "User Management", icon: Users, path: "/users", feature: FEATURES.USER_MANAGEMENT,
     children: [
       { label: "Users", path: "/users" },
       { label: "Roles", path: "/roles" },
@@ -20,7 +23,7 @@ const navItems = [
     ],
   },
   {
-    label: "Contacts", icon: BookUser, path: "/contacts",
+    label: "Contacts", icon: BookUser, path: "/contacts", feature: FEATURES.CONTACTS,
     children: [
       { label: "Suppliers", path: "/contacts?type=supplier" },
       { label: "Customers", path: "/contacts?type=customer" },
@@ -29,7 +32,7 @@ const navItems = [
     ],
   },
   {
-    label: "Products", icon: Package, path: "/products",
+    label: "Products", icon: Package, path: "/products", feature: FEATURES.PRODUCTS,
     children: [
       { label: "List Products", path: "/products/" },
       { label: "Add Product", path: "/products/create" },
@@ -45,10 +48,9 @@ const navItems = [
       { label: "Warranties", path: "/warranties" },
     ],
   },
-  { label: "Manufacturing", icon: Factory, path: "/manufacturing/recipe" },
-  // ── Production Planning ────────────────────────────────────────────────────
+  { label: "Manufacturing", icon: Factory, path: "/manufacturing/recipe", feature: FEATURES.MANUFACTURING },
   {
-    label: "Production Planning", icon: ClipboardList, path: "/production-planning",
+    label: "Production Planning", icon: ClipboardList, path: "/production-planning", feature: FEATURES.PRODUCTION_PLANNING,
     children: [
       { label: "Work Orders", path: "/production-planning" },
       { label: "Resources", path: "/production-planning?tab=resources" },
@@ -56,7 +58,7 @@ const navItems = [
     ],
   },
   {
-    label: "Purchases", icon: ShoppingCart, path: "/purchases",
+    label: "Purchases", icon: ShoppingCart, path: "/purchases", feature: FEATURES.PURCHASES,
     children: [
       { label: "List Purchases", path: "/purchases" },
       { label: "Add Purchase", path: "/purchases/create" },
@@ -64,7 +66,7 @@ const navItems = [
     ],
   },
   {
-    label: "Sell", icon: BadgeDollarSign, path: "/sells",
+    label: "Sell", icon: BadgeDollarSign, path: "/sells", feature: FEATURES.SELL,
     children: [
       { label: "All Sales", path: "/sells" },
       { label: "Add Sale", path: "/sells/create" },
@@ -81,21 +83,21 @@ const navItems = [
     ],
   },
   {
-    label: "Stock Transfers", icon: ArrowLeftRight, path: "/stock-transfers",
+    label: "Stock Transfers", icon: ArrowLeftRight, path: "/stock-transfers", feature: FEATURES.STOCK_TRANSFERS,
     children: [
       { label: "List Stock Transfers", path: "/stock-transfers" },
       { label: "Add Stock Transfer", path: "/stock-transfers/create" },
     ],
   },
   {
-    label: "Stock Adjustment", icon: SlidersHorizontal, path: "/stock-adjustments",
+    label: "Stock Adjustment", icon: SlidersHorizontal, path: "/stock-adjustments", feature: FEATURES.STOCK_ADJUSTMENT,
     children: [
       { label: "List Stock Adjustments", path: "/stock-adjustments" },
       { label: "Add Stock Adjustment", path: "/stock-adjustments/create" },
     ],
   },
   {
-    label: "Expenses", icon: Wallet, path: "/expenses",
+    label: "Expenses", icon: Wallet, path: "/expenses", feature: FEATURES.EXPENSES,
     children: [
       { label: "List Expenses", path: "/expenses" },
       { label: "Add Expense", path: "/expenses/create" },
@@ -103,7 +105,7 @@ const navItems = [
     ],
   },
   {
-    label: "Reports", icon: BarChart3, path: "/reports",
+    label: "Reports", icon: BarChart3, path: "/reports", feature: FEATURES.REPORTS,
     children: [
       { label: "Profit / Loss Report", path: "/reports/profit-loss" },
       { label: "Purchase & Sale", path: "/reports/purchase-sale" },
@@ -124,9 +126,9 @@ const navItems = [
       { label: "Activity Log", path: "/reports/activity-log" },
     ],
   },
-  { label: "Notification Templates", icon: Bell, path: "/notifications" },
+  { label: "Notification Templates", icon: Bell, path: "/notifications", feature: FEATURES.NOTIFICATIONS },
   {
-    label: "Settings", icon: Settings, path: "/settings",
+    label: "Settings", icon: Settings, path: "/settings", feature: FEATURES.SETTINGS,
     children: [
       { label: "Business Settings", path: "/settings/business" },
       { label: "Tax Rates", path: "/settings/tax-rates" },
@@ -136,9 +138,9 @@ const navItems = [
       { label: "Receipt Printer", path: "/settings/receipt-printer" },
     ],
   },
-  { label: "CRM", icon: HeartHandshake, path: "/crm" },
+  { label: "CRM", icon: HeartHandshake, path: "/crm", feature: FEATURES.CRM },
   {
-    label: "HRM", icon: BriefcaseBusiness, path: "/hrm",
+    label: "HRM", icon: BriefcaseBusiness, path: "/hrm", feature: FEATURES.HRM,
     children: [
       { label: "Dashboard", path: "/hrm" },
       { label: "Leave Type", path: "/hrm/leave-type" },
@@ -154,7 +156,7 @@ const navItems = [
     ],
   },
   {
-    label: "Essentials", icon: ClipboardCheck, path: "/essentials",
+    label: "Essentials", icon: ClipboardCheck, path: "/essentials", feature: FEATURES.ESSENTIALS,
     children: [
       { label: "Dashboard", path: "/essentials" },
       { label: "To Do", path: "/essentials/todo" },
@@ -183,17 +185,28 @@ function checkActive(item, pathname) {
 /* ── Component ───────────────────────────────────────────────────────────── */
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [openMenu, setOpenMenu] = useState(null);
   const [search,   setSearch]   = useState("");
 
+  // Only show items the current plan unlocks
+  const visibleItems = navItems.filter((it) => hasFeature(it.feature));
+
   const q        = search.toLowerCase().trim();
   const filtered = q
-    ? navItems.filter(
+    ? visibleItems.filter(
         (it) =>
           it.label.toLowerCase().includes(q) ||
           it.children?.some((c) => c.label.toLowerCase().includes(q))
       )
-    : navItems;
+    : visibleItems;
+
+  const planLabel = getPlanLabel();
+
+  // ── Handle Admin User Click ──
+  const handleAdminClick = () => {
+    navigate("/profile");
+  };
 
   return (
     <aside className="sidebar">
@@ -221,6 +234,22 @@ export default function Sidebar() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+      </div>
+
+      {/* ── Plan badge ── */}
+      <div style={{
+        margin: "0 14px 10px",
+        padding: "6px 12px",
+        borderRadius: 8,
+        background: "#e8f5e9",
+        color: "#2e7d32",
+        fontSize: 11,
+        fontWeight: 800,
+        textTransform: "uppercase",
+        letterSpacing: "0.6px",
+        textAlign: "center",
+      }}>
+        {planLabel} Plan
       </div>
 
       {/* ── Nav ── */}
@@ -282,10 +311,53 @@ export default function Sidebar() {
             </div>
           );
         })}
+
+        {/* ── Upgrade prompt for trial/starter ── */}
+        {planLabel !== "Pro" && (
+          <Link
+            to="/subscribe"
+            className="sidebar-item-wrapper"
+            style={{ textDecoration: "none" }}
+          >
+            <div
+              className="sidebar-item"
+              style={{
+                marginTop: 8,
+                background: "linear-gradient(135deg, #2e7d32, #43a047)",
+                color: "#fff",
+                borderRadius: 10,
+              }}
+            >
+              <span className="sidebar-item-icon">
+                <Lock size={16} strokeWidth={1.8} color="#fff" />
+              </span>
+              <span className="sidebar-item-label" style={{ color: "#fff", fontWeight: 700 }}>
+                Upgrade Plan
+              </span>
+            </div>
+          </Link>
+        )}
       </nav>
 
-      {/* ── User Card ── */}
-      <div className="sidebar-user">
+      {/* ── User Card (CLICKABLE) ── */}
+      <div 
+        className="sidebar-user"
+        onClick={handleAdminClick}
+        style={{ 
+          cursor: "pointer", 
+          transition: "all 0.2s ease",
+          borderRadius: "10px"
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(22, 163, 74, 0.1)";
+          e.currentTarget.style.transform = "translateX(4px)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+          e.currentTarget.style.transform = "translateX(0)";
+        }}
+        title="Click to view profile"
+      >
         <div className="sidebar-user-avatar">A</div>
         <div>
           <div className="sidebar-user-name">Admin User</div>
