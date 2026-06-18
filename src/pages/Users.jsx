@@ -1,25 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-const initialUsers = [
-  { id: 1, username: "Dharshiha", name: "Ms Dharshiha C", role: "Admin", email: "dharshihamanodtechnologies@gmail.com" },
-  { id: 2, username: "leejin", name: "Mr Leejin", role: "Cashier", email: "manodtechnologies@gmail.com" },
-  { id: 3, username: "sanjeev", name: "Mrs Rekha Malar", role: "Admin", email: "manodrekha@gmail.com" },
-  { id: 4, username: "sarath", name: "Er Sarath Raj", role: "Admin", email: "sarathmanodtechnologies01@gmail.com" },
-  { id: 5, username: "Shalijah", name: "Ms Shalijah Stalin Rajakumar", role: "Admin", email: "shalijahmanodtechnologies@gmail.com" },
-];
+import {
+  fetchAllUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  resetUserPassword,
+} from "../api/userApi";
 
 const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
   servicePinEnabled: false, allowLogin: true, username: "", password: "",
-  confirmPassword: "", role: "Admin",
+  confirmPassword: "", role: "admin",
   accessLocations: "All Locations",
   salesCommission: "", maxDiscount: "", allowContacts: "",
   dob: "", gender: "", maritalStatus: "", bloodGroup: "",
   mobile: "", altContact: "", familyContact: "",
-  facebook: "", twitter: "", social1: "", social2: "",
-  custom1: "", custom2: "", custom3: "", custom4: "",
+  facebook: "", twitter: "",
   guardianName: "", idProofName: "", idProofNumber: "",
   permanentAddress: "", currentAddress: "",
   accountHolder: "", accountNumber: "", bankName: "", bankCode: "", branch: "", taxPayerId: "",
@@ -31,7 +29,9 @@ const TABS = ["basic", "sales", "personal", "bank", "hrm"];
 const TAB_LABELS = { basic: "Basic Info", sales: "Sales", personal: "Personal", bank: "Bank Details", hrm: "HRM" };
 
 export default function Users() {
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState("add");
   const [form, setForm] = useState(emptyForm);
@@ -40,42 +40,71 @@ export default function Users() {
   const [showDelete, setShowDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("basic");
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Reset password states
+  const [showReset, setShowReset] = useState(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
 
   const currentTabIndex = TABS.indexOf(activeTab);
   const isFirstTab = currentTabIndex === 0;
   const isLastTab = currentTabIndex === TABS.length - 1;
 
-  const goNext = () => {
-    if (!isLastTab) setActiveTab(TABS[currentTabIndex + 1]);
+  useEffect(() => { loadUsers(); }, []);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      setApiError("");
+      const data = await fetchAllUsers();
+      setUsers(data);
+    } catch (err) {
+      setApiError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
-  const goPrev = () => {
-    if (!isFirstTab) setActiveTab(TABS[currentTabIndex - 1]);
-  };
+
+  const goNext = () => { if (!isLastTab) setActiveTab(TABS[currentTabIndex + 1]); };
+  const goPrev = () => { if (!isFirstTab) setActiveTab(TABS[currentTabIndex - 1]); };
 
   const openAdd = () => {
     setForm(emptyForm); setErrors({}); setModalMode("add");
-    setActiveTab("basic"); setShowModal(true);
+    setActiveTab("basic"); setShowModal(true); setApiError("");
   };
 
   const openEdit = (user) => {
+    const nameParts = (user.full_name || "").split(" ");
     setForm({
       ...emptyForm,
-      prefix: user.name.split(" ")[0],
-      firstName: user.name.split(" ")[1] || "",
-      lastName: user.name.split(" ").slice(2).join(" "),
-      email: user.email, username: user.username, role: user.role,
+      prefix: nameParts[0] || "",
+      firstName: nameParts[1] || nameParts[0] || "",
+      lastName: nameParts.slice(2).join(" "),
+      email: user.email,
+      username: user.email,
+      role: user.role || "employee",
+      department: user.department || "",
+      mobile: user.phone || "",
     });
     setEditId(user.id); setErrors({}); setModalMode("edit");
-    setActiveTab("basic"); setShowModal(true);
+    setActiveTab("basic"); setShowModal(true); setApiError("");
   };
 
   const openView = (user) => {
+    const nameParts = (user.full_name || "").split(" ");
     setForm({
       ...emptyForm,
-      prefix: user.name.split(" ")[0],
-      firstName: user.name.split(" ")[1] || "",
-      lastName: user.name.split(" ").slice(2).join(" "),
-      email: user.email, username: user.username, role: user.role,
+      prefix: nameParts[0] || "",
+      firstName: nameParts[1] || nameParts[0] || "",
+      lastName: nameParts.slice(2).join(" "),
+      email: user.email,
+      username: user.email,
+      role: user.role || "employee",
+      department: user.department || "",
+      mobile: user.phone || "",
     });
     setEditId(user.id); setModalMode("view");
     setActiveTab("basic"); setShowModal(true);
@@ -95,43 +124,93 @@ export default function Users() {
     return e;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const e = validate();
     if (Object.keys(e).length) {
       setErrors(e);
-      // Jump back to basic tab if basic errors exist
-      if (e.firstName || e.email || e.password || e.confirmPassword || e.role) {
-        setActiveTab("basic");
-      }
+      if (e.firstName || e.email || e.password || e.confirmPassword || e.role) setActiveTab("basic");
       return;
     }
-    const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
-    const username = form.username || form.firstName.toLowerCase() + Math.floor(Math.random() * 100);
-    if (modalMode === "add") {
-      setUsers(u => [...u, { id: Date.now(), username, name: fullName, role: form.role, email: form.email }]);
-    } else {
-      setUsers(u => u.map(x => x.id === editId ? { ...x, name: fullName, role: form.role, email: form.email, username } : x));
+    try {
+      setSaving(true);
+      setApiError("");
+      const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
+
+      if (modalMode === "add") {
+        await createUser({
+          email: form.email,
+          password: form.password,
+          full_name: fullName,
+          phone: form.mobile || null,
+          role: form.role.toLowerCase(),
+          department: form.department || null,
+        });
+      } else {
+        await updateUser(editId, {
+          email: form.email,
+          full_name: fullName,
+          phone: form.mobile || null,
+          role: form.role.toLowerCase(),
+          department: form.department || null,
+        });
+      }
+
+      await loadUsers();
+      setShowModal(false);
+    } catch (err) {
+      setApiError(err.message);
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
   };
 
-  const handleDelete = (id) => {
-    setUsers(u => u.filter(x => x.id !== id));
-    setShowDelete(null);
+  const handleDelete = async (id) => {
+    try {
+      await deleteUser(id);
+      await loadUsers();
+      setShowDelete(null);
+    } catch (err) {
+      setApiError(err.message);
+      setShowDelete(null);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPassword || resetPassword.length < 6) {
+      setResetError("Password must be at least 6 characters");
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      setResetError("Passwords do not match");
+      return;
+    }
+    try {
+      setResetSaving(true);
+      setResetError("");
+      await resetUserPassword(showReset.id, resetPassword);
+      setShowReset(null);
+      setResetPassword("");
+      setResetConfirm("");
+      alert(`✅ Password reset successfully for ${showReset.full_name || showReset.email}`);
+    } catch (err) {
+      setResetError(err.message);
+    } finally {
+      setResetSaving(false);
+    }
   };
 
   const filtered = users.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.username.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
+    (u.full_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (u.email || "").toLowerCase().includes(search.toLowerCase()) ||
+    (u.role || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Users List", 14, 15);
     autoTable(doc, {
-      head: [["Username", "Name", "Role", "Email"]],
-      body: users.map((user) => [user.username, user.name, user.role, user.email]),
+      head: [["Name", "Email", "Role", "Department", "Status"]],
+      body: users.map((u) => [u.full_name, u.email, u.role, u.department || "-", u.status]),
     });
     doc.save("users.pdf");
   };
@@ -157,10 +236,17 @@ export default function Users() {
         </button>
       </div>
 
+      {/* API Error Banner */}
+      {apiError && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "12px 16px", marginBottom: "16px", color: "#dc2626", fontSize: "14px" }}>
+          ⚠️ {apiError}
+        </div>
+      )}
+
       {/* Table Card */}
       <div style={{ background: "#fff", borderRadius: "14px", boxShadow: "0 2px 10px rgba(0,0,0,0.06)", border: "1px solid #eaf1ec", overflow: "hidden" }}>
         <div style={{ padding: "16px 22px", borderBottom: "1px solid #f0f4f1", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-          <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e2d1e" }}>All Users</div>
+          <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e2d1e" }}>All Users ({users.length})</div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             {["Export CSV", "Export Excel", "Print", "Export PDF"].map(b => (
               <button key={b} onClick={() => { if (b === "Export PDF") exportPDF(); }}
@@ -174,41 +260,54 @@ export default function Users() {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-            <thead>
-              <tr style={{ background: "#f8fdf9" }}>
-                {["Username", "Name", "Role", "Email", "Action"].map(h => (
-                  <th key={h} style={{ padding: "12px 18px", textAlign: "left", color: "#374151", fontWeight: 600, fontSize: "13px", borderBottom: "2px solid #eaf1ec" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u, i) => (
-                <tr key={u.id} style={{ borderBottom: "1px solid #f0f4f1", background: i % 2 === 0 ? "#fff" : "#fafcfa" }}>
-                  <td style={{ padding: "13px 18px", fontWeight: 600, color: "#1e2d1e" }}>{u.username}</td>
-                  <td style={{ padding: "13px 18px", color: "#374151" }}>{u.name}</td>
-                  <td style={{ padding: "13px 18px" }}>
-                    <span style={{
-                      padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600,
-                      background: u.role === "Admin" ? "#dcfce7" : "#fef9c3",
-                      color: u.role === "Admin" ? "#166534" : "#854d0e",
-                    }}>{u.role}</span>
-                  </td>
-                  <td style={{ padding: "13px 18px", color: "#6b7280", fontSize: "13px" }}>{u.email}</td>
-                  <td style={{ padding: "13px 18px" }}>
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <button onClick={() => openEdit(u)} style={actionBtn("#2d6a4f", "#f0fdf4")}>✏️ Edit</button>
-                      <button onClick={() => openView(u)} style={actionBtn("#2563eb", "#eff6ff")}>👁 View</button>
-                      <button onClick={() => setShowDelete(u.id)} style={actionBtn("#dc2626", "#fef2f2")}>🗑 Delete</button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#6b7280" }}>⏳ Loading users...</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+              <thead>
+                <tr style={{ background: "#f8fdf9" }}>
+                  {["Full Name", "Email", "Role", "Department", "Status", "Action"].map(h => (
+                    <th key={h} style={{ padding: "12px 18px", textAlign: "left", color: "#374151", fontWeight: 600, fontSize: "13px", borderBottom: "2px solid #eaf1ec" }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "#9ca3af" }}>No users found</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((u, i) => (
+                  <tr key={u.id} style={{ borderBottom: "1px solid #f0f4f1", background: i % 2 === 0 ? "#fff" : "#fafcfa" }}>
+                    <td style={{ padding: "13px 18px", fontWeight: 600, color: "#1e2d1e" }}>{u.full_name || "-"}</td>
+                    <td style={{ padding: "13px 18px", color: "#6b7280", fontSize: "13px" }}>{u.email}</td>
+                    <td style={{ padding: "13px 18px" }}>
+                      <span style={{
+                        padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600,
+                        background: u.role === "admin" ? "#dcfce7" : u.role === "manager" ? "#dbeafe" : "#fef9c3",
+                        color: u.role === "admin" ? "#166534" : u.role === "manager" ? "#1d4ed8" : "#854d0e",
+                      }}>{u.role}</span>
+                    </td>
+                    <td style={{ padding: "13px 18px", color: "#374151" }}>{u.department || "-"}</td>
+                    <td style={{ padding: "13px 18px" }}>
+                      <span style={{
+                        padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: 600,
+                        background: u.status === "active" ? "#dcfce7" : "#fef2f2",
+                        color: u.status === "active" ? "#166534" : "#dc2626",
+                      }}>{u.status}</span>
+                    </td>
+                    <td style={{ padding: "13px 18px" }}>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        <button onClick={() => openEdit(u)} style={actionBtn("#2d6a4f", "#f0fdf4")}>✏️ Edit</button>
+                        <button onClick={() => openView(u)} style={actionBtn("#2563eb", "#eff6ff")}>👁 View</button>
+                        <button onClick={() => { setShowReset(u); setResetPassword(""); setResetConfirm(""); setResetError(""); }}
+                          style={actionBtn("#d97706", "#fffbeb")}>🔑 Reset</button>
+                        <button onClick={() => setShowDelete(u.id)} style={actionBtn("#dc2626", "#fef2f2")}>🗑 Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && !loading && (
+                  <tr><td colSpan={6} style={{ padding: "32px", textAlign: "center", color: "#9ca3af" }}>No users found</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
         <div style={{ padding: "12px 20px", borderTop: "1px solid #f0f4f1", color: "#6b7280", fontSize: "13px" }}>
           Showing 1 to {filtered.length} of {filtered.length} entries
@@ -220,7 +319,7 @@ export default function Users() {
         manod tecnologies - V7.0 | Copyright © 2026 All rights reserved.
       </div>
 
-      {/* Delete Confirm */}
+      {/* ── Delete Confirm Modal ── */}
       {showDelete && (
         <div style={overlay}>
           <div style={{ ...modalBox, maxWidth: "380px", textAlign: "center" }}>
@@ -235,18 +334,77 @@ export default function Users() {
         </div>
       )}
 
-      {/* Add / Edit / View Modal */}
+      {/* ── Reset Password Modal ── */}
+      {showReset && (
+        <div style={overlay}>
+          <div style={{ ...modalBox, maxWidth: "420px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+              <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#1e2d1e" }}>🔑 Reset Password</h3>
+              <button onClick={() => setShowReset(null)} style={{ border: "none", background: "none", fontSize: "22px", cursor: "pointer", color: "#6b7280" }}>×</button>
+            </div>
+
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "12px 16px", marginBottom: "20px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "#166534" }}>
+                Setting new password for: <strong>{showReset.full_name || showReset.email}</strong>
+              </p>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#6b7280" }}>{showReset.email}</p>
+            </div>
+
+            {resetError && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", color: "#dc2626", fontSize: "13px" }}>
+                ⚠️ {resetError}
+              </div>
+            )}
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={lbl}>New Password <span style={{ color: "#dc2626" }}>*</span></label>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={e => setResetPassword(e.target.value)}
+                style={{ ...inp, marginTop: "5px" }}
+                placeholder="Minimum 6 characters"
+              />
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label style={lbl}>Confirm New Password <span style={{ color: "#dc2626" }}>*</span></label>
+              <input
+                type="password"
+                value={resetConfirm}
+                onChange={e => setResetConfirm(e.target.value)}
+                style={{ ...inp, marginTop: "5px" }}
+                placeholder="Re-enter new password"
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button onClick={() => setShowReset(null)} style={secondaryBtnStyle}>Cancel</button>
+              <button onClick={handleResetPassword} disabled={resetSaving}
+                style={{ ...primaryBtnStyle, background: "linear-gradient(135deg, #d97706, #b45309)" }}>
+                {resetSaving ? "⏳ Saving..." : "🔑 Reset Password"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add / Edit / View Modal ── */}
       {showModal && (
         <div style={overlay}>
           <div style={{ ...modalBox, maxWidth: "700px", maxHeight: "90vh", overflowY: "auto" }}>
-
-            {/* Modal Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
               <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#1e2d1e" }}>
                 {modalMode === "add" ? "Add User" : modalMode === "edit" ? "Edit User" : "View User"}
               </h3>
               <button onClick={() => setShowModal(false)} style={{ border: "none", background: "none", fontSize: "22px", cursor: "pointer", color: "#6b7280" }}>×</button>
             </div>
+
+            {apiError && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", color: "#dc2626", fontSize: "13px" }}>
+                ⚠️ {apiError}
+              </div>
+            )}
 
             {/* Step Progress Bar */}
             <div style={{ display: "flex", alignItems: "center", marginBottom: "24px" }}>
@@ -255,7 +413,6 @@ export default function Users() {
                 const isActive = idx === currentTabIndex;
                 return (
                   <div key={tab} style={{ display: "flex", alignItems: "center", flex: idx < TABS.length - 1 ? 1 : "unset" }}>
-                    {/* Step circle — clickable for view mode, or already-visited steps */}
                     <div
                       onClick={() => (modalMode === "view" || idx <= currentTabIndex) && setActiveTab(tab)}
                       style={{
@@ -271,7 +428,6 @@ export default function Users() {
                       }}>
                       {isDone ? "✓" : idx + 1}
                     </div>
-                    {/* Label below circle */}
                     <div style={{ position: "relative" }}>
                       <span style={{
                         position: "absolute", top: 36, left: "50%", transform: "translateX(-50%)",
@@ -280,23 +436,16 @@ export default function Users() {
                         whiteSpace: "nowrap",
                       }}>{TAB_LABELS[tab]}</span>
                     </div>
-                    {/* Connector line */}
                     {idx < TABS.length - 1 && (
-                      <div style={{
-                        flex: 1, height: 3, margin: "0 6px",
-                        background: isDone ? "#2d6a4f" : "#e5e7eb",
-                        borderRadius: 2, transition: "background .2s",
-                      }} />
+                      <div style={{ flex: 1, height: 3, margin: "0 6px", background: isDone ? "#2d6a4f" : "#e5e7eb", borderRadius: 2, transition: "background .2s" }} />
                     )}
                   </div>
                 );
               })}
             </div>
-            {/* spacer for labels */}
             <div style={{ height: 20 }} />
 
-            {/* ── Tab Content ── */}
-
+            {/* ── BASIC TAB ── */}
             {activeTab === "basic" && (
               <div>
                 <div style={row3}>
@@ -326,20 +475,21 @@ export default function Users() {
                     {errors.email && <span style={errTxt}>{errors.email}</span>}
                   </div>
                   <div style={fieldWrap}>
-                    <label style={lbl}>Username</label>
-                    <input disabled={modalMode === "view"} value={form.username} onChange={f("username")} style={inp} placeholder="Leave blank to auto generate" />
+                    <label style={lbl}>Mobile Number</label>
+                    <input disabled={modalMode === "view"} value={form.mobile} onChange={f("mobile")} style={inp} placeholder="+91" />
                   </div>
                 </div>
                 {modalMode !== "view" && (
                   <div style={row2}>
                     <div style={fieldWrap}>
-                      <label style={lbl}>Password <span style={{ color: "#dc2626" }}>*</span></label>
+                      <label style={lbl}>Password {modalMode === "add" && <span style={{ color: "#dc2626" }}>*</span>}</label>
                       <input type="password" value={form.password} onChange={f("password")}
-                        style={{ ...inp, borderColor: errors.password ? "#dc2626" : "#d1d5db" }} placeholder="Password" />
+                        style={{ ...inp, borderColor: errors.password ? "#dc2626" : "#d1d5db" }}
+                        placeholder={modalMode === "edit" ? "Leave blank to keep current" : "Password"} />
                       {errors.password && <span style={errTxt}>{errors.password}</span>}
                     </div>
                     <div style={fieldWrap}>
-                      <label style={lbl}>Confirm Password <span style={{ color: "#dc2626" }}>*</span></label>
+                      <label style={lbl}>Confirm Password {modalMode === "add" && <span style={{ color: "#dc2626" }}>*</span>}</label>
                       <input type="password" value={form.confirmPassword} onChange={f("confirmPassword")}
                         style={{ ...inp, borderColor: errors.confirmPassword ? "#dc2626" : "#d1d5db" }} placeholder="Confirm Password" />
                       {errors.confirmPassword && <span style={errTxt}>{errors.confirmPassword}</span>}
@@ -352,36 +502,25 @@ export default function Users() {
                     <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
                       style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
                       <option value="">Select Role</option>
-                      <option>Admin</option>
-                      <option>Cashier</option>
+                      <option value="admin">Admin</option>
+                      <option value="manager">Manager</option>
+                      <option value="employee">Employee</option>
                     </select>
                     {errors.role && <span style={errTxt}>{errors.role}</span>}
                   </div>
                   <div style={fieldWrap}>
-                    <label style={lbl}>Access Locations</label>
-                    <select disabled={modalMode === "view"} value={form.accessLocations} onChange={f("accessLocations")} style={inp}>
-                      <option>All Locations</option>
-                      <option>Manodtechnologies (BL0001)</option>
+                    <label style={lbl}>Status</label>
+                    <select disabled={modalMode === "view"} value={form.isActive ? "active" : "inactive"}
+                      onChange={e => setForm({ ...form, isActive: e.target.value === "active" })} style={inp}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
                     </select>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: "24px", marginBottom: "16px" }}>
-                  {[
-                    { label: "Is Active?", key: "isActive" },
-                    { label: "Enable service staff pin", key: "servicePinEnabled" },
-                    { label: "Allow Login", key: "allowLogin" },
-                  ].map(({ label, key }) => (
-                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: modalMode === "view" ? "default" : "pointer" }}>
-                      <input type="checkbox" disabled={modalMode === "view"} checked={form[key]}
-                        onChange={e => setForm({ ...form, [key]: e.target.checked })}
-                        style={{ width: "16px", height: "16px", accentColor: "#2d6a4f" }} />
-                      {label}
-                    </label>
-                  ))}
                 </div>
               </div>
             )}
 
+            {/* ── SALES TAB ── */}
             {activeTab === "sales" && (
               <div>
                 <div style={row2}>
@@ -402,6 +541,7 @@ export default function Users() {
               </div>
             )}
 
+            {/* ── PERSONAL TAB ── */}
             {activeTab === "personal" && (
               <div>
                 <div style={row3}>
@@ -424,50 +564,6 @@ export default function Users() {
                     </select>
                   </div>
                 </div>
-                <div style={row3}>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Blood Group</label>
-                    <input disabled={modalMode === "view"} value={form.bloodGroup} onChange={f("bloodGroup")} style={inp} placeholder="A+" />
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Mobile Number</label>
-                    <input disabled={modalMode === "view"} value={form.mobile} onChange={f("mobile")} style={inp} placeholder="+91" />
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Alternate Contact</label>
-                    <input disabled={modalMode === "view"} value={form.altContact} onChange={f("altContact")} style={inp} placeholder="+91" />
-                  </div>
-                </div>
-                <div style={row2}>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Family Contact Number</label>
-                    <input disabled={modalMode === "view"} value={form.familyContact} onChange={f("familyContact")} style={inp} />
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Guardian Name</label>
-                    <input disabled={modalMode === "view"} value={form.guardianName} onChange={f("guardianName")} style={inp} />
-                  </div>
-                </div>
-                <div style={row2}>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Facebook Link</label>
-                    <input disabled={modalMode === "view"} value={form.facebook} onChange={f("facebook")} style={inp} placeholder="https://facebook.com/..." />
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Twitter Link</label>
-                    <input disabled={modalMode === "view"} value={form.twitter} onChange={f("twitter")} style={inp} placeholder="https://twitter.com/..." />
-                  </div>
-                </div>
-                <div style={row2}>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>ID Proof Name</label>
-                    <input disabled={modalMode === "view"} value={form.idProofName} onChange={f("idProofName")} style={inp} />
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>ID Proof Number</label>
-                    <input disabled={modalMode === "view"} value={form.idProofNumber} onChange={f("idProofNumber")} style={inp} />
-                  </div>
-                </div>
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Permanent Address</label>
@@ -483,6 +579,7 @@ export default function Users() {
               </div>
             )}
 
+            {/* ── BANK TAB ── */}
             {activeTab === "bank" && (
               <div>
                 <div style={row2}>
@@ -509,13 +606,10 @@ export default function Users() {
                     <input disabled={modalMode === "view"} value={form.branch} onChange={f("branch")} style={inp} />
                   </div>
                 </div>
-                <div style={fieldWrap}>
-                  <label style={lbl}>Tax Payer ID</label>
-                  <input disabled={modalMode === "view"} value={form.taxPayerId} onChange={f("taxPayerId")} style={inp} />
-                </div>
               </div>
             )}
 
+            {/* ── HRM TAB ── */}
             {activeTab === "hrm" && (
               <div>
                 <div style={row2}>
@@ -524,23 +618,10 @@ export default function Users() {
                     <select disabled={modalMode === "view"} value={form.department} onChange={f("department")} style={inp}>
                       <option value="">Please Select</option>
                       <option>Digital Marketing</option>
-                      <option>sales-sales</option>
-                    </select>
-                  </div>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Designation</label>
-                    <select disabled={modalMode === "view"} value={form.designation} onChange={f("designation")} style={inp}>
-                      <option value="">Please Select</option>
-                      <option>sales</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={row2}>
-                  <div style={fieldWrap}>
-                    <label style={lbl}>Primary Work Location</label>
-                    <select disabled={modalMode === "view"} value={form.primaryWorkLocation} onChange={f("primaryWorkLocation")} style={inp}>
-                      <option value="">Please Select</option>
-                      <option>Manodtechnologies (BL0001)</option>
+                      <option>Sales</option>
+                      <option>HR</option>
+                      <option>Finance</option>
+                      <option>Operations</option>
                     </select>
                   </div>
                   <div style={fieldWrap}>
@@ -559,12 +640,8 @@ export default function Users() {
               </div>
             )}
 
-            {/* ── Footer Navigation ── */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              marginTop: "28px", paddingTop: "16px", borderTop: "1px solid #eaf1ec",
-            }}>
-              {/* Left: Back or Close */}
+            {/* Footer Navigation */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "28px", paddingTop: "16px", borderTop: "1px solid #eaf1ec" }}>
               <div>
                 {isFirstTab ? (
                   <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>✕ Close</button>
@@ -572,14 +649,8 @@ export default function Users() {
                   <button onClick={goPrev} style={secondaryBtnStyle}>← Back</button>
                 )}
               </div>
-
-              {/* Right: Next or Save */}
               <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                {/* Step label */}
-                <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-                  Step {currentTabIndex + 1} of {TABS.length}
-                </span>
-
+                <span style={{ fontSize: "12px", color: "#9ca3af" }}>Step {currentTabIndex + 1} of {TABS.length}</span>
                 {modalMode === "view" ? (
                   isLastTab ? (
                     <button onClick={() => setShowModal(false)} style={secondaryBtnStyle}>Close</button>
@@ -587,8 +658,8 @@ export default function Users() {
                     <button onClick={goNext} style={primaryBtnStyle}>Next →</button>
                   )
                 ) : isLastTab ? (
-                  <button onClick={handleSave} style={primaryBtnStyle}>
-                    💾 {modalMode === "add" ? "Save User" : "Update User"}
+                  <button onClick={handleSave} style={primaryBtnStyle} disabled={saving}>
+                    {saving ? "⏳ Saving..." : `💾 ${modalMode === "add" ? "Save User" : "Update User"}`}
                   </button>
                 ) : (
                   <button onClick={goNext} style={primaryBtnStyle}>Next →</button>
@@ -603,40 +674,18 @@ export default function Users() {
   );
 }
 
-// ── Shared style helpers ───────────────────────────────────────────────────────
+// ── Style helpers ──────────────────────────────────────────────────
 const actionBtn = (color, bg) => ({
   padding: "5px 10px", borderRadius: "7px", border: `1px solid ${color}20`,
   background: bg, color, fontSize: "12px", fontWeight: 600, cursor: "pointer",
 });
-
-const overlay = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
-  display: "flex", alignItems: "center", justifyContent: "center",
-  zIndex: 1000, padding: "20px",
-};
-
-const modalBox = {
-  background: "#fff", borderRadius: "16px", padding: "28px",
-  width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-};
-
-const primaryBtnStyle = {
-  background: "linear-gradient(135deg, #2d6a4f, #40916c)",
-  color: "#fff", border: "none", borderRadius: "9px",
-  padding: "10px 24px", fontWeight: 700, fontSize: "14px", cursor: "pointer",
-};
-
-const secondaryBtnStyle = {
-  background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db",
-  borderRadius: "9px", padding: "10px 20px", fontWeight: 600, fontSize: "14px", cursor: "pointer",
-};
-
+const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" };
+const modalBox = { background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" };
+const primaryBtnStyle = { background: "linear-gradient(135deg, #2d6a4f, #40916c)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 24px", fontWeight: 700, fontSize: "14px", cursor: "pointer" };
+const secondaryBtnStyle = { background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db", borderRadius: "9px", padding: "10px 20px", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const fieldWrap = { display: "flex", flexDirection: "column", gap: "5px", flex: 1 };
 const lbl = { fontSize: "12px", fontWeight: 600, color: "#374151" };
-const inp = {
-  padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db",
-  fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box", background: "#fff",
-};
+const inp = { padding: "8px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", outline: "none", width: "100%", boxSizing: "border-box", background: "#fff" };
 const row2 = { display: "flex", gap: "14px", marginBottom: "14px" };
 const row3 = { display: "flex", gap: "14px", marginBottom: "14px" };
 const errTxt = { fontSize: "11px", color: "#dc2626" };
