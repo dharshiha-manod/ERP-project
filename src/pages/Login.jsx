@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ─── STEP LABELS ──────────────────────────────────────────────────────────────
-const STEPS = ["Business", "Business Settings", "Owner"];
+const API = "http://localhost:5000";
 
 // ─── EYE ICON ─────────────────────────────────────────────────────────────────
 function EyeIcon({ open }) {
@@ -17,7 +16,7 @@ function EyeIcon({ open }) {
   );
 }
 
-// ─── TOAST / INLINE MESSAGE ───────────────────────────────────────────────────
+// ─── ALERT ───────────────────────────────────────────────────────────────────
 function Alert({ type, message }) {
   if (!message) return null;
   const isError = type === "error";
@@ -80,7 +79,11 @@ function Select({ error, children, ...props }) {
   );
 }
 
-// ─── STEP 1: BUSINESS ─────────────────────────────────────────────────────────
+const STEPS = ["Business", "Business Settings", "Owner"];
+const row = { display: "flex", flexWrap: "wrap", gap: "16px", marginBottom: "14px" };
+const fileStyle = { width: "100%", boxSizing: "border-box", border: "1.5px dashed #d1d5db", borderRadius: "8px", padding: "8px 11px", fontSize: "13px", color: "#6b7280", background: "#f9fafb", cursor: "pointer" };
+
+// ─── STEP 1 ───────────────────────────────────────────────────────────────────
 function Step1({ data, set, errors }) {
   const u = k => e => set(p => ({ ...p, [k]: e.target.value }));
   return (
@@ -91,9 +94,7 @@ function Step1({ data, set, errors }) {
         </Field>
       </div>
       <div style={row}>
-        <Field label="Start Date" half>
-          <Input type="date" value={data.startDate} onChange={u("startDate")} />
-        </Field>
+        <Field label="Start Date" half><Input type="date" value={data.startDate} onChange={u("startDate")} /></Field>
         <Field label="Currency *" error={errors.currency} half>
           <Select value={data.currency} onChange={u("currency")} error={errors.currency}>
             <option value="">Select Currency</option>
@@ -105,42 +106,26 @@ function Step1({ data, set, errors }) {
         </Field>
       </div>
       <div style={row}>
-        <Field label="Upload Logo" half>
-          <input type="file" accept="image/*" style={{ ...fileStyle }} onChange={e => set(p => ({ ...p, logo: e.target.files[0] }))} />
-        </Field>
-        <Field label="Website" half>
-          <Input placeholder="https://yoursite.com" value={data.website} onChange={u("website")} />
-        </Field>
+        <Field label="Upload Logo" half><input type="file" accept="image/*" style={fileStyle} onChange={e => set(p => ({ ...p, logo: e.target.files[0] }))} /></Field>
+        <Field label="Website" half><Input placeholder="https://yoursite.com" value={data.website} onChange={u("website")} /></Field>
       </div>
       <div style={row}>
-        <Field label="Business Contact Number" half>
-          <Input placeholder="+91 XXXXX XXXXX" value={data.phone} onChange={u("phone")} />
-        </Field>
-        <Field label="Alternate Contact Number" half>
-          <Input placeholder="+91 XXXXX XXXXX" value={data.altPhone} onChange={u("altPhone")} />
-        </Field>
+        <Field label="Business Contact Number" half><Input placeholder="+91 XXXXX XXXXX" value={data.phone} onChange={u("phone")} /></Field>
+        <Field label="Alternate Contact Number" half><Input placeholder="+91 XXXXX XXXXX" value={data.altPhone} onChange={u("altPhone")} /></Field>
       </div>
       <div style={row}>
-        <Field label="Country *" error={errors.country} half>
-          <Input placeholder="Country" value={data.country} onChange={u("country")} error={errors.country} />
-        </Field>
-        <Field label="State *" error={errors.state} half>
-          <Input placeholder="State" value={data.state} onChange={u("state")} error={errors.state} />
-        </Field>
+        <Field label="Country *" error={errors.country} half><Input placeholder="Country" value={data.country} onChange={u("country")} error={errors.country} /></Field>
+        <Field label="State *" error={errors.state} half><Input placeholder="State" value={data.state} onChange={u("state")} error={errors.state} /></Field>
       </div>
       <div style={row}>
-        <Field label="City *" error={errors.city} half>
-          <Input placeholder="City" value={data.city} onChange={u("city")} error={errors.city} />
-        </Field>
-        <Field label="Zip Code *" error={errors.zip} half>
-          <Input placeholder="Zip Code" value={data.zip} onChange={u("zip")} error={errors.zip} />
-        </Field>
+        <Field label="City *" error={errors.city} half><Input placeholder="City" value={data.city} onChange={u("city")} error={errors.city} /></Field>
+        <Field label="Zip Code *" error={errors.zip} half><Input placeholder="Zip Code" value={data.zip} onChange={u("zip")} error={errors.zip} /></Field>
       </div>
     </>
   );
 }
 
-// ─── STEP 2: BUSINESS SETTINGS ────────────────────────────────────────────────
+// ─── STEP 2 ───────────────────────────────────────────────────────────────────
 function Step2({ data, set, errors }) {
   const u = k => e => set(p => ({ ...p, [k]: e.target.value }));
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -182,27 +167,20 @@ function Step2({ data, set, errors }) {
         </Field>
       </div>
       <div style={row}>
-        <Field label="Default Tax (%)" half>
-          <Input type="number" placeholder="0" value={data.tax} onChange={u("tax")} />
-        </Field>
-        <Field label="Invoice Prefix" half>
-          <Input placeholder="INV-" value={data.invoicePrefix} onChange={u("invoicePrefix")} />
-        </Field>
+        <Field label="Default Tax (%)" half><Input type="number" placeholder="0" value={data.tax} onChange={u("tax")} /></Field>
+        <Field label="Invoice Prefix" half><Input placeholder="INV-" value={data.invoicePrefix} onChange={u("invoicePrefix")} /></Field>
       </div>
       <div style={row}>
         <Field label="Business Description">
-          <textarea
-            value={data.description} onChange={u("description")}
-            placeholder="Brief description of your business..."
-            style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid #d1d5db", borderRadius: "8px", padding: "9px 11px", fontSize: "13px", color: "#111827", background: "#f9fafb", outline: "none", resize: "vertical", minHeight: "72px", fontFamily: "inherit" }}
-          />
+          <textarea value={data.description} onChange={u("description")} placeholder="Brief description of your business..."
+            style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid #d1d5db", borderRadius: "8px", padding: "9px 11px", fontSize: "13px", color: "#111827", background: "#f9fafb", outline: "none", resize: "vertical", minHeight: "72px", fontFamily: "inherit" }} />
         </Field>
       </div>
     </>
   );
 }
 
-// ─── STEP 3: OWNER ────────────────────────────────────────────────────────────
+// ─── STEP 3 ───────────────────────────────────────────────────────────────────
 function Step3({ data, set, errors }) {
   const [showPw, setShowPw] = useState(false);
   const [showCpw, setShowCpw] = useState(false);
@@ -218,22 +196,11 @@ function Step3({ data, set, errors }) {
   return (
     <>
       <div style={row}>
-        <Field label="First Name *" error={errors.firstName} half>
-          <Input placeholder="First Name" value={data.firstName} onChange={u("firstName")} error={errors.firstName} />
-        </Field>
-        <Field label="Last Name *" error={errors.lastName} half>
-          <Input placeholder="Last Name" value={data.lastName} onChange={u("lastName")} error={errors.lastName} />
-        </Field>
+        <Field label="First Name *" error={errors.firstName} half><Input placeholder="First Name" value={data.firstName} onChange={u("firstName")} error={errors.firstName} /></Field>
+        <Field label="Last Name *" error={errors.lastName} half><Input placeholder="Last Name" value={data.lastName} onChange={u("lastName")} error={errors.lastName} /></Field>
       </div>
       <div style={row}>
-        <Field label="Email Address *" error={errors.email}>
-          <Input type="email" placeholder="owner@business.com" value={data.email} onChange={u("email")} error={errors.email} />
-        </Field>
-      </div>
-      <div style={row}>
-        <Field label="Username *" error={errors.username}>
-          <Input placeholder="Choose a username" value={data.username} onChange={u("username")} error={errors.username} />
-        </Field>
+        <Field label="Email Address *" error={errors.email}><Input type="email" placeholder="owner@business.com" value={data.email} onChange={u("email")} error={errors.email} /></Field>
       </div>
       <div style={row}>
         <Field label="Password *" error={errors.password} half>
@@ -246,268 +213,16 @@ function Step3({ data, set, errors }) {
         </Field>
       </div>
       <div style={row}>
-        <Field label="Phone Number" half>
-          <Input placeholder="+91 XXXXX XXXXX" value={data.ownerPhone} onChange={u("ownerPhone")} />
-        </Field>
+        <Field label="Phone Number" half><Input placeholder="+91 XXXXX XXXXX" value={data.ownerPhone} onChange={u("ownerPhone")} /></Field>
       </div>
     </>
   );
 }
 
-// ─── SHARED LAYOUT HELPERS ────────────────────────────────────────────────────
-const row = { display: "flex", flexWrap: "wrap", gap: "16px", marginBottom: "14px" };
-const fileStyle = { width: "100%", boxSizing: "border-box", border: "1.5px dashed #d1d5db", borderRadius: "8px", padding: "8px 11px", fontSize: "13px", color: "#6b7280", background: "#f9fafb", cursor: "pointer" };
-
-// ─── LOGO MARK ────────────────────────────────────────────────────────────────
+// ─── LOGO MARK ───────────────────────────────────────────────────────────────
 function LogoMark({ size = 38 }) {
   return (
     <div style={{ width: size, height: size, borderRadius: "10px", background: "linear-gradient(135deg, #14532d, #166534)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: size * 0.42, flexShrink: 0 }}>M</div>
-  );
-}
-
-// ─── REGISTER FORM ────────────────────────────────────────────────────────────
-function RegisterForm({ onBack }) {
-  const [step, setStep] = useState(0);
-  const [errors, setErrors] = useState({});
-  const [done, setDone] = useState(false);
-
-  const [biz, setBiz] = useState({ businessName: "", startDate: "", currency: "", website: "", phone: "", altPhone: "", country: "", state: "", city: "", zip: "", logo: null });
-  const [settings, setSettings] = useState({ fyStart: "", timezone: "", dateFormat: "", stockMethod: "", tax: "", invoicePrefix: "INV-", description: "" });
-  const [owner, setOwner] = useState({ firstName: "", lastName: "", email: "", username: "", password: "", confirmPassword: "", ownerPhone: "" });
-
-  const validate = () => {
-    const e = {};
-    if (step === 0) {
-      if (!biz.businessName.trim()) e.businessName = "Please specify your business name";
-      if (!biz.currency) e.currency = "This field is required.";
-      if (!biz.country.trim()) e.country = "This field is required.";
-      if (!biz.state.trim()) e.state = "This field is required.";
-      if (!biz.city.trim()) e.city = "This field is required.";
-      if (!biz.zip.trim()) e.zip = "This field is required.";
-    }
-    if (step === 1) {
-      if (!settings.fyStart) e.fyStart = "This field is required.";
-      if (!settings.timezone) e.timezone = "This field is required.";
-      if (!settings.dateFormat) e.dateFormat = "This field is required.";
-      if (!settings.stockMethod) e.stockMethod = "This field is required.";
-    }
-    if (step === 2) {
-      if (!owner.firstName.trim()) e.firstName = "First name is required.";
-      if (!owner.lastName.trim()) e.lastName = "Last name is required.";
-      if (!owner.email.trim()) e.email = "Email is required.";
-      if (!owner.username.trim()) e.username = "Username is required.";
-      if (!owner.password) e.password = "Password is required.";
-      else if (owner.password.length < 8) e.password = "Minimum 8 characters.";
-      if (owner.password !== owner.confirmPassword) e.confirmPassword = "Passwords do not match.";
-    }
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const next = () => { if (validate()) setStep(s => s + 1); };
-  const prev = () => { setErrors({}); setStep(s => s - 1); };
-  const submit = () => { if (validate()) setDone(true); };
-
-  // ── Success screen ──
-  if (done) return (
-    <div style={cardStyle}>
-      <div style={{ textAlign: "center", padding: "12px 0 4px" }}>
-        <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-          <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-        </div>
-        <div style={{ fontSize: "20px", fontWeight: 700, color: "#111827", marginBottom: "8px" }}>Registration Successful!</div>
-        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "24px" }}>
-          Welcome, <strong>{owner.firstName} {owner.lastName}</strong>!<br />
-          <strong>{biz.businessName}</strong> is all set up on Manod ERP.
-        </div>
-        <button style={greenBtn} onClick={onBack}>Go to Login →</button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{ ...cardStyle, maxWidth: "680px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
-        <LogoMark />
-        <div>
-          <div style={{ fontWeight: 700, fontSize: "17px", color: "#111827" }}>manod tecnologies</div>
-          <div style={{ fontSize: "10px", color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Inventory System</div>
-        </div>
-      </div>
-      <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "22px" }}>Register and Get Started in minutes</div>
-
-      {/* Step tabs */}
-      <div style={{ display: "flex", gap: "6px", marginBottom: "22px" }}>
-        {STEPS.map((label, i) => (
-          <button key={i}
-            onClick={() => i < step && setStep(i)}
-            style={{
-              flex: 1, padding: "10px 6px", borderRadius: "8px", border: "none",
-              fontWeight: 600, fontSize: "12.5px",
-              cursor: i < step ? "pointer" : "default",
-              background: i === step ? "linear-gradient(135deg, #14532d, #16a34a)"
-                : i < step ? "#dcfce7" : "#f3f4f6",
-              color: i === step ? "#fff" : i < step ? "#15803d" : "#9ca3af",
-              transition: "all 0.2s",
-            }}>
-            {i + 1}. {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Section title */}
-      <div style={{ fontSize: "14px", fontWeight: 700, color: "#111827", marginBottom: "16px", paddingBottom: "10px", borderBottom: "1px solid #f0f0f0" }}>
-        {STEPS[step]} details:
-      </div>
-
-      {step === 0 && <Step1 data={biz} set={setBiz} errors={errors} />}
-      {step === 1 && <Step2 data={settings} set={setSettings} errors={errors} />}
-      {step === 2 && <Step3 data={owner} set={setOwner} errors={errors} />}
-
-      {/* Nav */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
-        <button style={outlineBtn} onClick={step === 0 ? onBack : prev}>
-          ← {step === 0 ? "Back to Login" : "Previous"}
-        </button>
-        {step < 2
-          ? <button style={greenBtn} onClick={next}>Next →</button>
-          : <button style={{ ...greenBtn, background: "linear-gradient(135deg, #14532d, #16a34a)" }} onClick={submit}>Complete Registration ✓</button>
-        }
-      </div>
-
-      <div style={{ textAlign: "center", fontSize: "12.5px", color: "#6b7280", marginTop: "14px" }}>
-        Already have an account?{" "}
-        <span style={{ color: "#15803d", fontWeight: 600, cursor: "pointer" }} onClick={onBack}>Login here</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── LOGIN FORM ───────────────────────────────────────────────────────────────
-function LoginForm({ onRegister }) {
-  const navigate = useNavigate();
-  const [showPw, setShowPw] = useState(false);
-  const [form, setForm] = useState({ username: "", password: "", remember: false });
-  const [errors, setErrors] = useState({});
-  const [alert, setAlert] = useState(null); // { type, message }
-  const [loading, setLoading] = useState(false);
-
-  const submit = async () => {
-    const e = {};
-    if (!form.username.trim()) e.username = "Username is required.";
-    if (!form.password) e.password = "Password is required.";
-    setErrors(e);
-    if (Object.keys(e).length > 0) return;
-
-    setLoading(true);
-    setAlert(null);
-
-    try {
-      // ── Replace this block with your real API call ──────────────────
-      // const res = await fetch("/api/auth/login", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ username: form.username, password: form.password }),
-      // });
-      // const data = await res.json();
-      // if (!res.ok) throw new Error(data.message || "Invalid credentials");
-      // localStorage.setItem("manod_token", data.token);
-      // navigate("/");
-      // ────────────────────────────────────────────────────────────────
-
-      // TEMP: simulate success (remove when API is ready)
-      await new Promise(r => setTimeout(r, 800));
-      localStorage.setItem("manod_token", "demo_token");
-      navigate("/");
-
-    } catch (err) {
-      setAlert({ type: "error", message: err.message || "Login failed. Please try again." });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKey = e => { if (e.key === "Enter") submit(); };
-
-  return (
-    <div style={cardStyle}>
-      {/* Logo */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-        <LogoMark />
-        <div>
-          <div style={{ fontWeight: 700, fontSize: "17px", color: "#111827" }}>manod tecnologies</div>
-          <div style={{ fontSize: "10px", color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Inventory System</div>
-        </div>
-      </div>
-
-      <div style={{ fontSize: "22px", fontWeight: 700, color: "#111827", marginBottom: "4px" }}>Welcome Back</div>
-      <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "24px" }}>Login to your manod tecnologies account</div>
-
-      {/* Inline alert */}
-      <Alert type={alert?.type} message={alert?.message} />
-
-      {/* Username */}
-      <div style={{ marginBottom: "14px" }}>
-        <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Username</label>
-        <div style={inputWrap(errors.username)}>
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="8" r="4" />
-          </svg>
-          <input
-            style={bareInput} placeholder="Enter your username"
-            value={form.username}
-            onChange={e => { setForm(p => ({ ...p, username: e.target.value })); setErrors(p => ({ ...p, username: "" })); }}
-            onKeyDown={handleKey}
-          />
-        </div>
-        {errors.username && <div style={errText}>{errors.username}</div>}
-      </div>
-
-      {/* Password */}
-      <div style={{ marginBottom: "6px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-          <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Password</label>
-          <span style={{ fontSize: "12.5px", color: "#15803d", cursor: "pointer", fontWeight: 500 }}>Forgot Your Password?</span>
-        </div>
-        <div style={inputWrap(errors.password)}>
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          <input
-            style={bareInput} type={showPw ? "text" : "password"} placeholder="••••••••"
-            value={form.password}
-            onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setErrors(p => ({ ...p, password: "" })); }}
-            onKeyDown={handleKey}
-          />
-          <button onClick={() => setShowPw(p => !p)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 0, display: "flex" }}>
-            <EyeIcon open={showPw} />
-          </button>
-        </div>
-        {errors.password && <div style={errText}>{errors.password}</div>}
-      </div>
-
-      {/* Remember Me */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "14px 0 20px" }}>
-        <input type="checkbox" id="rem" style={{ width: "15px", height: "15px", accentColor: "#15803d", cursor: "pointer" }}
-          checked={form.remember} onChange={e => setForm(p => ({ ...p, remember: e.target.checked }))} />
-        <label htmlFor="rem" style={{ fontSize: "13px", color: "#374151", cursor: "pointer" }}>Remember Me</label>
-      </div>
-
-      {/* Login button */}
-      <button
-        style={{ ...greenBtn, width: "100%", fontSize: "15px", padding: "13px", opacity: loading ? 0.7 : 1, cursor: loading ? "wait" : "pointer" }}
-        onClick={submit}
-        disabled={loading}
-      >
-        {loading ? "Logging in…" : "Login"}
-      </button>
-
-      <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginTop: "18px" }}>
-        Not yet registered?{" "}
-        <span style={{ color: "#15803d", fontWeight: 600, cursor: "pointer" }} onClick={onRegister}>Register Now</span>
-      </div>
-    </div>
   );
 }
 
@@ -550,6 +265,271 @@ const bareInput = {
 
 const errText = { fontSize: "12px", color: "#dc2626", marginTop: "4px" };
 
+// ─── REGISTER FORM ────────────────────────────────────────────────────────────
+function RegisterForm({ onBack }) {
+  const [step, setStep] = useState(0);
+  const [errors, setErrors] = useState({});
+  const [done, setDone] = useState(false);
+  const [alert, setAlert] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const [biz, setBiz] = useState({ businessName: "", startDate: "", currency: "", website: "", phone: "", altPhone: "", country: "", state: "", city: "", zip: "", logo: null });
+  const [settings, setSettings] = useState({ fyStart: "", timezone: "", dateFormat: "", stockMethod: "", tax: "", invoicePrefix: "INV-", description: "" });
+  const [owner, setOwner] = useState({ firstName: "", lastName: "", email: "", password: "", confirmPassword: "", ownerPhone: "" });
+
+  const validate = () => {
+    const e = {};
+    if (step === 0) {
+      if (!biz.businessName.trim()) e.businessName = "Please specify your business name";
+      if (!biz.currency) e.currency = "This field is required.";
+      if (!biz.country.trim()) e.country = "This field is required.";
+      if (!biz.state.trim()) e.state = "This field is required.";
+      if (!biz.city.trim()) e.city = "This field is required.";
+      if (!biz.zip.trim()) e.zip = "This field is required.";
+    }
+    if (step === 1) {
+      if (!settings.fyStart) e.fyStart = "This field is required.";
+      if (!settings.timezone) e.timezone = "This field is required.";
+      if (!settings.dateFormat) e.dateFormat = "This field is required.";
+      if (!settings.stockMethod) e.stockMethod = "This field is required.";
+    }
+    if (step === 2) {
+      if (!owner.firstName.trim()) e.firstName = "First name is required.";
+      if (!owner.lastName.trim()) e.lastName = "Last name is required.";
+      if (!owner.email.trim()) e.email = "Email is required.";
+      else if (!/\S+@\S+\.\S+/.test(owner.email)) e.email = "Enter a valid email.";
+      if (!owner.password) e.password = "Password is required.";
+      else if (owner.password.length < 8) e.password = "Minimum 8 characters.";
+      if (owner.password !== owner.confirmPassword) e.confirmPassword = "Passwords do not match.";
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const next = () => { if (validate()) setStep(s => s + 1); };
+  const prev = () => { setErrors({}); setStep(s => s - 1); };
+
+  // ── REAL API CALL ──
+  const submit = async () => {
+    if (!validate()) return;
+    setLoading(true);
+    setAlert(null);
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${owner.firstName} ${owner.lastName}`,
+          email: owner.email,
+          password: owner.password,
+          phone: owner.ownerPhone || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Registration failed");
+      setDone(true);
+    } catch (err) {
+      setAlert({ type: "error", message: err.message || "Registration failed. Try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Success screen ──
+  if (done) return (
+    <div style={cardStyle}>
+      <div style={{ textAlign: "center", padding: "12px 0 4px" }}>
+        <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#dcfce7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        </div>
+        <div style={{ fontSize: "20px", fontWeight: 700, color: "#111827", marginBottom: "8px" }}>Registration Successful!</div>
+        <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "24px" }}>
+          Welcome, <strong>{owner.firstName} {owner.lastName}</strong>!<br />
+          <strong>{biz.businessName}</strong> is all set up on Manod ERP.
+        </div>
+        <button style={greenBtn} onClick={onBack}>Go to Login →</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ ...cardStyle, maxWidth: "680px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
+        <LogoMark />
+        <div>
+          <div style={{ fontWeight: 700, fontSize: "17px", color: "#111827" }}>manod tecnologies</div>
+          <div style={{ fontSize: "10px", color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Inventory System</div>
+        </div>
+      </div>
+      <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "22px" }}>Register and Get Started in minutes</div>
+
+      <div style={{ display: "flex", gap: "6px", marginBottom: "22px" }}>
+        {STEPS.map((label, i) => (
+          <button key={i} onClick={() => i < step && setStep(i)}
+            style={{
+              flex: 1, padding: "10px 6px", borderRadius: "8px", border: "none",
+              fontWeight: 600, fontSize: "12.5px",
+              cursor: i < step ? "pointer" : "default",
+              background: i === step ? "linear-gradient(135deg, #14532d, #16a34a)" : i < step ? "#dcfce7" : "#f3f4f6",
+              color: i === step ? "#fff" : i < step ? "#15803d" : "#9ca3af",
+              transition: "all 0.2s",
+            }}>
+            {i + 1}. {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ fontSize: "14px", fontWeight: 700, color: "#111827", marginBottom: "16px", paddingBottom: "10px", borderBottom: "1px solid #f0f0f0" }}>
+        {STEPS[step]} details:
+      </div>
+
+      <Alert type={alert?.type} message={alert?.message} />
+
+      {step === 0 && <Step1 data={biz} set={setBiz} errors={errors} />}
+      {step === 1 && <Step2 data={settings} set={setSettings} errors={errors} />}
+      {step === 2 && <Step3 data={owner} set={setOwner} errors={errors} />}
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
+        <button style={outlineBtn} onClick={step === 0 ? onBack : prev}>
+          ← {step === 0 ? "Back to Login" : "Previous"}
+        </button>
+        {step < 2
+          ? <button style={greenBtn} onClick={next}>Next →</button>
+          : <button style={{ ...greenBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "wait" : "pointer" }} onClick={submit} disabled={loading}>
+              {loading ? "Registering…" : "Complete Registration ✓"}
+            </button>
+        }
+      </div>
+
+      <div style={{ textAlign: "center", fontSize: "12.5px", color: "#6b7280", marginTop: "14px" }}>
+        Already have an account?{" "}
+        <span style={{ color: "#15803d", fontWeight: 600, cursor: "pointer" }} onClick={onBack}>Login here</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── LOGIN FORM ───────────────────────────────────────────────────────────────
+function LoginForm({ onRegister }) {
+  const navigate = useNavigate();
+  const [showPw, setShowPw] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "", remember: false });
+  const [errors, setErrors] = useState({});
+  const [alert, setAlert] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    const e = {};
+    if (!form.email.trim()) e.email = "Email is required.";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email.";
+    if (!form.password) e.password = "Password is required.";
+    setErrors(e);
+    if (Object.keys(e).length > 0) return;
+
+    setLoading(true);
+    setAlert(null);
+
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid credentials");
+
+      // Save token + user info
+      localStorage.setItem("manod_token", data.token);
+      localStorage.setItem("manod_user", JSON.stringify(data.user));
+
+      navigate("/");
+    } catch (err) {
+      setAlert({ type: "error", message: err.message || "Login failed. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKey = e => { if (e.key === "Enter") submit(); };
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+        <LogoMark />
+        <div>
+          <div style={{ fontWeight: 700, fontSize: "17px", color: "#111827" }}>manod tecnologies</div>
+          <div style={{ fontSize: "10px", color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase" }}>Inventory System</div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: "22px", fontWeight: 700, color: "#111827", marginBottom: "4px" }}>Welcome Back</div>
+      <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "24px" }}>Login to your manod tecnologies account</div>
+
+      <Alert type={alert?.type} message={alert?.message} />
+
+      {/* Email */}
+      <div style={{ marginBottom: "14px" }}>
+        <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Email</label>
+        <div style={inputWrap(errors.email)}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" />
+          </svg>
+          <input
+            style={bareInput} placeholder="Enter your email" type="email"
+            value={form.email}
+            onChange={e => { setForm(p => ({ ...p, email: e.target.value })); setErrors(p => ({ ...p, email: "" })); }}
+            onKeyDown={handleKey}
+          />
+        </div>
+        {errors.email && <div style={errText}>{errors.email}</div>}
+      </div>
+
+      {/* Password */}
+      <div style={{ marginBottom: "6px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+          <label style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Password</label>
+          <span style={{ fontSize: "12.5px", color: "#15803d", cursor: "pointer", fontWeight: 500 }}>Forgot Your Password?</span>
+        </div>
+        <div style={inputWrap(errors.password)}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <input
+            style={bareInput} type={showPw ? "text" : "password"} placeholder="••••••••"
+            value={form.password}
+            onChange={e => { setForm(p => ({ ...p, password: e.target.value })); setErrors(p => ({ ...p, password: "" })); }}
+            onKeyDown={handleKey}
+          />
+          <button onClick={() => setShowPw(p => !p)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 0, display: "flex" }}>
+            <EyeIcon open={showPw} />
+          </button>
+        </div>
+        {errors.password && <div style={errText}>{errors.password}</div>}
+      </div>
+
+      {/* Remember Me */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "14px 0 20px" }}>
+        <input type="checkbox" id="rem" style={{ width: "15px", height: "15px", accentColor: "#15803d", cursor: "pointer" }}
+          checked={form.remember} onChange={e => setForm(p => ({ ...p, remember: e.target.checked }))} />
+        <label htmlFor="rem" style={{ fontSize: "13px", color: "#374151", cursor: "pointer" }}>Remember Me</label>
+      </div>
+
+      <button
+        style={{ ...greenBtn, width: "100%", fontSize: "15px", padding: "13px", opacity: loading ? 0.7 : 1, cursor: loading ? "wait" : "pointer" }}
+        onClick={submit}
+        disabled={loading}
+      >
+        {loading ? "Logging in…" : "Login"}
+      </button>
+
+      <div style={{ textAlign: "center", fontSize: "13px", color: "#6b7280", marginTop: "18px" }}>
+        Not yet registered?{" "}
+        <span style={{ color: "#15803d", fontWeight: 600, cursor: "pointer" }} onClick={onRegister}>Register Now</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── PAGE WRAPPER ─────────────────────────────────────────────────────────────
 export default function Login() {
   const [mode, setMode] = useState("login");
@@ -562,11 +542,9 @@ export default function Login() {
       padding: "24px 16px", position: "relative", overflow: "hidden",
       fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
     }}>
-      {/* Decorative circles */}
       <div style={{ position: "absolute", top: "-100px", right: "-100px", width: "360px", height: "360px", borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", bottom: "-140px", left: "-80px", width: "420px", height: "420px", borderRadius: "50%", background: "rgba(255,255,255,0.03)", pointerEvents: "none" }} />
 
-      {/* Top-right register toggle */}
       <div style={{ position: "absolute", top: "20px", right: "24px", display: "flex", gap: "12px", alignItems: "center" }}>
         <button
           style={{ border: "1.5px solid rgba(255,255,255,0.6)", color: "#fff", background: "transparent", borderRadius: "50px", padding: "7px 18px", cursor: "pointer", fontWeight: 600, fontSize: "13px" }}
