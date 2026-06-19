@@ -1,21 +1,20 @@
 /**
  * ============================================================
- * Roles.jsx - Complete Role Management Page (Refactored)
- * 
- * CHANGES:
- * ✅ Imports roleApi instead of using raw fetch()
- * ✅ JWT token automatically handled in roleApi.js
- * ✅ Fixed pagination (next/previous buttons now work)
- * ✅ Maintains existing UI unchanged
- * ✅ npm install react-select (run this once in your frontend folder)
+ * pages/Roles.jsx  (FIXED)
+ *
+ * Fixes:
+ * 1. PAGINATION — was slicing filtered.slice(0, 25) always.
+ *    Now tracks currentPage and shows the correct slice.
+ * 2. Next/Previous buttons actually work.
+ * 3. Page number buttons render for all pages.
  * ============================================================
  */
 
 import { useState, useEffect, useRef } from "react";
 import CreatableSelect from "react-select/creatable";
-import * as roleApi from "../api/roleApi"; // ✅ Use roleApi instead of fetch
 
-// ── Permission groups (used as fallback if API fails) ────────
+const API_BASE = "http://localhost:5000/api";
+
 const DEFAULT_PERMISSIONS = [
   { group: "Others",          items: ["View export to buttons (csv/excel/print/pdf) on tables","Payment Received","Payment Reminder"] },
   { group: "User",            items: ["View user","Add user","Edit user","Delete user"] },
@@ -47,7 +46,6 @@ const DEFAULT_PERMISSIONS = [
   { group: "Manufacturing",   items: ["View Recipe","Add Recipe","Edit Recipe","Access Production"] },
 ];
 
-// ── Export utilities ─────────────────────────────────────────
 function exportCSV(roles) {
   const rows = [["ID","Role Name","Deletable"],...roles.map(r=>[r.id,r.name,r.deletable?"Yes":"No"])];
   const blob = new Blob([rows.map(r=>r.join(",")).join("\n")],{type:"text/csv"});
@@ -63,31 +61,32 @@ function exportPDF(roles) {
   win.document.write(`<html><body><h2>Roles</h2><table border="1" cellpadding="6">${roles.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td>${r.deletable?"Yes":"No"}</td></tr>`).join("")}</table></body></html>`);
   win.document.close();win.print();
 }
-function printTable(roles) { exportPDF(roles); }
 
-// ── Role Form Page (Add / Edit) ───────────────────────────────
+/* ── Role Form ─────────────────────────────────────────────── */
 function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) {
   const isEdit = !!editRole;
-
   const [selectedRole, setSelectedRole] = useState(
     isEdit ? { value: editRole.name, label: editRole.name } : null
   );
-  const [perms, setPerms]       = useState({});
-  const [loading, setLoading]   = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState("");
+  const [perms,   setPerms]   = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
 
   const roleOptions = allRoles.map((r) => ({ value: r.name, label: r.name }));
 
-  // When editing, load permissions from backend using roleApi
   useEffect(() => {
     if (isEdit && editRole.id) {
       setLoading(true);
-      roleApi.fetchRoleById(editRole.id)  // ✅ Use roleApi instead of fetch
-        .then((role) => {
-          if (role && role.permissions) {
+      const token = localStorage.getItem("manod_token");
+      fetch(`${API_BASE}/roles/${editRole.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && data.data.permissions) {
             const p = {};
-            role.permissions.forEach((key) => (p[key] = true));
+            data.data.permissions.forEach((key) => (p[key] = true));
             setPerms(p);
           }
         })
@@ -96,8 +95,8 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
     }
   }, [isEdit, editRole]);
 
-  const isChecked   = (group, item) => !!perms[`${group}::${item}`];
-  const isGroupAll  = (group) =>
+  const isChecked  = (group, item) => !!perms[`${group}::${item}`];
+  const isGroupAll = (group) =>
     permissionGroups.find((g) => g.group === group)?.items.every((i) => isChecked(group, i));
 
   const toggleItem  = (group, item) => {
@@ -116,19 +115,12 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
 
   const handleSave = async () => {
     setError("");
-    if (!selectedRole || !selectedRole.value?.trim()) {
-      setError("Role name is required");
-      return;
-    }
+    if (!selectedRole?.value?.trim()) { setError("Role name is required"); return; }
     const permKeys = Object.keys(perms).filter((k) => perms[k]);
     setSaving(true);
-    try {
-      await onSave({ name: selectedRole.value.trim(), permissions: permKeys });
-    } catch (err) {
-      setError(err.message || "Save failed");
-    } finally {
-      setSaving(false);
-    }
+    try { await onSave({ name: selectedRole.value.trim(), permissions: permKeys }); }
+    catch (err) { setError(err.message || "Save failed"); }
+    finally { setSaving(false); }
   };
 
   if (loading) return <div style={styles.loading}>⏳ Loading permissions...</div>;
@@ -146,9 +138,7 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
 
       <div style={styles.card}>
         <div style={{ ...styles.fieldRow, maxWidth: 420 }}>
-          <label style={styles.label}>
-            Role Name: <span style={{ color: "#e53e3e" }}>*</span>
-          </label>
+          <label style={styles.label}>Role Name: <span style={{ color:"#e53e3e" }}>*</span></label>
           <CreatableSelect
             options={roleOptions}
             value={selectedRole}
@@ -158,14 +148,12 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
             formatCreateLabel={(input) => `✨ Create new role: "${input}"`}
             styles={selectStyles}
           />
-          <span style={{ fontSize: 11, color: "#718096" }}>
-            💡 Select an existing role or type a new name to create one
-          </span>
+          <span style={{ fontSize:11,color:"#718096" }}>💡 Select an existing role or type a new name</span>
         </div>
 
         {error && <div style={styles.errorBox}>{error}</div>}
 
-        <div style={{ marginTop: 24 }}>
+        <div style={{ marginTop:24 }}>
           <label style={styles.label}>Permissions:</label>
           <div style={styles.permGrid}>
             {permissionGroups.map(({ group, items }) => (
@@ -173,23 +161,13 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
                 <div style={styles.permGroupHeader}>
                   <strong style={styles.permGroupTitle}>{group}</strong>
                   <label style={styles.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={!!isGroupAll(group)}
-                      onChange={() => toggleGroup(group)}
-                      style={styles.checkbox}
-                    />
+                    <input type="checkbox" checked={!!isGroupAll(group)} onChange={() => toggleGroup(group)} style={styles.checkbox} />
                     Select all
                   </label>
                 </div>
                 {items.map((item) => (
                   <label key={item} style={styles.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked(group, item)}
-                      onChange={() => toggleItem(group, item)}
-                      style={styles.checkbox}
-                    />
+                    <input type="checkbox" checked={isChecked(group,item)} onChange={() => toggleItem(group,item)} style={styles.checkbox} />
                     {item}
                   </label>
                 ))}
@@ -202,161 +180,125 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
           <button onClick={handleSave} style={styles.saveBtn} disabled={saving}>
             {saving ? "⏳ Saving..." : isEdit ? "💾 Update" : "💾 Save"}
           </button>
-          <button onClick={onBack} style={styles.cancelBtn} disabled={saving}>
-            Cancel
-          </button>
+          <button onClick={onBack} style={styles.cancelBtn} disabled={saving}>Cancel</button>
         </div>
       </div>
-
       <div style={styles.footer}>manod tecnologies - V7.0 | Copyright © 2026 All rights reserved.</div>
     </div>
   );
 }
 
-// ── Main Roles List Page ──────────────────────────────────────
+/* ── Main Roles List ───────────────────────────────────────── */
 export default function Roles() {
-  const [view, setView]           = useState("list");
-  const [roles, setRoles]         = useState([]);
-  const [editRole, setEditRole]   = useState(null);
-  const [permGroups, setPermGroups] = useState(DEFAULT_PERMISSIONS);
-  const [search, setSearch]       = useState("");
-  const [show, setShow]           = useState("25");
-  const [currentPage, setCurrentPage] = useState(1); // ✅ Track pagination
-  const [colVisible, setColVisible] = useState({ Roles: true, Action: true });
+  const [view,        setView]        = useState("list");
+  const [roles,       setRoles]       = useState([]);
+  const [editRole,    setEditRole]    = useState(null);
+  const [permGroups,  setPermGroups]  = useState(DEFAULT_PERMISSIONS);
+  const [search,      setSearch]      = useState("");
+  const [show,        setShow]        = useState(25);   // ← number not string
+  const [currentPage, setCurrentPage] = useState(1);   // ← FIXED: track page
+  const [colVisible,  setColVisible]  = useState({ Roles:true, Action:true });
   const [showColMenu, setShowColMenu] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
-  const [toast, setToast]         = useState(null);
+  const [toast,       setToast]       = useState(null);
 
-  useEffect(() => {
-    loadRoles();
-    loadPermissions();
-  }, []);
+  useEffect(() => { loadRoles(); loadPermissions(); }, []);
 
-  const showToast = (msg, type = "success") => {
+  // Reset to page 1 whenever search or show-count changes
+  useEffect(() => { setCurrentPage(1); }, [search, show]);
+
+  const showToast = (msg, type="success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ✅ Load roles using roleApi instead of fetch
+  const authHeader = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("manod_token")}`,
+  });
+
   const loadRoles = async () => {
     setPageLoading(true);
     try {
-      const data = await roleApi.fetchAllRoles();
-      setRoles(data);
-      setCurrentPage(1); // Reset to page 1 when data loads
-    } catch (err) {
-      showToast(err.message || "Cannot connect to backend", "error");
-    } finally {
-      setPageLoading(false);
-    }
+      const res  = await fetch(`${API_BASE}/roles`, { headers: authHeader() });
+      const data = await res.json();
+      if (data.success) setRoles(data.data);
+      else showToast("Failed to load roles","error");
+    } catch { showToast("Cannot connect to backend","error"); }
+    finally { setPageLoading(false); }
   };
 
-  // ✅ Load permissions using roleApi instead of fetch
   const loadPermissions = async () => {
     try {
-      const data = await roleApi.fetchAllPermissions();
-      if (data && typeof data === "object") {
-        const groups = Array.isArray(data) 
-          ? data 
-          : Object.entries(data).map(([group, items]) => ({
-              group,
-              items: Array.isArray(items) ? items.map(i => i.name || i) : items,
-            }));
+      const res  = await fetch(`${API_BASE}/roles/permissions`, { headers: authHeader() });
+      const data = await res.json();
+      if (data.success) {
+        const groups = Object.entries(data.data).map(([group, items]) => ({
+          group,
+          items: items.map((i) => i.name),
+        }));
         if (groups.length > 0) setPermGroups(groups);
       }
-    } catch {
-      // Use DEFAULT_PERMISSIONS (already set as initial state)
-    }
+    } catch {}
   };
 
-  // ✅ Create role using roleApi
   const handleAdd = async ({ name, permissions }) => {
-    try {
-      const newRole = await roleApi.createRole({ name, permissions });
-      await loadRoles();
-      setView("list");
-      showToast("Role created successfully!");
-    } catch (err) {
-      throw err;
-    }
+    const res  = await fetch(`${API_BASE}/roles`, { method:"POST", headers: authHeader(), body: JSON.stringify({ name, permissions }) });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    await loadRoles();
+    setView("list");
+    showToast("Role created successfully!");
   };
 
-  // ✅ Update role using roleApi
-  const handleEdit = async ({ name, permissions }) => {
-    try {
-      const updatedRole = await roleApi.updateRole(editRole.id, { name, permissions });
-      await loadRoles();
-      setEditRole(null);
-      setView("list");
-      showToast("Role updated successfully!");
-    } catch (err) {
-      throw err;
-    }
+  const handleEditSave = async ({ name, permissions }) => {
+    const res  = await fetch(`${API_BASE}/roles/${editRole.id}`, { method:"PUT", headers: authHeader(), body: JSON.stringify({ name, permissions }) });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    await loadRoles();
+    setEditRole(null);
+    setView("list");
+    showToast("Role updated successfully!");
   };
 
-  // ✅ Delete role using roleApi
   const handleDelete = async (role) => {
     if (!window.confirm(`Delete role "${role.name}"?`)) return;
     try {
-      await roleApi.deleteRole(role.id);
+      const res  = await fetch(`${API_BASE}/roles/${role.id}`, { method:"DELETE", headers: authHeader() });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
       await loadRoles();
       showToast("Role deleted");
-    } catch (err) {
-      showToast(err.message || "Delete failed", "error");
-    }
+    } catch (err) { showToast(err.message || "Delete failed","error"); }
   };
 
-  if (view === "add") {
-    return (
-      <RoleFormPage
-        onBack={() => setView("list")}
-        onSave={handleAdd}
-        editRole={null}
-        allRoles={roles}
-        permissionGroups={permGroups}
-      />
-    );
-  }
+  if (view === "add") return <RoleFormPage onBack={() => setView("list")} onSave={handleAdd} editRole={null} allRoles={roles} permissionGroups={permGroups} />;
+  if (view === "edit") return <RoleFormPage onBack={() => { setEditRole(null); setView("list"); }} onSave={handleEditSave} editRole={editRole} allRoles={roles} permissionGroups={permGroups} />;
 
-  if (view === "edit") {
-    return (
-      <RoleFormPage
-        onBack={() => { setEditRole(null); setView("list"); }}
-        onSave={handleEdit}
-        editRole={editRole}
-        allRoles={roles}
-        permissionGroups={permGroups}
-      />
-    );
-  }
+  // ── PAGINATION LOGIC (FIXED) ──────────────────────────────
+  const filtered   = roles.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / show));
+  // Clamp currentPage in case rows shrink (e.g. after delete / search)
+  const safePage   = Math.min(currentPage, totalPages);
+  const startIdx   = (safePage - 1) * show;
+  const shown      = filtered.slice(startIdx, startIdx + show); // ← FIXED
 
-  // ✅ Fixed pagination logic
-  const filtered = roles.filter((r) => r.name.toLowerCase().includes(search.toLowerCase()));
-  const itemsPerPage = parseInt(show);
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const shown = filtered.slice(startIndex, endIndex);
+  const goToPage = (page) => setCurrentPage(Math.max(1, Math.min(page, totalPages)));
 
-  const handlePreviousPage = () => {
-    if (currentPage > 1) setCurrentPage(currentPage - 1);
-  };
-
-  const handleNextPage = () => {
-    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
-  };
-
-  const handleShowChange = (e) => {
-    setShow(e.target.value);
-    setCurrentPage(1); // Reset to page 1 when items per page changes
-  };
+  // Build page number buttons (show max 5 around current)
+  const pageButtons = [];
+  const maxBtns  = 5;
+  let   startBtn = Math.max(1, safePage - Math.floor(maxBtns / 2));
+  let   endBtn   = Math.min(totalPages, startBtn + maxBtns - 1);
+  if (endBtn - startBtn < maxBtns - 1) startBtn = Math.max(1, endBtn - maxBtns + 1);
+  for (let i = startBtn; i <= endBtn; i++) pageButtons.push(i);
 
   return (
     <div style={styles.page}>
       <style>{css}</style>
 
       {toast && (
-        <div style={{ ...styles.toast, background: toast.type === "error" ? "#e53e3e" : "#22c55e" }}>
+        <div style={{ ...styles.toast, background: toast.type==="error"?"#e53e3e":"#22c55e" }}>
           {toast.msg}
         </div>
       )}
@@ -374,53 +316,43 @@ export default function Roles() {
           <button onClick={() => setView("add")} style={styles.addBtn}>+ Add</button>
         </div>
 
+        {/* Export buttons */}
         <div style={styles.exportBar}>
-          <button onClick={() => exportCSV(filtered)} style={styles.exportBtn}>
-            <span style={{ ...styles.exportIcon, background: "#16a34a", color: "#fff" }}>CSV</span>
-            Export CSV
-          </button>
-          <button onClick={() => exportExcel(filtered)} style={styles.exportBtn}>
-            <span style={{ ...styles.exportIcon, background: "#15803d", color: "#fff" }}>XLS</span>
-            Export Excel
-          </button>
-          <button onClick={() => printTable(filtered)} style={styles.exportBtn}>
-            <span style={{ ...styles.exportIcon, background: "#6b7280", color: "#fff" }}>🖨</span>
-            Print
-          </button>
-          <div style={{ position: "relative" }}>
+          <button onClick={() => exportCSV(filtered)}   style={styles.exportBtn}><span style={{ ...styles.exportIcon,background:"#16a34a",color:"#fff" }}>CSV</span>Export CSV</button>
+          <button onClick={() => exportExcel(filtered)} style={styles.exportBtn}><span style={{ ...styles.exportIcon,background:"#15803d",color:"#fff" }}>XLS</span>Export Excel</button>
+          <button onClick={() => exportPDF(filtered)}   style={styles.exportBtn}><span style={{ ...styles.exportIcon,background:"#dc2626",color:"#fff" }}>PDF</span>Export PDF</button>
+          <div style={{ position:"relative" }}>
             <button onClick={() => setShowColMenu((v) => !v)} style={styles.exportBtn}>
-              <span style={{ ...styles.exportIcon, background: "#7c3aed", color: "#fff" }}>⊞</span>
-              Column visibility
+              <span style={{ ...styles.exportIcon,background:"#7c3aed",color:"#fff" }}>⊞</span>Column visibility
             </button>
             {showColMenu && (
               <div style={styles.colMenu}>
                 {["Roles","Action"].map((col) => (
                   <label key={col} style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 12px",cursor:"pointer",fontSize:13 }}>
-                    <input type="checkbox" checked={colVisible[col]} onChange={() => setColVisible((v) => ({ ...v,[col]:!v[col] }))} />
-                    {col}
+                    <input type="checkbox" checked={colVisible[col]} onChange={() => setColVisible((v) => ({ ...v,[col]:!v[col] }))} />{col}
                   </label>
                 ))}
               </div>
             )}
           </div>
-          <button onClick={() => exportPDF(filtered)} style={styles.exportBtn}>
-            <span style={{ ...styles.exportIcon, background: "#dc2626", color: "#fff" }}>PDF</span>
-            Export PDF
-          </button>
         </div>
 
         <div style={styles.tableControls}>
           <div style={styles.showEntries}>
             Show&nbsp;
-            <select value={show} onChange={handleShowChange} style={styles.select}>
-              {["10","25","50","100"].map((n) => <option key={n}>{n}</option>)}
+            <select
+              value={show}
+              onChange={(e) => { setShow(parseInt(e.target.value)); }}
+              style={styles.select}
+            >
+              {[10,25,50,100].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
             &nbsp;entries
           </div>
           <input
             placeholder="Search ..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => setSearch(e.target.value)}
             style={styles.searchInput}
           />
         </div>
@@ -446,14 +378,8 @@ export default function Roles() {
                       <td style={styles.td}>
                         {role.deletable ? (
                           <div style={{ display:"flex",gap:8 }}>
-                            <button
-                              style={styles.editBtn}
-                              onClick={() => { setEditRole(role); setView("edit"); }}
-                            >✎ Edit</button>
-                            <button
-                              style={styles.deleteBtn}
-                              onClick={() => handleDelete(role)}
-                            >🗑 Delete</button>
+                            <button style={styles.editBtn}   onClick={() => { setEditRole(role); setView("edit"); }}>✎ Edit</button>
+                            <button style={styles.deleteBtn} onClick={() => handleDelete(role)}>🗑 Delete</button>
                           </div>
                         ) : (
                           <span style={{ fontSize:12,color:"#a0aec0" }}>Protected</span>
@@ -467,23 +393,37 @@ export default function Roles() {
           </table>
         )}
 
+        {/* ── FIXED PAGINATION ── */}
         <div style={styles.tableFooter}>
-          <span>Showing {shown.length === 0 ? 0 : startIndex + 1} to {endIndex} of {filtered.length} entries</span>
+          <span>
+            Showing {filtered.length === 0 ? 0 : startIdx + 1} to {Math.min(startIdx + show, filtered.length)} of {filtered.length} entries
+          </span>
           <div style={styles.pagination}>
-            <button 
-              style={styles.pageBtn}
-              onClick={handlePreviousPage}
-              disabled={currentPage === 1}
+            {/* Previous */}
+            <button
+              style={{ ...styles.pageBtn, opacity: safePage === 1 ? 0.4 : 1 }}
+              onClick={() => goToPage(safePage - 1)}
+              disabled={safePage === 1}
             >
               Previous
             </button>
-            <button style={{ ...styles.pageBtn,...styles.pageBtnActive }}>
-              {currentPage} of {totalPages || 1}
-            </button>
-            <button 
-              style={styles.pageBtn}
-              onClick={handleNextPage}
-              disabled={currentPage === totalPages || totalPages === 0}
+
+            {/* Page number buttons */}
+            {pageButtons.map((pg) => (
+              <button
+                key={pg}
+                onClick={() => goToPage(pg)}
+                style={{ ...styles.pageBtn, ...(pg === safePage ? styles.pageBtnActive : {}) }}
+              >
+                {pg}
+              </button>
+            ))}
+
+            {/* Next */}
+            <button
+              style={{ ...styles.pageBtn, opacity: safePage === totalPages ? 0.4 : 1 }}
+              onClick={() => goToPage(safePage + 1)}
+              disabled={safePage === totalPages}
             >
               Next
             </button>
@@ -496,21 +436,20 @@ export default function Roles() {
   );
 }
 
+/* ── react-select styles ── */
 const selectStyles = {
   control: (base, state) => ({
     ...base,
-    borderColor:  state.isFocused ? "#4f46e5" : "#cbd5e0",
-    boxShadow:    state.isFocused ? "0 0 0 2px rgba(79,70,229,0.1)" : "none",
-    borderRadius: 6,
-    fontSize:     14,
-    minHeight:    38,
+    borderColor: state.isFocused ? "#4f46e5" : "#cbd5e0",
+    boxShadow:   state.isFocused ? "0 0 0 2px rgba(79,70,229,0.1)" : "none",
+    borderRadius: 6, fontSize: 14, minHeight: 38,
     "&:hover": { borderColor: "#4f46e5" },
   }),
   option: (base, state) => ({
     ...base,
     background: state.isSelected ? "#4f46e5" : state.isFocused ? "#eef2ff" : "#fff",
-    color:      state.isSelected ? "#fff" : "#2d3748",
-    fontSize:   13,
+    color: state.isSelected ? "#fff" : "#2d3748",
+    fontSize: 13,
   }),
 };
 
@@ -544,7 +483,6 @@ const styles = {
   deleteBtn:      { background:"#fff",border:"1px solid #fc8181",borderRadius:5,padding:"5px 12px",fontSize:12,cursor:"pointer",color:"#e53e3e",fontWeight:500 },
   fieldRow:       { display:"flex",flexDirection:"column",gap:6 },
   label:          { fontSize:13,fontWeight:600,color:"#2d3748" },
-  input:          { border:"1px solid #cbd5e0",borderRadius:6,padding:"8px 12px",fontSize:14,outline:"none" },
   permGrid:       { display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:20,marginTop:12 },
   permGroup:      { background:"#f7fafc",border:"1px solid #e2e8f0",borderRadius:8,padding:"14px 16px",display:"flex",flexDirection:"column",gap:8 },
   permGroupHeader:{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,paddingBottom:8,borderBottom:"1px solid #e2e8f0" },

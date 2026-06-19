@@ -10,6 +10,7 @@ import {
   resetUserPassword,
 } from "../api/userApi";
 import { fetchAllRoles } from "../api/roleApi";
+import { usePermissions } from "../context/PermissionsContext";  // ← NEW: permission checking
 
 const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
@@ -31,8 +32,11 @@ const TABS = ["basic", "sales", "personal", "bank", "hrm"];
 const TAB_LABELS = { basic: "Basic Info", sales: "Sales", personal: "Personal", bank: "Bank Details", hrm: "HRM" };
 
 export default function Users() {
+  // ← NEW: Get permissions
+  const { hasPermission, loaded: permsLoaded, isAdmin } = usePermissions();
+
   const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]); // ✅ dynamic roles from roles table
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -56,6 +60,13 @@ export default function Users() {
   const isFirstTab = currentTabIndex === 0;
   const isLastTab = currentTabIndex === TABS.length - 1;
 
+  // ← NEW: Helper to check if user has a specific permission
+  const canView = () => isAdmin || hasPermission("User", "View user");
+  const canAdd = () => isAdmin || hasPermission("User", "Add user");
+  const canEdit = () => isAdmin || hasPermission("User", "Edit user");
+  const canDelete = () => isAdmin || hasPermission("User", "Delete user");
+  const canResetPassword = () => isAdmin || hasPermission("User", "Edit user"); // Uses same perm as edit (or could be separate)
+
   useEffect(() => { loadUsers(); loadRoles(); }, []);
 
   const loadUsers = async () => {
@@ -71,9 +82,6 @@ export default function Users() {
     }
   };
 
-  // ✅ Loads every role from the roles table (admin, manager, employee,
-  // viewer, Super Admin, Administrator, Sales Manager, etc.) so the
-  // Add/Edit User Role dropdown always reflects what's actually in the DB.
   const loadRoles = async () => {
     try {
       const data = await fetchAllRoles();
@@ -343,6 +351,26 @@ export default function Users() {
 
   const f = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
+  // ← NEW: Show "No Permission" message instead of disabled page
+  if (permsLoaded && !canView()) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", minHeight: "60vh", gap: 16,
+        fontFamily: "'Segoe UI', sans-serif",
+      }}>
+        <div style={{ fontSize: 64 }}>🔒</div>
+        <h2 style={{ fontSize: 24, fontWeight: 700, color: "#1a202c", margin: 0 }}>
+          Access Denied
+        </h2>
+        <p style={{ color: "#718096", fontSize: 15, textAlign: "center", maxWidth: 400 }}>
+          You don't have permission to view the Users page.
+          Contact your administrator if you need access.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif" }}>
       {/* Page Header */}
@@ -351,15 +379,18 @@ export default function Users() {
           <h2 style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "#1e2d1e" }}>Users</h2>
           <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: "14px" }}>Manage users</p>
         </div>
-        <button onClick={openAdd} style={{
-          background: "linear-gradient(135deg, #2d6a4f, #40916c)",
-          color: "#fff", border: "none", borderRadius: "10px",
-          padding: "10px 22px", fontWeight: 700, fontSize: "14px",
-          cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
-          boxShadow: "0 3px 10px rgba(45,106,79,0.3)",
-        }}>
-          <span style={{ fontSize: "18px" }}>+</span> Add User
-        </button>
+        {/* ← NEW: Add User button only shows if user has permission */}
+        {canAdd() && (
+          <button onClick={openAdd} style={{
+            background: "linear-gradient(135deg, #2d6a4f, #40916c)",
+            color: "#fff", border: "none", borderRadius: "10px",
+            padding: "10px 22px", fontWeight: 700, fontSize: "14px",
+            cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+            boxShadow: "0 3px 10px rgba(45,106,79,0.3)",
+          }}>
+            <span style={{ fontSize: "18px" }}>+</span> Add User
+          </button>
+        )}
       </div>
 
       {/* API Error Banner */}
@@ -429,11 +460,23 @@ export default function Users() {
                     </td>
                     <td style={{ padding: "13px 18px" }}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        <button onClick={() => openEdit(u)} style={actionBtn("#2d6a4f", "#f0fdf4")}>✏️ Edit</button>
-                        <button onClick={() => openView(u)} style={actionBtn("#2563eb", "#eff6ff")}>👁 View</button>
-                        <button onClick={() => { setShowReset(u); setResetPassword(""); setResetConfirm(""); setResetError(""); }}
-                          style={actionBtn("#d97706", "#fffbeb")}>🔑 Reset</button>
-                        <button onClick={() => setShowDelete(u.id)} style={actionBtn("#dc2626", "#fef2f2")}>🗑 Delete</button>
+                        {/* ← NEW: Show buttons ONLY if user has permission */}
+                        {canView() && (
+                          <button onClick={() => openView(u)} style={actionBtn("#2563eb", "#eff6ff")}>👁 View</button>
+                        )}
+                        {canEdit() && (
+                          <button onClick={() => openEdit(u)} style={actionBtn("#2d6a4f", "#f0fdf4")}>✏️ Edit</button>
+                        )}
+                        {canResetPassword() && (
+                          <button onClick={() => { setShowReset(u); setResetPassword(""); setResetConfirm(""); setResetError(""); }}
+                            style={actionBtn("#d97706", "#fffbeb")}>🔑 Reset</button>
+                        )}
+                        {canDelete() && (
+                          <button onClick={() => setShowDelete(u.id)} style={actionBtn("#dc2626", "#fef2f2")}>🗑 Delete</button>
+                        )}
+                        {!canView() && !canEdit() && !canDelete() && !canResetPassword() && (
+                          <span style={{ fontSize: "12px", color: "#9ca3af" }}>No permissions</span>
+                        )}
                       </div>
                     </td>
                   </tr>

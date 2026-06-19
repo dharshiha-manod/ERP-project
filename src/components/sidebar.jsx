@@ -1,3 +1,14 @@
+/**
+ * ============================================================
+ * components/Sidebar.jsx  (FIXED)
+ *
+ * Fixes:
+ * 1. User card now shows REAL logged-in user name, role, avatar
+ *    (was hardcoded "Admin User / Administrator")
+ * 2. Uses usePermissions() userRole / userName / userAvatar
+ * ============================================================
+ */
+
 import "../styles/Sidebar.css";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -17,35 +28,35 @@ const navItems = [
   {
     label: "User Management", icon: Users, path: "/users", feature: FEATURES.USER_MANAGEMENT,
     children: [
-      { label: "Users", path: "/users" },
-      { label: "Roles", path: "/roles" },
+      { label: "Users",                   path: "/users" },
+      { label: "Roles",                   path: "/roles" },
       { label: "Sales Commission Agents", path: "/sales-commission-agents" },
     ],
   },
   {
     label: "Contacts", icon: BookUser, path: "/contacts", feature: FEATURES.CONTACTS,
     children: [
-      { label: "Suppliers", path: "/contacts?type=supplier" },
-      { label: "Customers", path: "/contacts?type=customer" },
-      { label: "Customer Groups", path: "/customer-group" },
-      { label: "Import Contacts", path: "/contacts/import" },
+      { label: "Suppliers",        path: "/contacts?type=supplier" },
+      { label: "Customers",        path: "/contacts?type=customer" },
+      { label: "Customer Groups",  path: "/customer-group" },
+      { label: "Import Contacts",  path: "/contacts/import" },
     ],
   },
   {
     label: "Products", icon: Package, path: "/products", feature: FEATURES.PRODUCTS,
     children: [
-      { label: "List Products", path: "/products/" },
-      { label: "Add Product", path: "/products/create" },
-      { label: "Update Price", path: "/update-product-price" },
-      { label: "Print Labels", path: "/labels/show" },
-      { label: "Variations", path: "/variation-templates" },
-      { label: "Import Products", path: "/import-products" },
-      { label: "Import Opening Stock", path: "/import-opening-stock" },
-      { label: "Selling Price Group", path: "/selling-price-group" },
-      { label: "Units", path: "/units" },
-      { label: "Categories", path: "/taxonomies" },
-      { label: "Brands", path: "/brands" },
-      { label: "Warranties", path: "/warranties" },
+      { label: "List Products",         path: "/products/" },
+      { label: "Add Product",           path: "/products/create" },
+      { label: "Update Price",          path: "/update-product-price" },
+      { label: "Print Labels",          path: "/labels/show" },
+      { label: "Variations",            path: "/variation-templates" },
+      { label: "Import Products",       path: "/import-products" },
+      { label: "Import Opening Stock",  path: "/import-opening-stock" },
+      { label: "Selling Price Group",   path: "/selling-price-group" },
+      { label: "Units",                 path: "/units" },
+      { label: "Categories",            path: "/taxonomies" },
+      { label: "Brands",                path: "/brands" },
+      { label: "Warranties",            path: "/warranties" },
     ],
   },
   { label: "Manufacturing", icon: Factory, path: "/manufacturing/recipe", feature: FEATURES.MANUFACTURING },
@@ -53,119 +64,119 @@ const navItems = [
     label: "Production Planning", icon: ClipboardList, path: "/production-planning", feature: FEATURES.PRODUCTION_PLANNING,
     children: [
       { label: "Work Orders", path: "/production-planning" },
-      { label: "Resources", path: "/production-planning?tab=resources" },
-      { label: "Schedule", path: "/production-planning?tab=schedule" },
+      { label: "Resources",   path: "/production-planning?tab=resources" },
+      { label: "Schedule",    path: "/production-planning?tab=schedule" },
     ],
   },
   {
     label: "Purchases", icon: ShoppingCart, path: "/purchases", feature: FEATURES.PURCHASES,
     children: [
-      { label: "List Purchases", path: "/purchases" },
-      { label: "Add Purchase", path: "/purchases/create" },
+      { label: "List Purchases",       path: "/purchases" },
+      { label: "Add Purchase",         path: "/purchases/create" },
       { label: "List Purchase Return", path: "/purchase-return" },
     ],
   },
   {
     label: "Sell", icon: BadgeDollarSign, path: "/sells", feature: FEATURES.SELL,
     children: [
-      { label: "All Sales", path: "/sells" },
-      { label: "Add Sale", path: "/sells/create" },
-      { label: "List POS", path: "/pos" },
-      { label: "POS", path: "/pos/create" },
-      { label: "Add Draft", path: "/sells/create?status=draft" },
-      { label: "List Drafts", path: "/sells/drafts" },
-      { label: "Add Quotation", path: "/sells/create?status=quotation" },
-      { label: "List Quotations", path: "/sells/quotations" },
+      { label: "All Sales",        path: "/sells" },
+      { label: "Add Sale",         path: "/sells/create" },
+      { label: "List POS",         path: "/pos" },
+      { label: "POS",              path: "/pos/create" },
+      { label: "Add Draft",        path: "/sells/create?status=draft" },
+      { label: "List Drafts",      path: "/sells/drafts" },
+      { label: "Add Quotation",    path: "/sells/create?status=quotation" },
+      { label: "List Quotations",  path: "/sells/quotations" },
       { label: "List Sell Return", path: "/sell-return" },
-      { label: "Shipments", path: "/shipments" },
-      { label: "Discounts", path: "/discount" },
-      { label: "Import Sales", path: "/import-sales" },
+      { label: "Shipments",        path: "/shipments" },
+      { label: "Discounts",        path: "/discount" },
+      { label: "Import Sales",     path: "/import-sales" },
     ],
   },
   {
     label: "Stock Transfers", icon: ArrowLeftRight, path: "/stock-transfers", feature: FEATURES.STOCK_TRANSFERS,
     children: [
       { label: "List Stock Transfers", path: "/stock-transfers" },
-      { label: "Add Stock Transfer", path: "/stock-transfers/create" },
+      { label: "Add Stock Transfer",   path: "/stock-transfers/create" },
     ],
   },
   {
     label: "Stock Adjustment", icon: SlidersHorizontal, path: "/stock-adjustments", feature: FEATURES.STOCK_ADJUSTMENT,
     children: [
       { label: "List Stock Adjustments", path: "/stock-adjustments" },
-      { label: "Add Stock Adjustment", path: "/stock-adjustments/create" },
+      { label: "Add Stock Adjustment",   path: "/stock-adjustments/create" },
     ],
   },
   {
     label: "Expenses", icon: Wallet, path: "/expenses", feature: FEATURES.EXPENSES,
     children: [
-      { label: "List Expenses", path: "/expenses" },
-      { label: "Add Expense", path: "/expenses/create" },
+      { label: "List Expenses",      path: "/expenses" },
+      { label: "Add Expense",        path: "/expenses/create" },
       { label: "Expense Categories", path: "/expense-categories" },
     ],
   },
   {
     label: "Reports", icon: BarChart3, path: "/reports", feature: FEATURES.REPORTS,
     children: [
-      { label: "Profit / Loss Report", path: "/reports/profit-loss" },
-      { label: "Purchase & Sale", path: "/reports/purchase-sale" },
-      { label: "Tax Report", path: "/reports/tax" },
-      { label: "Supplier & Customer Report", path: "/reports/supplier-customer" },
-      { label: "Customer Groups Report", path: "/reports/customer-groups" },
-      { label: "Stock Report", path: "/reports/stock" },
-      { label: "Stock Adjustment Report", path: "/reports/stock-adjustment" },
-      { label: "Trending Products", path: "/reports/trending-products" },
-      { label: "Items Report", path: "/reports/items" },
-      { label: "Product Purchase Report", path: "/reports/product-purchase" },
-      { label: "Product Sell Report", path: "/reports/product-sell" },
-      { label: "Purchase Payment Report", path: "/reports/purchase-payment" },
-      { label: "Sell Payment Report", path: "/reports/sell-payment" },
-      { label: "Expense Report", path: "/reports/expense" },
-      { label: "Register Report", path: "/reports/register" },
+      { label: "Profit / Loss Report",        path: "/reports/profit-loss" },
+      { label: "Purchase & Sale",             path: "/reports/purchase-sale" },
+      { label: "Tax Report",                  path: "/reports/tax" },
+      { label: "Supplier & Customer Report",  path: "/reports/supplier-customer" },
+      { label: "Customer Groups Report",      path: "/reports/customer-groups" },
+      { label: "Stock Report",                path: "/reports/stock" },
+      { label: "Stock Adjustment Report",     path: "/reports/stock-adjustment" },
+      { label: "Trending Products",           path: "/reports/trending-products" },
+      { label: "Items Report",                path: "/reports/items" },
+      { label: "Product Purchase Report",     path: "/reports/product-purchase" },
+      { label: "Product Sell Report",         path: "/reports/product-sell" },
+      { label: "Purchase Payment Report",     path: "/reports/purchase-payment" },
+      { label: "Sell Payment Report",         path: "/reports/sell-payment" },
+      { label: "Expense Report",              path: "/reports/expense" },
+      { label: "Register Report",             path: "/reports/register" },
       { label: "Sales Representative Report", path: "/reports/sales-representative" },
-      { label: "Activity Log", path: "/reports/activity-log" },
+      { label: "Activity Log",                path: "/reports/activity-log" },
     ],
   },
   { label: "Notification Templates", icon: Bell, path: "/notifications", feature: FEATURES.NOTIFICATIONS },
   {
     label: "Settings", icon: Settings, path: "/settings", feature: FEATURES.SETTINGS,
     children: [
-      { label: "Business Settings", path: "/settings/business" },
-      { label: "Tax Rates", path: "/settings/tax-rates" },
-      { label: "Payment Methods", path: "/settings/payment-methods" },
-      { label: "Account Settings", path: "/settings/account" },
-      { label: "Barcode Settings", path: "/settings/barcode" },
-      { label: "Receipt Printer", path: "/settings/receipt-printer" },
+      { label: "Business Settings",  path: "/settings/business" },
+      { label: "Tax Rates",          path: "/settings/tax-rates" },
+      { label: "Payment Methods",    path: "/settings/payment-methods" },
+      { label: "Account Settings",   path: "/settings/account" },
+      { label: "Barcode Settings",   path: "/settings/barcode" },
+      { label: "Receipt Printer",    path: "/settings/receipt-printer" },
     ],
   },
   { label: "CRM", icon: HeartHandshake, path: "/crm", feature: FEATURES.CRM },
   {
     label: "HRM", icon: BriefcaseBusiness, path: "/hrm", feature: FEATURES.HRM,
     children: [
-      { label: "Dashboard", path: "/hrm" },
-      { label: "Leave Type", path: "/hrm/leave-type" },
-      { label: "Leave", path: "/hrm/leave" },
-      { label: "Attendance", path: "/hrm/attendance" },
-      { label: "Payroll", path: "/hrm/payroll" },
-      { label: "My Payrolls", path: "/hrm/payroll/my" },
-      { label: "Holiday", path: "/hrm/holiday" },
-      { label: "Departments", path: "/hrm/departments" },
+      { label: "Dashboard",    path: "/hrm" },
+      { label: "Leave Type",   path: "/hrm/leave-type" },
+      { label: "Leave",        path: "/hrm/leave" },
+      { label: "Attendance",   path: "/hrm/attendance" },
+      { label: "Payroll",      path: "/hrm/payroll" },
+      { label: "My Payrolls",  path: "/hrm/payroll/my" },
+      { label: "Holiday",      path: "/hrm/holiday" },
+      { label: "Departments",  path: "/hrm/departments" },
       { label: "Designations", path: "/hrm/designations" },
-      { label: "Sales Targets", path: "/hrm/sales-targets" },
-      { label: "Settings", path: "/hrm/settings" },
+      { label: "Sales Targets",path: "/hrm/sales-targets" },
+      { label: "Settings",     path: "/hrm/settings" },
     ],
   },
   {
     label: "Essentials", icon: ClipboardCheck, path: "/essentials", feature: FEATURES.ESSENTIALS,
     children: [
-      { label: "Dashboard", path: "/essentials" },
-      { label: "To Do", path: "/essentials/todo" },
-      { label: "Document", path: "/essentials/document" },
-      { label: "Memos", path: "/essentials/memos" },
-      { label: "Reminders", path: "/essentials/reminders" },
-      { label: "Messages", path: "/essentials/messages" },
-      { label: "Knowledge Base", path: "/essentials/knowledge-base" },
-      { label: "Settings", path: "/essentials/settings" },
+      { label: "Dashboard",     path: "/essentials" },
+      { label: "To Do",         path: "/essentials/todo" },
+      { label: "Document",      path: "/essentials/document" },
+      { label: "Memos",         path: "/essentials/memos" },
+      { label: "Reminders",     path: "/essentials/reminders" },
+      { label: "Messages",      path: "/essentials/messages" },
+      { label: "Knowledge Base",path: "/essentials/knowledge-base" },
+      { label: "Settings",      path: "/essentials/settings" },
     ],
   },
 ];
@@ -189,30 +200,25 @@ export default function Sidebar() {
   const [openMenu, setOpenMenu] = useState(null);
   const [search,   setSearch]   = useState("");
 
-  // loaded = permissions have been fetched from server (true/false)
-  // permissions = [] means user has no permissions (not still loading)
-  // isAdmin = backend-confirmed admin-tier role — bypasses permission checks
-  const { hasPermission, loaded, isAdmin } = usePermissions();
+  // ── Pull real user info from context (FIXED) ──────────────
+  const {
+    hasPermission,
+    loaded,
+    isAdmin,
+    userName,
+    userRole,
+    userAvatar,
+  } = usePermissions();
 
   const planLabel = getPlanLabel();
 
   const visibleItems = navItems.filter((it) => {
-    // Step 1: plan-level gate
     if (!hasFeature(it.feature)) return false;
-
-    // Step 2: Dashboard always visible
     if (!it.feature || it.feature === FEATURES.DASHBOARD) return true;
-
-    // Step 3: Still loading permissions → show nothing except Dashboard
-    // This prevents the flash of full sidebar before permissions load
     if (!loaded) return false;
-
-    // Step 4: Admin-tier roles bypass permission-string matching entirely
     if (isAdmin) return true;
-
-    // Step 5: Check DB role permission — if no match, hide the menu item
     const checker = FEATURE_PERM_MAP[it.feature];
-    if (!checker) return true; // no mapping = always show
+    if (!checker) return true;
     return checker(hasPermission);
   });
 
@@ -224,8 +230,6 @@ export default function Sidebar() {
           it.children?.some((c) => c.label.toLowerCase().includes(q))
       )
     : visibleItems;
-
-  const handleAdminClick = () => navigate("/profile");
 
   return (
     <aside className="sidebar">
@@ -342,19 +346,37 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* ── User Card ── */}
+      {/* ── User Card (FIXED — shows real logged-in user) ── */}
       <div
         className="sidebar-user"
-        onClick={handleAdminClick}
+        onClick={() => navigate("/profile")}
         style={{ cursor: "pointer", transition: "all 0.2s ease", borderRadius: "10px" }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(22, 163, 74, 0.1)"; e.currentTarget.style.transform = "translateX(4px)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateX(0)"; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "rgba(22, 163, 74, 0.1)";
+          e.currentTarget.style.transform  = "translateX(4px)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+          e.currentTarget.style.transform  = "translateX(0)";
+        }}
         title="Click to view profile"
       >
-        <div className="sidebar-user-avatar">A</div>
-        <div>
-          <div className="sidebar-user-name">Admin User</div>
-          <div className="sidebar-user-role">Administrator</div>
+        {/* Avatar circle with first letter of user name */}
+        <div className="sidebar-user-avatar">
+          {userAvatar || "U"}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Real user name from JWT / API */}
+          <div
+            className="sidebar-user-name"
+            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            {userName || "User"}
+          </div>
+          {/* Real role name from API */}
+          <div className="sidebar-user-role">
+            {userRole || "—"}
+          </div>
         </div>
         <div className="sidebar-user-arrow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
