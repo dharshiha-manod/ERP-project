@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import {
   fetchAllUsers,
   createUser,
@@ -8,6 +9,7 @@ import {
   deleteUser,
   resetUserPassword,
 } from "../api/userApi";
+import { fetchAllRoles } from "../api/roleApi";
 
 const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
@@ -30,6 +32,7 @@ const TAB_LABELS = { basic: "Basic Info", sales: "Sales", personal: "Personal", 
 
 export default function Users() {
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]); // ✅ dynamic roles from roles table
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -53,7 +56,7 @@ export default function Users() {
   const isFirstTab = currentTabIndex === 0;
   const isLastTab = currentTabIndex === TABS.length - 1;
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); loadRoles(); }, []);
 
   const loadUsers = async () => {
     try {
@@ -65,6 +68,18 @@ export default function Users() {
       setApiError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Loads every role from the roles table (admin, manager, employee,
+  // viewer, Super Admin, Administrator, Sales Manager, etc.) so the
+  // Add/Edit User Role dropdown always reflects what's actually in the DB.
+  const loadRoles = async () => {
+    try {
+      const data = await fetchAllRoles();
+      setRoles(data || []);
+    } catch (err) {
+      console.error("Failed to load roles:", err.message);
     }
   };
 
@@ -205,6 +220,117 @@ export default function Users() {
     (u.role || "").toLowerCase().includes(search.toLowerCase())
   );
 
+  // ────────── EXPORT CSV ──────────
+  const exportCSV = () => {
+    const headers = ["Full Name", "Email", "Role", "Department", "Status"];
+    const csvContent = [
+      headers.join(","),
+      ...users.map(u => [
+        `"${u.full_name || ""}"`,
+        `"${u.email || ""}"`,
+        `"${u.role || ""}"`,
+        `"${u.department || ""}"`,
+        `"${u.status || ""}"`,
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "users.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ────────── EXPORT EXCEL ──────────
+  const exportExcel = () => {
+    const data = users.map(u => ({
+      "Full Name": u.full_name || "-",
+      "Email": u.email || "-",
+      "Role": u.role || "-",
+      "Department": u.department || "-",
+      "Status": u.status || "-",
+      "Phone": u.phone || "-",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    worksheet["!cols"] = [
+      { wch: 20 },
+      { wch: 25 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 15 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+    XLSX.writeFile(workbook, "users.xlsx");
+  };
+
+  // ────────── PRINT ──────────
+  const handlePrint = () => {
+    const printWindow = window.open("", "", "height=600,width=800");
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Users List</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; margin: 20px; }
+            h2 { color: #1e2d1e; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th { background-color: #f8fdf9; color: #374151; padding: 12px; text-align: left; border-bottom: 2px solid #eaf1ec; }
+            td { padding: 12px; border-bottom: 1px solid #f0f4f1; }
+            tr:nth-child(even) { background-color: #fafcfa; }
+            .status-active { background-color: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 4px; }
+            .status-inactive { background-color: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; }
+            .role-badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+            .role-admin { background-color: #dcfce7; color: #166534; }
+            .role-manager { background-color: #dbeafe; color: #1d4ed8; }
+            .role-employee { background-color: #fef9c3; color: #854d0e; }
+            @media print {
+              body { margin: 0; }
+              table { page-break-inside: auto; }
+              tr { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <h2>Users List - ${new Date().toLocaleDateString()}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Full Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Department</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td>${u.full_name || "-"}</td>
+                  <td>${u.email || "-"}</td>
+                  <td><span class="role-badge role-${u.role || "employee"}">${u.role || "-"}</span></td>
+                  <td>${u.department || "-"}</td>
+                  <td><span class="status-${u.status || "active"}">${u.status || "-"}</span></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  // ────────── EXPORT PDF ──────────
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Users List", 14, 15);
@@ -248,12 +374,22 @@ export default function Users() {
         <div style={{ padding: "16px 22px", borderBottom: "1px solid #f0f4f1", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
           <div style={{ fontWeight: 700, fontSize: "16px", color: "#1e2d1e" }}>All Users ({users.length})</div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {["Export CSV", "Export Excel", "Print", "Export PDF"].map(b => (
-              <button key={b} onClick={() => { if (b === "Export PDF") exportPDF(); }}
-                style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
-                {b}
-              </button>
-            ))}
+            <button onClick={exportCSV}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              📊 Export CSV
+            </button>
+            <button onClick={exportExcel}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              📑 Export Excel
+            </button>
+            <button onClick={handlePrint}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              🖨️ Print
+            </button>
+            <button onClick={exportPDF}
+              style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              📄 Export PDF
+            </button>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
               style={{ padding: "7px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", outline: "none", width: "180px" }} />
           </div>
@@ -502,9 +638,9 @@ export default function Users() {
                     <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
                       style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
                       <option value="">Select Role</option>
-                      <option value="admin">Admin</option>
-                      <option value="manager">Manager</option>
-                      <option value="employee">Employee</option>
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.name.toLowerCase()}>{r.name}</option>
+                      ))}
                     </select>
                     {errors.role && <span style={errTxt}>{errors.role}</span>}
                   </div>

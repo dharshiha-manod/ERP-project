@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usePermissions } from "../context/PermissionsContext";
 
 const API = "http://localhost:5000";
 
@@ -412,6 +413,7 @@ function RegisterForm({ onBack }) {
 // ─── LOGIN FORM ───────────────────────────────────────────────────────────────
 function LoginForm({ onRegister }) {
   const navigate = useNavigate();
+  const { loadPermissions } = usePermissions();
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", remember: false });
   const [errors, setErrors] = useState({});
@@ -441,6 +443,10 @@ function LoginForm({ onRegister }) {
       // Save token + user info
       localStorage.setItem("manod_token", data.token);
       localStorage.setItem("manod_user", JSON.stringify(data.user));
+
+      // Fetch this user's permissions fresh BEFORE navigating,
+      // so the sidebar never renders with a stale/previous user's permissions
+      await loadPermissions();
 
       navigate("/");
     } catch (err) {

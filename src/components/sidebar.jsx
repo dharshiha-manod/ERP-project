@@ -8,10 +8,10 @@ import {
   ClipboardCheck, Search, ChevronDown, ClipboardList, Lock,
 } from "lucide-react";
 import { hasFeature, FEATURES, getPlanLabel } from "../planAccess";
+import { usePermissions } from "../context/PermissionsContext";
+import { FEATURE_PERM_MAP } from "../featurePermissionMap";
 
 /* ── Nav Data ─────────────────────────────────────────────────────────────── */
-// Each item now has a `feature` key — controls visibility based on plan.
-// Items with no `feature` key are always shown.
 const navItems = [
   { label: "Home", icon: Home, path: "/", feature: FEATURES.DASHBOARD },
   {
@@ -189,8 +189,32 @@ export default function Sidebar() {
   const [openMenu, setOpenMenu] = useState(null);
   const [search,   setSearch]   = useState("");
 
-  // Only show items the current plan unlocks
-  const visibleItems = navItems.filter((it) => hasFeature(it.feature));
+  // loaded = permissions have been fetched from server (true/false)
+  // permissions = [] means user has no permissions (not still loading)
+  // isAdmin = backend-confirmed admin-tier role — bypasses permission checks
+  const { hasPermission, loaded, isAdmin } = usePermissions();
+
+  const planLabel = getPlanLabel();
+
+  const visibleItems = navItems.filter((it) => {
+    // Step 1: plan-level gate
+    if (!hasFeature(it.feature)) return false;
+
+    // Step 2: Dashboard always visible
+    if (!it.feature || it.feature === FEATURES.DASHBOARD) return true;
+
+    // Step 3: Still loading permissions → show nothing except Dashboard
+    // This prevents the flash of full sidebar before permissions load
+    if (!loaded) return false;
+
+    // Step 4: Admin-tier roles bypass permission-string matching entirely
+    if (isAdmin) return true;
+
+    // Step 5: Check DB role permission — if no match, hide the menu item
+    const checker = FEATURE_PERM_MAP[it.feature];
+    if (!checker) return true; // no mapping = always show
+    return checker(hasPermission);
+  });
 
   const q        = search.toLowerCase().trim();
   const filtered = q
@@ -201,12 +225,7 @@ export default function Sidebar() {
       )
     : visibleItems;
 
-  const planLabel = getPlanLabel();
-
-  // ── Handle Admin User Click ──
-  const handleAdminClick = () => {
-    navigate("/profile");
-  };
+  const handleAdminClick = () => navigate("/profile");
 
   return (
     <aside className="sidebar">
@@ -312,50 +331,24 @@ export default function Sidebar() {
           );
         })}
 
-        {/* ── Upgrade prompt for trial/starter ── */}
+        {/* ── Upgrade prompt ── */}
         {planLabel !== "Pro" && (
-          <Link
-            to="/subscribe"
-            className="sidebar-item-wrapper"
-            style={{ textDecoration: "none" }}
-          >
-            <div
-              className="sidebar-item"
-              style={{
-                marginTop: 8,
-                background: "linear-gradient(135deg, #2e7d32, #43a047)",
-                color: "#fff",
-                borderRadius: 10,
-              }}
-            >
-              <span className="sidebar-item-icon">
-                <Lock size={16} strokeWidth={1.8} color="#fff" />
-              </span>
-              <span className="sidebar-item-label" style={{ color: "#fff", fontWeight: 700 }}>
-                Upgrade Plan
-              </span>
+          <Link to="/subscribe" className="sidebar-item-wrapper" style={{ textDecoration: "none" }}>
+            <div className="sidebar-item" style={{ marginTop: 8, background: "linear-gradient(135deg, #2e7d32, #43a047)", color: "#fff", borderRadius: 10 }}>
+              <span className="sidebar-item-icon"><Lock size={16} strokeWidth={1.8} color="#fff" /></span>
+              <span className="sidebar-item-label" style={{ color: "#fff", fontWeight: 700 }}>Upgrade Plan</span>
             </div>
           </Link>
         )}
       </nav>
 
-      {/* ── User Card (CLICKABLE) ── */}
-      <div 
+      {/* ── User Card ── */}
+      <div
         className="sidebar-user"
         onClick={handleAdminClick}
-        style={{ 
-          cursor: "pointer", 
-          transition: "all 0.2s ease",
-          borderRadius: "10px"
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(22, 163, 74, 0.1)";
-          e.currentTarget.style.transform = "translateX(4px)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.transform = "translateX(0)";
-        }}
+        style={{ cursor: "pointer", transition: "all 0.2s ease", borderRadius: "10px" }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(22, 163, 74, 0.1)"; e.currentTarget.style.transform = "translateX(4px)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "translateX(0)"; }}
         title="Click to view profile"
       >
         <div className="sidebar-user-avatar">A</div>

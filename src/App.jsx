@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./pages/ThemeContext";
+import { PermissionsProvider, usePermissions } from "./context/PermissionsContext";
+import { FEATURE_PERM_MAP } from "./featurePermissionMap";
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
 import Dashboard from "./pages/Dashboard";
@@ -48,7 +50,6 @@ function isAuthenticated() {
 
 // 1. Not logged in → go to /login
 //    Logged in but no subscription → go to /subscribe
-//    (Order: Signup/Login → Subscribe → App)
 function PrivateRoute({ children }) {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
   if (!isSubscriptionActive()) return <Navigate to="/subscribe" replace />;
@@ -63,17 +64,34 @@ function PublicRoute({ children }) {
     : <Navigate to="/subscribe" replace />;
 }
 
-// 3. Subscribe page — must be logged in. Always accessible (even with an
-//    active plan) so users can upgrade/change plans anytime.
+// 3. Subscribe page — must be logged in.
 function SubscriptionGate({ children }) {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
   return children;
 }
 
 // 4. Feature-gated route — blocks direct URL access to features
-//    not included in the user's current plan.
+//    not included in the user's current plan, AND blocks access if the
+//    logged-in user's role doesn't have the matching RBAC permission.
+//    Admin-tier roles bypass the RBAC check entirely.
 function FeatureRoute({ feature, children }) {
+  const { hasPermission, loaded, isAdmin } = usePermissions();
+
+  // 4a. Plan-level gate (subscription)
   if (!hasFeature(feature)) return <Navigate to="/subscribe" replace />;
+
+  // 4b. RBAC gate — wait until permissions are loaded before deciding,
+  //     so a fresh page load doesn't briefly bounce a valid user.
+  if (!loaded) return null;
+
+  // 4c. Admin bypass — skip permission-string matching entirely.
+  if (isAdmin) return children;
+
+  const checker = FEATURE_PERM_MAP[feature];
+  if (checker && !checker(hasPermission)) {
+    return <Navigate to="/" replace />;
+  }
+
   return children;
 }
 
@@ -208,35 +226,36 @@ function AppLayout() {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 function App() {
   return (
-    <ThemeProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Step 1: Login / Signup */}
-          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+    <PermissionsProvider>
+      <ThemeProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Step 1: Login / Signup */}
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
 
-          {/* Step 2: Subscribe (pick a plan) — shown right after login */}
-          <Route
-            path="/subscribe"
-            element={
-              <SubscriptionGate>
-                <Subscription />
-              </SubscriptionGate>
-            }
-          />
+            {/* Step 2: Subscribe (pick a plan) — shown right after login */}
+            <Route
+              path="/subscribe"
+              element={
+                <SubscriptionGate>
+                  <Subscription />
+                </SubscriptionGate>
+              }
+            />
 
-          {/* Step 3: App — requires login + active subscription.
-              Individual routes are further gated by plan via FeatureRoute. */}
-          <Route
-            path="/*"
-            element={
-              <PrivateRoute>
-                <AppLayout />
-              </PrivateRoute>
-            }
-          />
-        </Routes>
-      </BrowserRouter>
-    </ThemeProvider>
+            {/* Step 3: App — requires login + active subscription */}
+            <Route
+              path="/*"
+              element={
+                <PrivateRoute>
+                  <AppLayout />
+                </PrivateRoute>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </ThemeProvider>
+    </PermissionsProvider>
   );
 }
 
