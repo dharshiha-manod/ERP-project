@@ -1,5 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
+import {
+  getAllContacts, createContact as apiCreateContact, updateContact as apiUpdateContact,
+  deleteContact as apiDeleteContact, getContactStats, getAllGroups, createGroup as apiCreateGroup,
+  deleteGroup as apiDeleteGroup, importContacts as apiImportContacts, parseCSVFile,
+} from "../api/contactsAPI";
+import { usePermissions } from "../context/PermissionsContext";
 
 // ─── Export Utilities ────────────────────────────────────────────────────────
 const toCSV = (data, cols) => {
@@ -24,7 +30,67 @@ const printHTML = (title, tableHTML) => {
   w.document.close(); w.print();
 };
 
-// ─── Export Button Bar (matching image 3 UI) ─────────────────────────────────
+// ─── Map backend row → UI row shape (kept identical to original static shape) ─
+const mapContact = (c) => ({
+  id: c.id,
+  contactType: c.contact_type,
+  individual: c.is_individual,
+  contactId: c.contact_id,
+  prefix: c.prefix || "",
+  firstName: c.first_name || "",
+  middleName: c.middle_name || "",
+  lastName: c.last_name || "",
+  businessName: c.business_name || "",
+  name: c.name,
+  email: c.email || "—",
+  taxNumber: c.tax_number || "—",
+  payTerm: c.pay_term || "—",
+  creditLimit: `₹${Number(c.credit_limit || 0).toFixed(2)}`,
+  openingBalance: `₹${Number(c.opening_balance || 0).toFixed(2)}`,
+  advanceBalance: `₹${Number(c.advance_balance || 0).toFixed(2)}`,
+  addedOn: c.created_at ? new Date(c.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—",
+  address: c.address || "—",
+  city: c.city || "",
+  state: c.state || "",
+  country: c.country || "",
+  zip: c.zip || "",
+  mobile: c.mobile || "—",
+  altPhone: c.alt_phone || "",
+  landline: c.landline || "",
+  assignedTo: c.assigned_to || "",
+  customerGroup: c.customer_group_name || "—",
+  customerGroupId: c.customer_group_id || "",
+  totalPurchaseDue: `₹${Number(c.total_purchase_due || 0).toFixed(2)}`,
+  totalPurchaseReturnDue: `₹${Number(c.total_purchase_return_due || 0).toFixed(2)}`,
+  persons: c.persons || [],
+});
+
+// ── Map UI form state → backend payload ──
+const mapToPayload = (c) => ({
+  contactType: c.contactType,
+  individual: c.individual,
+  contactId: c.contactId,
+  prefix: c.prefix,
+  firstName: c.firstName,
+  middleName: c.middleName,
+  lastName: c.lastName,
+  businessName: c.businessName,
+  mobile: c.mobile,
+  altPhone: c.altPhone,
+  landline: c.landline,
+  email: c.email === "—" ? "" : c.email,
+  assignedTo: c.assignedTo,
+  taxNumber: c.taxNumber === "—" ? "" : c.taxNumber,
+  payTerm: c.payTerm === "—" ? "" : c.payTerm,
+  creditLimit: String(c.creditLimit || "").replace(/[₹,]/g, ""),
+  openingBalance: String(c.openingBalance || "").replace(/[₹,]/g, ""),
+  address: c.address === "—" ? "" : c.address,
+  city: c.city, state: c.state, country: c.country, zip: c.zip,
+  customerGroupId: c.customerGroupId || null,
+  persons: c.persons,
+});
+
+// ─── Export Button Bar ────────────────────────────────────────────────────────
 function ExportBar({ onCSV, onExcel, onPrint, onPDF, columns, colVisible, setColVisible }) {
   const [showColMenu, setShowColMenu] = useState(false);
   const ref = useRef();
@@ -84,16 +150,40 @@ function TableControls({ showEntries, setShowEntries, search, setSearch }) {
   );
 }
 
+// ─── Dashboard Cards ──────────────────────────────────────────────────────────
+function DashboardCards({ stats }) {
+  if (!stats) return null;
+  const cards = [
+    { label: "Total Suppliers", value: stats.totalSuppliers, color: "#16a34a", icon: "🏭" },
+    { label: "Total Customers", value: stats.totalCustomers, color: "#2563eb", icon: "🧑‍🤝‍🧑" },
+    { label: "Total Purchase Due", value: `₹${Number(stats.totalPurchaseDue || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, color: "#dc2626", icon: "💰" },
+    { label: "Customer Groups", value: stats.totalCustomerGroups, color: "#7c3aed", icon: "📂" },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 18 }}>
+      {cards.map((c) => (
+        <div key={c.label} style={{ background: "#fff", borderRadius: 10, padding: 18, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 26, background: `${c.color}1a`, color: c.color, borderRadius: 10, padding: "10px 14px" }}>{c.icon}</div>
+          <div>
+            <div style={{ fontSize: 13, color: "#718096" }}>{c.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#1a202c" }}>{c.value}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── ADD CONTACT MODAL ────────────────────────────────────────────────────────
-function AddContactModal({ defaultType, onSave, onClose, editContact }) {
+function AddContactModal({ defaultType, onSave, onClose, editContact, groups }) {
   const isEdit = !!editContact;
   const init = editContact || {};
 
   const [contactType, setContactType] = useState(init.contactType || defaultType || "Suppliers");
   const [individual, setIndividual] = useState(init.individual !== false);
   const [contactId, setContactId] = useState(init.contactId || "");
-  const [customerGroup, setCustomerGroup] = useState(init.customerGroup || "None");
-  const [mobile, setMobile] = useState(init.mobile || "");
+  const [customerGroupId, setCustomerGroupId] = useState(init.customerGroupId || "");
+  const [mobile, setMobile] = useState(init.mobile === "—" ? "" : (init.mobile || ""));
   const [altPhone, setAltPhone] = useState(init.altPhone || "");
   const [landline, setLandline] = useState(init.landline || "");
   const [email, setEmail] = useState(init.email === "—" ? "" : (init.email || ""));
@@ -106,7 +196,7 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
   const [lastName, setLastName] = useState(init.lastName || "");
   const [taxNumber, setTaxNumber] = useState(init.taxNumber === "—" ? "" : (init.taxNumber || ""));
   const [payTerm, setPayTerm] = useState(init.payTerm === "—" ? "" : (init.payTerm || ""));
-  const [creditLimit, setCreditLimit] = useState(init.creditLimit || "");
+  const [creditLimit, setCreditLimit] = useState(init.creditLimit ? String(init.creditLimit).replace(/[₹,]/g, "") : "");
   const [openingBalance, setOpeningBalance] = useState(init.openingBalance ? String(init.openingBalance).replace(/[₹,]/g, "") : "");
   const [address, setAddress] = useState(init.address === "—" ? "" : (init.address || ""));
   const [city, setCity] = useState(init.city || "");
@@ -114,36 +204,31 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
   const [country, setCountry] = useState(init.country || "");
   const [zip, setZip] = useState(init.zip || "");
   const [businessName, setBusinessName] = useState(init.businessName || "");
-  const [persons, setPersons] = useState(init.persons || [{ name: "", mobile: "", email: "" }]);
+  const [persons, setPersons] = useState(init.persons?.length ? init.persons : [{ name: "", mobile: "", email: "" }]);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleSave = () => {
-    if (!mobile.trim()) return alert("Mobile is required.");
-    const fullName = individual
-      ? `${prefix ? prefix + " " : ""}${firstName} ${lastName}`.trim() || "—"
-      : businessName || "—";
-    onSave({
-      contactType,
-      individual,
-      contactId: contactId || "CO" + String(Math.floor(Math.random() * 9000) + 1000),
-      businessName: individual ? businessName : businessName,
-      name: fullName,
-      prefix, firstName, middleName, lastName,
-      email: email || "—",
-      taxNumber: taxNumber || "—",
-      payTerm: payTerm || "—",
-      creditLimit: creditLimit ? `₹${Number(creditLimit).toFixed(2)}` : "₹0.00",
-      openingBalance: `₹${Number(openingBalance || 0).toFixed(2)}`,
-      advanceBalance: init.advanceBalance || "₹0.00",
-      addedOn: init.addedOn || new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }),
-      address: [address, city, state].filter(Boolean).join(", ") || "—",
-      city, state, country, zip,
-      mobile: mobile,
-      altPhone, landline, assignedTo,
-      customerGroup: contactType === "Customers" || contactType === "Both" ? customerGroup : "—",
-      totalPurchaseDue: init.totalPurchaseDue || "₹0.00",
-      totalPurchaseReturnDue: init.totalPurchaseReturnDue || "₹0.00",
-      persons,
-    });
+  const handleSave = async () => {
+    setErrorMsg("");
+    if (!mobile.trim()) { setErrorMsg("Mobile is required."); return; }
+    if (!individual && !businessName.trim()) { setErrorMsg("Business Name is required."); return; }
+    if (individual && !firstName.trim()) { setErrorMsg("First Name is required."); return; }
+
+    setSaving(true);
+    try {
+      await onSave({
+        contactType, individual, contactId, businessName,
+        prefix, firstName, middleName, lastName,
+        email, taxNumber, payTerm, creditLimit, openingBalance,
+        address, city, state, country, zip, mobile,
+        altPhone, landline, assignedTo, customerGroupId,
+        persons: persons.filter((p) => p.name || p.mobile || p.email),
+      });
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to save contact.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const FieldBox = ({ label, required, children }) => (
@@ -160,6 +245,12 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
         <h3 style={{ marginTop: 0, marginBottom: 24, fontSize: 18, fontWeight: 700, color: "#1a202c" }}>
           {isEdit ? "Edit Contact" : "Add a new contact"}
         </h3>
+
+        {errorMsg && (
+          <div style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "8px 14px", fontSize: 13, marginBottom: 16 }}>
+            ⚠ {errorMsg}
+          </div>
+        )}
 
         {/* Row 1 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
@@ -181,13 +272,12 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
           <FieldBox label="Contact ID">
             <div style={{ display: "flex" }}>
               <span style={iconBox}>🪪</span>
-              <input value={contactId} onChange={(e) => setContactId(e.target.value)} placeholder="Auto-generate if empty" style={{ ...inp, borderRadius: "0 4px 4px 0", borderLeft: "none" }} />
+              <input value={contactId} onChange={(e) => setContactId(e.target.value)} placeholder="Auto-generate if empty" style={{ ...inp, borderRadius: "0 4px 4px 0", borderLeft: "none" }} disabled={isEdit} />
             </div>
             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>Leave empty to auto-generate</div>
           </FieldBox>
         </div>
 
-        {/* Business Name */}
         {!individual && (
           <div style={{ marginBottom: 16 }}>
             <FieldBox label="Business Name" required>
@@ -196,21 +286,20 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
           </div>
         )}
 
-        {/* Customer Group */}
         {(contactType === "Customers" || contactType === "Both") && (
           <div style={{ marginBottom: 16, maxWidth: 280 }}>
             <FieldBox label="Customer Group">
               <div style={{ display: "flex" }}>
                 <span style={iconBox}>👥</span>
-                <select value={customerGroup} onChange={(e) => setCustomerGroup(e.target.value)} style={{ ...inp, borderRadius: "0 4px 4px 0", borderLeft: "none" }}>
-                  <option>None</option><option>VIP</option><option>Regular</option><option>Wholesale</option><option>Retail</option>
+                <select value={customerGroupId} onChange={(e) => setCustomerGroupId(e.target.value)} style={{ ...inp, borderRadius: "0 4px 4px 0", borderLeft: "none" }}>
+                  <option value="">None</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </div>
             </FieldBox>
           </div>
         )}
 
-        {/* Contact fields */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16, marginBottom: 16 }}>
           <FieldBox label="Mobile" required>
             <div style={{ display: "flex" }}>
@@ -247,7 +336,6 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
           </FieldBox>
         </div>
 
-        {/* More Information */}
         <button onClick={() => setShowMore(!showMore)} style={toggleBtn}>
           {showMore ? "▲" : "▼"} More Informations
         </button>
@@ -281,7 +369,6 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
           </div>
         )}
 
-        {/* Contact Persons */}
         <button onClick={() => setShowPersons(!showPersons)} style={{ ...toggleBtn, background: "#3b82f6", marginTop: 10 }}>
           {showPersons ? "▲" : "▼"} Add Contact Persons
         </button>
@@ -303,7 +390,9 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
-          <button onClick={handleSave} style={greenBtn}>{isEdit ? "💾 Update" : "💾 Save"}</button>
+          <button onClick={handleSave} disabled={saving} style={{ ...greenBtn, opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Saving..." : (isEdit ? "💾 Update" : "💾 Save")}
+          </button>
           <button onClick={onClose} style={darkBtn}>Close</button>
         </div>
       </div>
@@ -312,40 +401,33 @@ function AddContactModal({ defaultType, onSave, onClose, editContact }) {
 }
 
 // ─── ADVANCED FILTER PANEL ────────────────────────────────────────────────────
-function AdvancedFilter({ onFilter, type }) {
+function AdvancedFilter({ onFilter, type, groups }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [city, setCity] = useState("");
   const [payTerm, setPayTerm] = useState("");
-  const [customerGroup, setCustomerGroup] = useState("All");
+  const [customerGroupId, setCustomerGroupId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
   const applyFilters = () => {
-    onFilter({ name, mobile, city, payTerm, customerGroup, dateFrom, dateTo });
+    onFilter({ name, mobile, city, payTerm, customerGroupId, dateFrom, dateTo });
   };
 
   const resetFilters = () => {
     setName(""); setMobile(""); setCity(""); setPayTerm("");
-    setCustomerGroup("All"); setDateFrom(""); setDateTo("");
+    setCustomerGroupId(""); setDateFrom(""); setDateTo("");
     onFilter({});
   };
 
-  const activeCount = [name, mobile, city, payTerm, dateFrom, dateTo].filter(Boolean).length +
-    (customerGroup !== "All" ? 1 : 0);
+  const activeCount = [name, mobile, city, payTerm, dateFrom, dateTo, customerGroupId].filter(Boolean).length;
 
   return (
     <div style={{ background: "#fff", borderRadius: 8, marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-      {/* Toggle bar */}
-      <div
-        onClick={() => setOpen((v) => !v)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", cursor: "pointer" }}
-      >
+      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
-            {open ? "▲" : "▼"} Filters
-          </span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>{open ? "▲" : "▼"} Filters</span>
           {activeCount > 0 && (
             <span style={{ background: "#16a34a", color: "#fff", fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 10 }}>
               {activeCount} active
@@ -353,14 +435,12 @@ function AdvancedFilter({ onFilter, type }) {
           )}
         </div>
         {activeCount > 0 && (
-          <button onClick={(e) => { e.stopPropagation(); resetFilters(); }}
-            style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
+          <button onClick={(e) => { e.stopPropagation(); resetFilters(); }} style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
             ✕ Clear all
           </button>
         )}
       </div>
 
-      {/* Filter fields */}
       {open && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginTop: 14 }}>
@@ -380,22 +460,15 @@ function AdvancedFilter({ onFilter, type }) {
               <label style={fLbl}>Pay Term</label>
               <select value={payTerm} onChange={(e) => setPayTerm(e.target.value)} style={fInp}>
                 <option value="">All Pay Terms</option>
-                <option>7 days</option>
-                <option>15 days</option>
-                <option>30 days</option>
-                <option>45 days</option>
-                <option>60 days</option>
+                <option>7 days</option><option>15 days</option><option>30 days</option><option>45 days</option><option>60 days</option>
               </select>
             </div>
             {type === "customer" && (
               <div>
                 <label style={fLbl}>Customer Group</label>
-                <select value={customerGroup} onChange={(e) => setCustomerGroup(e.target.value)} style={fInp}>
-                  <option>All</option>
-                  <option>VIP</option>
-                  <option>Regular</option>
-                  <option>Wholesale</option>
-                  <option>Retail</option>
+                <select value={customerGroupId} onChange={(e) => setCustomerGroupId(e.target.value)} style={fInp}>
+                  <option value="">All</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </div>
             )}
@@ -424,58 +497,108 @@ function AdvancedFilter({ onFilter, type }) {
 const fLbl = { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 };
 const fInp = { border: "1px solid #d1d5db", borderRadius: 6, padding: "7px 10px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none" };
 
-// ─── SUPPLIERS PAGE ───────────────────────────────────────────────────────────
-const initialSuppliers = [
-  { contactType: "Suppliers", contactId: "SUP0001", businessName: "Sri Murugan Traders", name: "Mr Rajan K", email: "rajan@srimurugan.com", taxNumber: "29ABCDE1234F1Z5", payTerm: "30 days", openingBalance: "₹12,500.00", advanceBalance: "₹0.00", addedOn: "12/01/2025", address: "42, Gandhi Nagar, Chennai", mobile: "9876543210", totalPurchaseDue: "₹45,200.00", totalPurchaseReturnDue: "₹0.00" },
-  { contactType: "Suppliers", contactId: "SUP0002", businessName: "Kavitha Electronics", name: "Ms Kavitha R", email: "kavitha@kelec.in", taxNumber: "33XYZAB5678G2H6", payTerm: "15 days", openingBalance: "₹8,000.00", advanceBalance: "₹2,500.00", addedOn: "03/15/2025", address: "18, Nehru Street, Coimbatore", mobile: "9123456789", totalPurchaseDue: "₹22,750.00", totalPurchaseReturnDue: "₹1,500.00" },
-  { contactType: "Suppliers", contactId: "SUP0003", businessName: "Nagercoil Wholesale Hub", name: "Mr Arjun P", email: "arjun@nwh.co.in", taxNumber: "31LMNOP3456H3K7", payTerm: "45 days", openingBalance: "₹0.00", advanceBalance: "₹5,000.00", addedOn: "07/22/2025", address: "5, Market Road, Nagercoil", mobile: "9988776655", totalPurchaseDue: "₹68,000.00", totalPurchaseReturnDue: "₹3,200.00" },
-  { contactType: "Suppliers", contactId: "SUP0004", businessName: "Madurai Paper Mart", name: "Mrs Selvi D", email: "selvi@mpm.in", taxNumber: "33PAPMA7890I4J8", payTerm: "7 days", openingBalance: "₹3,200.00", advanceBalance: "₹0.00", addedOn: "11/05/2025", address: "77, Paper Mills Road, Madurai", mobile: "9445678901", totalPurchaseDue: "₹11,300.00", totalPurchaseReturnDue: "₹0.00" },
-];
+// ─── Shared data hook: fetch contacts list + groups + stats, with filters/pagination ──
+function useContactsData(contactType) {
+  const [contacts, setContacts] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [showEntries, setShowEntries] = useState(25);
+  const [search, setSearch] = useState("");
+  const [filterParams, setFilterParams] = useState({});
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const [contactsRes, groupsRes, statsRes] = await Promise.all([
+        getAllContacts({
+          page, limit: showEntries, search, contactType,
+          mobile: filterParams.mobile, city: filterParams.city, payTerm: filterParams.payTerm,
+          customerGroupId: filterParams.customerGroupId, dateFrom: filterParams.dateFrom, dateTo: filterParams.dateTo,
+        }),
+        getAllGroups().catch(() => []),
+        getContactStats().catch(() => null),
+      ]);
+      setContacts((contactsRes.contacts || []).map(mapContact));
+      setTotal(contactsRes.total || 0);
+      setGroups(groupsRes || []);
+      setStats(statsRes);
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to load contacts.");
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, showEntries, search, contactType, filterParams]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return {
+    contacts, setContacts, groups, stats, loading, errorMsg,
+    total, page, setPage, showEntries, setShowEntries, search, setSearch,
+    filterParams, setFilterParams, reload: load,
+  };
+}
+
+// ─── SUPPLIERS PAGE ───────────────────────────────────────────────────────────
 export function SuppliersPage() {
-  const [contacts, setContacts] = useState(initialSuppliers);
+  const { hasPermission, isAdmin } = usePermissions();
+  const canAdd = isAdmin || hasPermission("Supplier", "Add supplier");
+  const canEdit = isAdmin || hasPermission("Supplier", "Edit supplier");
+  const canDelete = isAdmin || hasPermission("Supplier", "Delete supplier");
+
+  const { contacts, groups, stats, loading, errorMsg, total, page, setPage, showEntries, setShowEntries, search, setSearch, setFilterParams, reload } = useContactsData("Suppliers");
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
-  const [search, setSearch] = useState("");
-  const [showEntries, setShowEntries] = useState(25);
-  const [filterParams, setFilterParams] = useState({});
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Address", "Mobile", "Total Purchase Due", "Total Purchase Return Due"];
   const [colVisible, setColVisible] = useState({});
 
-  const filtered = contacts.filter((c) => {
-    const q = search.toLowerCase();
-    const matchSearch = Object.values(c).join(" ").toLowerCase().includes(q);
-    const matchName = !filterParams.name || c.name.toLowerCase().includes(filterParams.name.toLowerCase()) || c.businessName.toLowerCase().includes(filterParams.name.toLowerCase());
-    const matchMobile = !filterParams.mobile || c.mobile.includes(filterParams.mobile);
-    const matchCity = !filterParams.city || c.address.toLowerCase().includes(filterParams.city.toLowerCase());
-    const matchPayTerm = !filterParams.payTerm || c.payTerm === filterParams.payTerm;
-    return matchSearch && matchName && matchMobile && matchCity && matchPayTerm;
-  });
-
   const buildTableHTML = () => `<table border="1" cellpadding="8"><tr>${colList.map((h) => `<th>${h}</th>`).join("")}</tr>
-    ${filtered.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.address}</td><td>${c.mobile}</td><td>${c.totalPurchaseDue}</td><td>${c.totalPurchaseReturnDue}</td></tr>`).join("")}</table>`;
+    ${contacts.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.address}</td><td>${c.mobile}</td><td>${c.totalPurchaseDue}</td><td>${c.totalPurchaseReturnDue}</td></tr>`).join("")}</table>`;
 
   const csvKeys = ["contactId", "businessName", "name", "email", "taxNumber", "payTerm", "openingBalance", "advanceBalance", "addedOn", "address", "mobile", "totalPurchaseDue", "totalPurchaseReturnDue"];
 
+  const handleSave = async (formData) => {
+    const payload = mapToPayload({ ...formData, contactType: formData.contactType || "Suppliers" });
+    if (editContact) {
+      await apiUpdateContact(editContact.id, payload);
+    } else {
+      await apiCreateContact(payload);
+    }
+    setShowModal(false); setEditContact(null);
+    reload();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this supplier?")) return;
+    try { await apiDeleteContact(id); reload(); }
+    catch (err) { alert(err.message || "Failed to delete."); }
+  };
+
   return (
     <div style={pageStyle}>
-      <PageHeader title="Suppliers" subtitle="Manage your Suppliers" onAdd={() => { setEditContact(null); setShowModal(true); }} />
+      <PageHeader title="Suppliers" subtitle="Manage your Suppliers" onAdd={canAdd ? () => { setEditContact(null); setShowModal(true); } : null} />
 
-      {/* Advanced Filters */}
-      <AdvancedFilter onFilter={setFilterParams} type="supplier" />
+      <DashboardCards stats={stats} />
+
+      <AdvancedFilter onFilter={setFilterParams} type="supplier" groups={groups} />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Suppliers</h3>
 
+        {errorMsg && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>⚠ {errorMsg}</div>}
+
         <ExportBar
-          onCSV={() => downloadBlob(toCSV(filtered, csvKeys), "suppliers.csv", "text/csv")}
-          onExcel={() => downloadBlob(toCSV(filtered, csvKeys), "suppliers.xls", "application/vnd.ms-excel")}
+          onCSV={() => downloadBlob(toCSV(contacts, csvKeys), "suppliers.csv", "text/csv")}
+          onExcel={() => downloadBlob(toCSV(contacts, csvKeys), "suppliers.xls", "application/vnd.ms-excel")}
           onPrint={() => printHTML("Suppliers", buildTableHTML())}
           onPDF={() => printHTML("Suppliers - PDF Export", buildTableHTML())}
-          columns={colList}
-          colVisible={colVisible}
-          setColVisible={setColVisible}
+          columns={colList} colVisible={colVisible} setColVisible={setColVisible}
         />
 
         <TableControls showEntries={showEntries} setShowEntries={setShowEntries} search={search} setSearch={setSearch} />
@@ -489,14 +612,16 @@ export function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, showEntries).length === 0
+              {loading
+                ? <tr><td colSpan={14} style={emptyCell}>Loading...</td></tr>
+                : contacts.length === 0
                 ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
-                : filtered.slice(0, showEntries).map((c, i) => (
-                  <tr key={i} className="tr-hover">
+                : contacts.map((c) => (
+                  <tr key={c.id} className="tr-hover">
                     <td style={td}>
                       <div style={{ display: "flex", gap: 4 }}>
-                        <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>
-                        <button style={delBtnStyle} onClick={() => { if (window.confirm("Delete this supplier?")) setContacts((p) => p.filter((_, idx) => idx !== i)); }}>🗑</button>
+                        {canEdit && <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>}
+                        {canDelete && <button style={delBtnStyle} onClick={() => handleDelete(c.id)}>🗑</button>}
                       </div>
                     </td>
                     {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
@@ -508,33 +633,22 @@ export function SuppliersPage() {
                     {colVisible["Opening Balance"] !== true && <td style={td}>{c.openingBalance}</td>}
                     {colVisible["Advance Balance"] !== true && <td style={td}>{c.advanceBalance}</td>}
                     {colVisible["Added On"] !== true && <td style={td}>{c.addedOn}</td>}
-                    {colVisible["Address"] !== true && <td style={td} style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{c.address}</td>}
+                    {colVisible["Address"] !== true && <td style={{ ...td, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{c.address}</td>}
                     {colVisible["Mobile"] !== true && <td style={td}>{c.mobile}</td>}
                     {colVisible["Total Purchase Due"] !== true && <td style={{ ...td, color: "#dc2626", fontWeight: 600 }}>{c.totalPurchaseDue}</td>}
                     {colVisible["Total Purchase Return Due"] !== true && <td style={{ ...td, color: "#d97706" }}>{c.totalPurchaseReturnDue}</td>}
                   </tr>
                 ))}
             </tbody>
-            <tfoot>
-              <tr style={{ background: "#f7fafc", fontWeight: 700, fontSize: 13 }}>
-                <td colSpan={12} style={{ padding: "10px 14px", color: "#374151" }}>Total:</td>
-                <td style={{ padding: "10px 14px", color: "#dc2626" }}>
-                  ₹{filtered.reduce((s, c) => s + parseFloat(c.totalPurchaseDue.replace(/[₹,]/g, "") || 0), 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                </td>
-                <td style={{ padding: "10px 14px", color: "#d97706" }}>
-                  ₹{filtered.reduce((s, c) => s + parseFloat(c.totalPurchaseReturnDue.replace(/[₹,]/g, "") || 0), 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tfoot>
           </table>
         </div>
 
         <div style={tableFooter}>
-          <span>Showing {filtered.length === 0 ? "0 to 0 of 0" : `1 to ${Math.min(showEntries, filtered.length)} of ${filtered.length}`} entries</span>
+          <span>Showing {total === 0 ? "0 to 0 of 0" : `${(page - 1) * showEntries + 1} to ${Math.min(page * showEntries, total)} of ${total}`} entries</span>
           <div style={{ display: "flex", gap: 4 }}>
-            <button style={pgBtn}>Previous</button>
-            <button style={{ ...pgBtn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>1</button>
-            <button style={pgBtn}>Next</button>
+            <button style={pgBtn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+            <button style={{ ...pgBtn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>{page}</button>
+            <button style={pgBtn} disabled={page * showEntries >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
           </div>
         </div>
       </div>
@@ -543,14 +657,8 @@ export function SuppliersPage() {
         <AddContactModal
           defaultType="Suppliers"
           editContact={editContact}
-          onSave={(c) => {
-            if (editContact) {
-              setContacts((p) => p.map((x) => x.contactId === editContact.contactId ? { ...c } : x));
-            } else {
-              setContacts((p) => [...p, c]);
-            }
-            setShowModal(false); setEditContact(null);
-          }}
+          groups={groups}
+          onSave={handleSave}
           onClose={() => { setShowModal(false); setEditContact(null); }}
         />
       )}
@@ -560,57 +668,60 @@ export function SuppliersPage() {
 }
 
 // ─── CUSTOMERS PAGE ───────────────────────────────────────────────────────────
-const initialCustomers = [
-  { contactType: "Customers", contactId: "CO0001", businessName: "", name: "Walk-In Customer", email: "—", taxNumber: "—", creditLimit: "₹0.00", payTerm: "—", openingBalance: "₹0.00", advanceBalance: "₹0.00", addedOn: "23/05/2026", customerGroup: "—", address: "—", mobile: "—" },
-  { contactType: "Customers", contactId: "CO0002", businessName: "", name: "Ms Anitha Suresh", email: "anitha.s@gmail.com", taxNumber: "—", creditLimit: "₹10,000.00", payTerm: "15 days", openingBalance: "₹0.00", advanceBalance: "₹500.00", addedOn: "01/02/2026", customerGroup: "VIP", address: "12, Rose Street, Nagercoil", mobile: "9876501234" },
-  { contactType: "Customers", contactId: "CO0003", businessName: "Chennai Retail Co.", name: "Mr Karthik V", email: "karthik@chennairetail.com", taxNumber: "33CRTKO9012K5L1", creditLimit: "₹50,000.00", payTerm: "30 days", openingBalance: "₹2,000.00", advanceBalance: "₹0.00", addedOn: "18/03/2026", customerGroup: "Wholesale", address: "88, Anna Salai, Chennai", mobile: "9445109876" },
-  { contactType: "Customers", contactId: "CO0004", businessName: "", name: "Mrs Leela Devi", email: "leela.d@yahoo.com", taxNumber: "—", creditLimit: "₹5,000.00", payTerm: "7 days", openingBalance: "₹0.00", advanceBalance: "₹200.00", addedOn: "10/04/2026", customerGroup: "Regular", address: "3, MG Road, Tirunelveli", mobile: "9500223344" },
-  { contactType: "Customers", contactId: "CO0005", businessName: "Nagercoil Stores", name: "Mr Suresh Babu", email: "suresh@ngstores.in", taxNumber: "31NGSTR4567M6N2", creditLimit: "₹25,000.00", payTerm: "45 days", openingBalance: "₹8,500.00", advanceBalance: "₹1,000.00", addedOn: "05/05/2026", customerGroup: "Wholesale", address: "22, Main Bazar, Nagercoil", mobile: "9789012345" },
-];
-
 export function CustomersPage() {
-  const [contacts, setContacts] = useState(initialCustomers);
+  const { hasPermission, isAdmin } = usePermissions();
+  const canAdd = isAdmin || hasPermission("Customer", "Add customer");
+  const canEdit = isAdmin || hasPermission("Customer", "Edit customer");
+  const canDelete = isAdmin || hasPermission("Customer", "Delete customer");
+
+  const { contacts, groups, stats, loading, errorMsg, total, page, setPage, showEntries, setShowEntries, search, setSearch, setFilterParams, reload } = useContactsData("Customers");
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
-  const [search, setSearch] = useState("");
-  const [showEntries, setShowEntries] = useState(25);
-  const [filterParams, setFilterParams] = useState({});
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Credit Limit", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Customer Group", "Address", "Mobile"];
   const [colVisible, setColVisible] = useState({});
 
-  const filtered = contacts.filter((c) => {
-    const q = search.toLowerCase();
-    const matchSearch = Object.values(c).join(" ").toLowerCase().includes(q);
-    const matchName = !filterParams.name || c.name.toLowerCase().includes(filterParams.name.toLowerCase());
-    const matchMobile = !filterParams.mobile || c.mobile.includes(filterParams.mobile);
-    const matchGroup = !filterParams.customerGroup || filterParams.customerGroup === "All" || c.customerGroup === filterParams.customerGroup;
-    const matchCity = !filterParams.city || c.address.toLowerCase().includes(filterParams.city.toLowerCase());
-    return matchSearch && matchName && matchMobile && matchGroup && matchCity;
-  });
-
   const buildTableHTML = () => `<table border="1" cellpadding="8"><tr>${colList.map((h) => `<th>${h}</th>`).join("")}</tr>
-    ${filtered.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.creditLimit}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.customerGroup}</td><td>${c.address}</td><td>${c.mobile}</td></tr>`).join("")}</table>`;
+    ${contacts.map((c) => `<tr><td>${c.contactId}</td><td>${c.businessName}</td><td>${c.name}</td><td>${c.email}</td><td>${c.taxNumber}</td><td>${c.creditLimit}</td><td>${c.payTerm}</td><td>${c.openingBalance}</td><td>${c.advanceBalance}</td><td>${c.addedOn}</td><td>${c.customerGroup}</td><td>${c.address}</td><td>${c.mobile}</td></tr>`).join("")}</table>`;
 
   const csvKeys = ["contactId", "businessName", "name", "email", "taxNumber", "creditLimit", "payTerm", "openingBalance", "advanceBalance", "addedOn", "customerGroup", "address", "mobile"];
 
+  const handleSave = async (formData) => {
+    const payload = mapToPayload({ ...formData, contactType: formData.contactType || "Customers" });
+    if (editContact) {
+      await apiUpdateContact(editContact.id, payload);
+    } else {
+      await apiCreateContact(payload);
+    }
+    setShowModal(false); setEditContact(null);
+    reload();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this customer?")) return;
+    try { await apiDeleteContact(id); reload(); }
+    catch (err) { alert(err.message || "Failed to delete."); }
+  };
+
   return (
     <div style={pageStyle}>
-      <PageHeader title="Customers" subtitle="Manage your Customers" onAdd={() => { setEditContact(null); setShowModal(true); }} />
+      <PageHeader title="Customers" subtitle="Manage your Customers" onAdd={canAdd ? () => { setEditContact(null); setShowModal(true); } : null} />
 
-      <AdvancedFilter onFilter={setFilterParams} type="customer" />
+      <DashboardCards stats={stats} />
+
+      <AdvancedFilter onFilter={setFilterParams} type="customer" groups={groups} />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Customers</h3>
 
+        {errorMsg && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>⚠ {errorMsg}</div>}
+
         <ExportBar
-          onCSV={() => downloadBlob(toCSV(filtered, csvKeys), "customers.csv", "text/csv")}
-          onExcel={() => downloadBlob(toCSV(filtered, csvKeys), "customers.xls", "application/vnd.ms-excel")}
+          onCSV={() => downloadBlob(toCSV(contacts, csvKeys), "customers.csv", "text/csv")}
+          onExcel={() => downloadBlob(toCSV(contacts, csvKeys), "customers.xls", "application/vnd.ms-excel")}
           onPrint={() => printHTML("Customers", buildTableHTML())}
           onPDF={() => printHTML("Customers - PDF Export", buildTableHTML())}
-          columns={colList}
-          colVisible={colVisible}
-          setColVisible={setColVisible}
+          columns={colList} colVisible={colVisible} setColVisible={setColVisible}
         />
 
         <TableControls showEntries={showEntries} setShowEntries={setShowEntries} search={search} setSearch={setSearch} />
@@ -624,47 +735,47 @@ export function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, showEntries).map((c, i) => (
-                <tr key={i} className="tr-hover">
-                  <td style={td}>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>
-                      <button style={delBtnStyle} onClick={() => { if (window.confirm("Delete this customer?")) setContacts((p) => p.filter((_, idx) => idx !== i)); }}>🗑</button>
-                    </div>
-                  </td>
-                  {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
-                  {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
-                  {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}
-                  {colVisible["Email"] !== true && <td style={td}>{c.email}</td>}
-                  {colVisible["Tax number"] !== true && <td style={td}>{c.taxNumber}</td>}
-                  {colVisible["Credit Limit"] !== true && <td style={{ ...td, color: "#16a34a", fontWeight: 600 }}>{c.creditLimit}</td>}
-                  {colVisible["Pay term"] !== true && <td style={td}>{c.payTerm}</td>}
-                  {colVisible["Opening Balance"] !== true && <td style={td}>{c.openingBalance}</td>}
-                  {colVisible["Advance Balance"] !== true && <td style={td}>{c.advanceBalance}</td>}
-                  {colVisible["Added On"] !== true && <td style={td}>{c.addedOn}</td>}
-                  {colVisible["Customer Group"] !== true && <td style={td}>
-                    {c.customerGroup && c.customerGroup !== "—" && (
-                      <span style={{ background: c.customerGroup === "VIP" ? "#fef3c7" : c.customerGroup === "Wholesale" ? "#eff6ff" : "#f0fdf4", color: c.customerGroup === "VIP" ? "#d97706" : c.customerGroup === "Wholesale" ? "#2563eb" : "#16a34a", borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 600 }}>
-                        {c.customerGroup}
-                      </span>
-                    )}
-                    {(!c.customerGroup || c.customerGroup === "—") && "—"}
-                  </td>}
-                  {colVisible["Address"] !== true && <td style={{ ...td, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis" }}>{c.address}</td>}
-                  {colVisible["Mobile"] !== true && <td style={td}>{c.mobile}</td>}
-                </tr>
-              ))}
-              {filtered.length === 0 && <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>}
+              {loading
+                ? <tr><td colSpan={14} style={emptyCell}>Loading...</td></tr>
+                : contacts.length === 0
+                ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
+                : contacts.map((c) => (
+                  <tr key={c.id} className="tr-hover">
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {canEdit && <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>}
+                        {canDelete && <button style={delBtnStyle} onClick={() => handleDelete(c.id)}>🗑</button>}
+                      </div>
+                    </td>
+                    {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
+                    {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
+                    {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}
+                    {colVisible["Email"] !== true && <td style={td}>{c.email}</td>}
+                    {colVisible["Tax number"] !== true && <td style={td}>{c.taxNumber}</td>}
+                    {colVisible["Credit Limit"] !== true && <td style={{ ...td, color: "#16a34a", fontWeight: 600 }}>{c.creditLimit}</td>}
+                    {colVisible["Pay term"] !== true && <td style={td}>{c.payTerm}</td>}
+                    {colVisible["Opening Balance"] !== true && <td style={td}>{c.openingBalance}</td>}
+                    {colVisible["Advance Balance"] !== true && <td style={td}>{c.advanceBalance}</td>}
+                    {colVisible["Added On"] !== true && <td style={td}>{c.addedOn}</td>}
+                    {colVisible["Customer Group"] !== true && <td style={td}>
+                      {c.customerGroup && c.customerGroup !== "—" ? (
+                        <span style={{ background: "#f0fdf4", color: "#16a34a", borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 600 }}>{c.customerGroup}</span>
+                      ) : "—"}
+                    </td>}
+                    {colVisible["Address"] !== true && <td style={{ ...td, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis" }}>{c.address}</td>}
+                    {colVisible["Mobile"] !== true && <td style={td}>{c.mobile}</td>}
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
 
         <div style={tableFooter}>
-          <span>Showing {filtered.length === 0 ? "0 to 0 of 0" : `1 to ${Math.min(showEntries, filtered.length)} of ${filtered.length}`} entries</span>
+          <span>Showing {total === 0 ? "0 to 0 of 0" : `${(page - 1) * showEntries + 1} to ${Math.min(page * showEntries, total)} of ${total}`} entries</span>
           <div style={{ display: "flex", gap: 4 }}>
-            <button style={pgBtn}>Previous</button>
-            <button style={{ ...pgBtn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>1</button>
-            <button style={pgBtn}>Next</button>
+            <button style={pgBtn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+            <button style={{ ...pgBtn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>{page}</button>
+            <button style={pgBtn} disabled={page * showEntries >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
           </div>
         </div>
       </div>
@@ -673,14 +784,8 @@ export function CustomersPage() {
         <AddContactModal
           defaultType="Customers"
           editContact={editContact}
-          onSave={(c) => {
-            if (editContact) {
-              setContacts((p) => p.map((x) => x.contactId === editContact.contactId ? { ...c, creditLimit: c.creditLimit || "₹0.00" } : x));
-            } else {
-              setContacts((p) => [...p, { ...c, creditLimit: c.creditLimit || "₹0.00" }]);
-            }
-            setShowModal(false); setEditContact(null);
-          }}
+          groups={groups}
+          onSave={handleSave}
           onClose={() => { setShowModal(false); setEditContact(null); }}
         />
       )}
@@ -690,15 +795,14 @@ export function CustomersPage() {
 }
 
 // ─── CUSTOMER GROUPS PAGE ─────────────────────────────────────────────────────
-const initialGroups = [
-  { name: "VIP", calcPercent: "10", priceCalcType: "Percentage", sellingPriceGroup: "Premium" },
-  { name: "Wholesale", calcPercent: "20", priceCalcType: "Percentage", sellingPriceGroup: "Wholesale Price" },
-  { name: "Regular", calcPercent: "5", priceCalcType: "Percentage", sellingPriceGroup: "Default" },
-  { name: "Retail", calcPercent: "0", priceCalcType: "Fixed", sellingPriceGroup: "MRP" },
-];
-
 export function CustomerGroupsPage() {
-  const [groups, setGroups] = useState(initialGroups);
+  const { hasPermission, isAdmin } = usePermissions();
+  const canAdd = isAdmin || hasPermission("Customer", "Add customer");
+  const canDelete = isAdmin || hasPermission("Customer", "Delete customer");
+
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [priceCalcType, setPriceCalcType] = useState("Percentage");
@@ -707,34 +811,63 @@ export function CustomerGroupsPage() {
   const [search, setSearch] = useState("");
   const [showEntries, setShowEntries] = useState(25);
   const [colVisible, setColVisible] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErrorMsg("");
+    try {
+      const data = await getAllGroups();
+      setGroups(data || []);
+    } catch (err) {
+      setErrorMsg(err.message || "Failed to load customer groups.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = groups.filter((g) => g.name.toLowerCase().includes(search.toLowerCase()));
   const colList = ["Customer Group Name", "Price Calc Type", "Calculation Percentage (%)", "Selling Price Group"];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!groupName.trim()) return alert("Customer Group Name is required.");
-    setGroups((p) => [...p, { name: groupName, priceCalcType, calcPercent: calcPercent || "0", sellingPriceGroup: sellingPriceGroup || "—" }]);
-    setShowModal(false); setGroupName(""); setPriceCalcType("Percentage"); setCalcPercent(""); setSellingPriceGroup("");
+    setSaving(true);
+    try {
+      await apiCreateGroup({ name: groupName, priceCalcType, calcPercent, sellingPriceGroup });
+      setShowModal(false); setGroupName(""); setPriceCalcType("Percentage"); setCalcPercent(""); setSellingPriceGroup("");
+      load();
+    } catch (err) {
+      alert(err.message || "Failed to create group.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const csvKeys = ["name", "priceCalcType", "calcPercent", "sellingPriceGroup"];
-  const buildTableHTML = () => `<table border="1" cellpadding="8"><tr><th>Group Name</th><th>Type</th><th>Calc %</th><th>Price Group</th></tr>${filtered.map((g) => `<tr><td>${g.name}</td><td>${g.priceCalcType}</td><td>${g.calcPercent}%</td><td>${g.sellingPriceGroup}</td></tr>`).join("")}</table>`;
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete?")) return;
+    try { await apiDeleteGroup(id); load(); }
+    catch (err) { alert(err.message || "Failed to delete."); }
+  };
+
+  const csvKeys = ["name", "price_calc_type", "calc_percent", "selling_price_group"];
+  const buildTableHTML = () => `<table border="1" cellpadding="8"><tr><th>Group Name</th><th>Type</th><th>Calc %</th><th>Price Group</th></tr>${filtered.map((g) => `<tr><td>${g.name}</td><td>${g.price_calc_type}</td><td>${g.calc_percent}%</td><td>${g.selling_price_group || "—"}</td></tr>`).join("")}</table>`;
 
   return (
     <div style={pageStyle}>
-      <PageHeader title="Customer Groups" subtitle="Manage customer groups & pricing" onAdd={() => setShowModal(true)} />
+      <PageHeader title="Customer Groups" subtitle="Manage customer groups & pricing" onAdd={canAdd ? () => setShowModal(true) : null} />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All Customer Groups</h3>
+
+        {errorMsg && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>⚠ {errorMsg}</div>}
 
         <ExportBar
           onCSV={() => downloadBlob(toCSV(filtered, csvKeys), "customer_groups.csv", "text/csv")}
           onExcel={() => downloadBlob(toCSV(filtered, csvKeys), "customer_groups.xls", "application/vnd.ms-excel")}
           onPrint={() => printHTML("Customer Groups", buildTableHTML())}
           onPDF={() => printHTML("Customer Groups - PDF", buildTableHTML())}
-          columns={colList}
-          colVisible={colVisible}
-          setColVisible={setColVisible}
+          columns={colList} colVisible={colVisible} setColVisible={setColVisible}
         />
 
         <TableControls showEntries={showEntries} setShowEntries={setShowEntries} search={search} setSearch={setSearch} />
@@ -747,16 +880,18 @@ export function CustomerGroupsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.slice(0, showEntries).length === 0
+            {loading
+              ? <tr><td colSpan={5} style={emptyCell}>Loading...</td></tr>
+              : filtered.slice(0, showEntries).length === 0
               ? <tr><td colSpan={5} style={emptyCell}>No data available in table</td></tr>
-              : filtered.slice(0, showEntries).map((g, i) => (
-                <tr key={i} className="tr-hover">
+              : filtered.slice(0, showEntries).map((g) => (
+                <tr key={g.id} className="tr-hover">
                   {colVisible["Customer Group Name"] !== true && <td style={td}><strong>{g.name}</strong></td>}
-                  {colVisible["Price Calc Type"] !== true && <td style={td}>{g.priceCalcType}</td>}
-                  {colVisible["Calculation Percentage (%)"] !== true && <td style={td}>{g.calcPercent}%</td>}
-                  {colVisible["Selling Price Group"] !== true && <td style={td}>{g.sellingPriceGroup}</td>}
+                  {colVisible["Price Calc Type"] !== true && <td style={td}>{g.price_calc_type}</td>}
+                  {colVisible["Calculation Percentage (%)"] !== true && <td style={td}>{g.calc_percent}%</td>}
+                  {colVisible["Selling Price Group"] !== true && <td style={td}>{g.selling_price_group || "—"}</td>}
                   <td style={td}>
-                    <button style={delBtnStyle} onClick={() => { if (window.confirm("Delete?")) setGroups(groups.filter((_, idx) => idx !== i)); }}>🗑 Delete</button>
+                    {canDelete && <button style={delBtnStyle} onClick={() => handleDelete(g.id)}>🗑 Delete</button>}
                   </td>
                 </tr>
               ))}
@@ -765,11 +900,6 @@ export function CustomerGroupsPage() {
 
         <div style={tableFooter}>
           <span>Showing {filtered.length === 0 ? "0 to 0 of 0" : `1 to ${Math.min(showEntries, filtered.length)} of ${filtered.length}`} entries</span>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button style={pgBtn}>Previous</button>
-            <button style={{ ...pgBtn, background: "#16a34a", color: "#fff", borderColor: "#16a34a" }}>1</button>
-            <button style={pgBtn}>Next</button>
-          </div>
         </div>
       </div>
 
@@ -791,7 +921,7 @@ export function CustomerGroupsPage() {
                 <input value={sellingPriceGroup} onChange={(e) => setSellingPriceGroup(e.target.value)} placeholder="e.g. Wholesale Price" style={inp} /></div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
-              <button onClick={handleSave} style={greenBtn}>💾 Save</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...greenBtn, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving..." : "💾 Save"}</button>
               <button onClick={() => setShowModal(false)} style={darkBtn}>Close</button>
             </div>
           </div>
@@ -830,11 +960,22 @@ const instructions = [
 export function ImportContactsPage() {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!file) return alert("Please choose a file to import.");
     setUploading(true);
-    setTimeout(() => { setUploading(false); alert(`✅ File "${file.name}" imported successfully!`); setFile(null); }, 1500);
+    setResult(null);
+    try {
+      const rows = await parseCSVFile(file);
+      const res = await apiImportContacts(rows);
+      setResult(res);
+      setFile(null);
+    } catch (err) {
+      alert(err.message || "Import failed.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDownloadTemplate = () => {
@@ -851,12 +992,24 @@ export function ImportContactsPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
           <div>
             <label style={{ fontSize: 13, fontWeight: 600, marginRight: 10, color: "#374151" }}>File To Import:</label>
-            <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} style={{ fontSize: 13 }} />
+            <input type="file" accept=".csv" onChange={(e) => setFile(e.target.files[0])} style={{ fontSize: 13 }} />
           </div>
           <button onClick={handleSubmit} disabled={uploading} style={{ ...greenBtn, opacity: uploading ? 0.7 : 1 }}>
             {uploading ? "Importing..." : "Submit"}
           </button>
         </div>
+
+        {result && (
+          <div style={{ marginTop: 16, background: result.failed > 0 ? "#fffbeb" : "#f0fdf4", border: `1px solid ${result.failed > 0 ? "#fde68a" : "#bbf7d0"}`, borderRadius: 8, padding: 14, fontSize: 13 }}>
+            ✅ Imported: <strong>{result.created}</strong> &nbsp; {result.failed > 0 && <>⚠ Failed: <strong>{result.failed}</strong></>}
+            {result.errors?.length > 0 && (
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                {result.errors.slice(0, 10).map((e, i) => <li key={i}>Row {e.row}: {e.error}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div style={{ marginTop: 20 }}>
           <button onClick={handleDownloadTemplate} style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", border: "none", borderRadius: 6, padding: "10px 20px", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
             ⬇️ Download template file
@@ -911,14 +1064,13 @@ export default function Contacts() {
   return <SuppliersPage />;
 }
 
-// ─── Shared Styles ────────────────────────────────────────────────────────────
+// ─── Shared Styles (unchanged from original) ──────────────────────────────────
 const GREEN = "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)";
 const GREEN_SHADOW = "0 3px 10px rgba(34,197,94,0.35)";
 
 const pageStyle = { fontFamily: "'Segoe UI', sans-serif", background: "#f0f4f1", minHeight: "100vh", padding: 0 };
 const pageTitle = { margin: 0, fontSize: 24, fontWeight: 700, color: "#1a202c" };
 const pageSubtitle = { fontSize: 13, color: "#718096" };
-const filterBar = { background: "#fff", borderRadius: 8, padding: "10px 16px", marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", cursor: "pointer" };
 const card = { background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", marginBottom: 20 };
 const tbl = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
 const th = { padding: "11px 12px", textAlign: "left", fontWeight: 600, color: "#374151", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap" };
@@ -934,7 +1086,6 @@ const overlayStyle = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45
 const lbl = { display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#374151" };
 const inp = { border: "1px solid #d1d5db", borderRadius: 4, padding: "8px 10px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none" };
 const iconBox = { padding: "8px 10px", border: "1px solid #d1d5db", borderRight: "none", borderRadius: "4px 0 0 4px", background: "#f9fafb", fontSize: 14, whiteSpace: "nowrap", display: "flex", alignItems: "center" };
-// All action buttons now green
 const toggleBtn = { background: GREEN, color: "#fff", border: "none", borderRadius: 6, padding: "9px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: GREEN_SHADOW };
 const editBtnStyle = { background: "#fff", border: "1px solid #d1d5db", borderRadius: 4, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#374151", fontWeight: 500 };
 const delBtnStyle = { background: "#fff", border: "1px solid #fca5a5", borderRadius: 4, padding: "4px 10px", fontSize: 12, cursor: "pointer", color: "#dc2626", fontWeight: 500 };
@@ -942,35 +1093,21 @@ const greenBtn = { background: GREEN, color: "#fff", border: "none", borderRadiu
 const darkBtn = { background: "#374151", color: "#fff", border: "none", borderRadius: 6, padding: "10px 24px", fontSize: 14, cursor: "pointer" };
 const hoverCss = `.tr-hover:hover td { background: #f7fafc !important; } input:focus, select:focus { border-color: #16a34a !important; box-shadow: 0 0 0 2px rgba(34,197,94,0.15); }`;
 
-// ─── Page Header — title on left, Add button FIXED top-right always visible ──
 function PageHeader({ title, subtitle, onAdd }) {
   return (
     <>
-      {/* Page title — always visible */}
       <div style={{ paddingBottom: 16, marginBottom: 4 }}>
         <h2 style={pageTitle}>{title}</h2>
         <span style={pageSubtitle}>{subtitle}</span>
       </div>
-
-      {/* Add button — fixed to top-right of screen, always visible from page open */}
       {onAdd && (
         <button
           onClick={onAdd}
           style={{
-            position: "fixed",
-            top: 70,        /* just below the 60px TopHeader */
-            right: 24,
-            zIndex: 400,    /* below TopHeader (500) but above page content */
-            background: GREEN,
-            color: "#fff",
-            border: "none",
-            borderRadius: 50,
-            padding: "10px 24px",
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: "0 4px 16px rgba(34,197,94,0.45)",
-            whiteSpace: "nowrap",
+            position: "fixed", top: 70, right: 24, zIndex: 400,
+            background: GREEN, color: "#fff", border: "none", borderRadius: 50,
+            padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(34,197,94,0.45)", whiteSpace: "nowrap",
           }}
         >
           ＋ Add

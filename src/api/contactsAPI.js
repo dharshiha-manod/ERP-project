@@ -1,0 +1,142 @@
+/**
+ * ====================================================
+ * CONTACTS API CLIENT
+ * src/api/contactsAPI.js
+ * Frontend API calls to backend — same pattern as
+ * commissionAgentAPI.js
+ * ====================================================
+ */
+const ENDPOINT = "http://localhost:5000/api/contacts";
+
+const getAuthToken = () => {
+  const token = localStorage.getItem('manod_token');
+  if (!token) throw new Error('Authentication token not found. Please login.');
+  return token;
+};
+
+const apiFetch = async (url, options = {}) => {
+  const token = getAuthToken();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `API Error: ${response.status}`);
+  }
+  return data;
+};
+
+// ── GET ALL CONTACTS (paginated, filtered) ──
+export const getAllContacts = async (params = {}) => {
+  const query = new URLSearchParams({
+    page: params.page || 1,
+    limit: params.limit || 25,
+    search: params.search || '',
+    contactType: params.contactType || '',
+    mobile: params.mobile || '',
+    city: params.city || '',
+    payTerm: params.payTerm || '',
+    customerGroupId: params.customerGroupId || '',
+    dateFrom: params.dateFrom || '',
+    dateTo: params.dateTo || '',
+  }).toString();
+
+  return apiFetch(`${ENDPOINT}?${query}`);
+};
+
+// ── GET SINGLE CONTACT ──
+export const getContactById = async (id) => {
+  const data = await apiFetch(`${ENDPOINT}/${id}`);
+  return data.contact;
+};
+
+// ── DASHBOARD STATS ──
+export const getContactStats = async () => {
+  const data = await apiFetch(`${ENDPOINT}/stats`);
+  return data.stats;
+};
+
+// ── CREATE CONTACT ──
+export const createContact = async (payload) => {
+  return apiFetch(ENDPOINT, { method: 'POST', body: JSON.stringify(payload) });
+};
+
+// ── UPDATE CONTACT ──
+export const updateContact = async (id, payload) => {
+  return apiFetch(`${ENDPOINT}/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+};
+
+// ── DELETE CONTACT ──
+export const deleteContact = async (id) => {
+  return apiFetch(`${ENDPOINT}/${id}`, { method: 'DELETE' });
+};
+
+// ── IMPORT CONTACTS (rows already parsed from CSV/Excel on the client) ──
+export const importContacts = async (rows) => {
+  return apiFetch(`${ENDPOINT}/import`, { method: 'POST', body: JSON.stringify({ rows }) });
+};
+
+// ── CUSTOMER GROUPS ──
+export const getAllGroups = async () => {
+  const data = await apiFetch(`${ENDPOINT}/groups`);
+  return data.groups;
+};
+
+export const createGroup = async (payload) => {
+  return apiFetch(`${ENDPOINT}/groups`, { method: 'POST', body: JSON.stringify(payload) });
+};
+
+export const deleteGroup = async (id) => {
+  return apiFetch(`${ENDPOINT}/groups/${id}`, { method: 'DELETE' });
+};
+
+// ── CSV PARSING HELPER (for Import page) ──
+// Minimal CSV parser sufficient for the contacts template columns.
+export const parseCSVFile = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/).filter((l) => l.trim());
+        const headers = lines[0].split(',').map((h) => h.trim());
+        const rows = lines.slice(1).map((line) => {
+          const cells = line.split(',').map((c) => c.trim());
+          return {
+            contactType: cells[0],
+            prefix: cells[1],
+            firstName: cells[2],
+            middleName: cells[3],
+            lastName: cells[4],
+            businessName: cells[5],
+            taxNumber: cells[6],
+            email: cells[7],
+            mobile: cells[8],
+            altPhone: cells[9],
+            city: cells[10],
+            state: cells[11],
+            country: cells[12],
+            addressLine1: cells[13],
+            addressLine2: cells[14],
+            zip: cells[15],
+            contactId: cells[16],
+            payTermNumber: cells[17],
+            payTermType: cells[18],
+            openingBalance: cells[19],
+            customerGroupName: cells[20],
+          };
+        });
+        resolve(rows);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+};

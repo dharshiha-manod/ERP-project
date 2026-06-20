@@ -22,7 +22,15 @@ import Warranties from "./pages/Warranties";
 import Manufacturing from "./pages/Manufacturing";
 import Purchases, { AddPurchasePage } from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
-import Contacts, { CustomerGroupsPage, ImportContactsPage } from "./pages/Contacts";
+
+// ── FIXED: Import all named exports from Contacts ──────────────────────────
+import Contacts, {
+  SuppliersPage,
+  CustomersPage,
+  CustomerGroupsPage,
+  ImportContactsPage,
+} from "./pages/Contacts";
+
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
 import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
@@ -102,41 +110,15 @@ function SubscriptionGate({ children }) {
   return children;
 }
 
-/**
- * FeatureRoute — FIXED
- *
- * Before: if (!checker) return children  ← always allowed unknown features
- * Now:
- *   1. Plan gate (subscription)
- *   2. Wait for permissions to load
- *   3. Admin bypass
- *   4. Run checker — if NO checker exists, DENY (not allow)
- *      Exception: profile & change-password have no feature, always allow
- */
 function FeatureRoute({ feature, children }) {
   const { hasPermission, loaded, isAdmin } = usePermissions();
 
-  // 1. Plan-level gate
   if (!hasFeature(feature)) return <Navigate to="/subscribe" replace />;
-
-  // 2. Wait for permissions to load from API
-  //    Show nothing (blank) while loading — prevents flash of wrong content
   if (!loaded) return null;
-
-  // 3. Admin-tier roles (Super Admin, Administrator) bypass all checks
   if (isAdmin) return children;
 
-  // 4. Check permission map
   const checker = FEATURE_PERM_MAP[feature];
-
-  // If no checker defined for this feature → deny access
-  // (Previously was `return children` which was the bug)
   if (!checker) return <AccessDenied />;
-
-  // Run the checker — if fails, show Access Denied (not redirect)
-  // AccessDenied is better than redirect because:
-  //   - User knows WHY they can't access it
-  //   - Doesn't cause redirect loops
   if (!checker(hasPermission)) return <AccessDenied />;
 
   return children;
@@ -158,20 +140,13 @@ function AppLayout() {
         transition: "background 0.3s ease",
       }}>
         <Routes>
-          {/*
-           * Dashboard — FIXED
-           * Was: <Route path="/" element={<Dashboard />} />
-           *      (no permission check at all — showed to everyone)
-           * Now: wrapped in FeatureRoute with FEATURES.DASHBOARD
-           *      which checks "Home::View Home data" permission
-           */}
           <Route path="/" element={
             <FeatureRoute feature={FEATURES.DASHBOARD}>
               <Dashboard />
             </FeatureRoute>
           } />
 
-          {/* Profile — always accessible to any logged-in user */}
+          {/* Profile — always accessible */}
           <Route path="/profile"         element={<MyProfile />} />
           <Route path="/change-password" element={<ChangePassword />} />
 
@@ -180,10 +155,13 @@ function AppLayout() {
           <Route path="/roles"                   element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><Roles /></FeatureRoute>} />
           <Route path="/sales-commission-agents" element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><SalesCommissionAgents /></FeatureRoute>} />
 
-          {/* Contacts */}
-          <Route path="/contacts"        element={<FeatureRoute feature={FEATURES.CONTACTS}><Contacts /></FeatureRoute>} />
-          <Route path="/customer-group"  element={<FeatureRoute feature={FEATURES.CONTACTS}><CustomerGroupsPage /></FeatureRoute>} />
-          <Route path="/contacts/import" element={<FeatureRoute feature={FEATURES.CONTACTS}><ImportContactsPage /></FeatureRoute>} />
+          {/* ── Contacts (FIXED) ──────────────────────────────────────────── */}
+          {/* /contacts and /contacts?type=supplier both load SuppliersPage */}
+          <Route path="/contacts"            element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
+          <Route path="/contacts/suppliers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
+          <Route path="/contacts/customers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><CustomersPage /></FeatureRoute>} />
+          <Route path="/customer-group"      element={<FeatureRoute feature={FEATURES.CONTACTS}><CustomerGroupsPage /></FeatureRoute>} />
+          <Route path="/contacts/import"     element={<FeatureRoute feature={FEATURES.CONTACTS}><ImportContactsPage /></FeatureRoute>} />
 
           {/* Products */}
           <Route path="/products/"             element={<FeatureRoute feature={FEATURES.PRODUCTS}><ListProducts /></FeatureRoute>} />
@@ -234,9 +212,9 @@ function AppLayout() {
           <Route path="/stock-adjustments/create" element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><AddStockAdjustment /></FeatureRoute>} />
 
           {/* Expenses */}
-          <Route path="/expenses"          element={<FeatureRoute feature={FEATURES.EXPENSES}><ListExpenses /></FeatureRoute>} />
-          <Route path="/expenses/create"   element={<FeatureRoute feature={FEATURES.EXPENSES}><AddExpense /></FeatureRoute>} />
-          <Route path="/import-expenses"   element={<FeatureRoute feature={FEATURES.EXPENSES}><ImportExpenses /></FeatureRoute>} />
+          <Route path="/expenses"           element={<FeatureRoute feature={FEATURES.EXPENSES}><ListExpenses /></FeatureRoute>} />
+          <Route path="/expenses/create"    element={<FeatureRoute feature={FEATURES.EXPENSES}><AddExpense /></FeatureRoute>} />
+          <Route path="/import-expenses"    element={<FeatureRoute feature={FEATURES.EXPENSES}><ImportExpenses /></FeatureRoute>} />
           <Route path="/expense-categories" element={<FeatureRoute feature={FEATURES.EXPENSES}><ExpenseCategories /></FeatureRoute>} />
 
           {/* Notifications */}
