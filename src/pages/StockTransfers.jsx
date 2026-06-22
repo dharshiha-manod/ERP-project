@@ -1,5 +1,13 @@
-import { useState, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  fetchAllStockTransfers,
+  fetchStockTransferById,
+  createStockTransfer,
+  updateStockTransfer,
+  deleteStockTransfer,
+  fetchProductsForTransfer,
+} from "../api/stockTransfersAPI";
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -9,8 +17,19 @@ const S = {
   card: { background: "#fff", borderRadius: "8px", boxShadow: "0 1px 6px rgba(0,0,0,0.08)", overflow: "visible" },
   cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #e8e8e8" },
   cardTitle: { fontSize: "1rem", fontWeight: 600, color: "#333", margin: 0 },
-  addBtn: { display: "inline-flex", alignItems: "center", gap: "6px", background: "#4f6ef7", color: "#fff", border: "none", borderRadius: "50px", padding: "9px 20px", fontSize: "0.9rem", fontWeight: 600, textDecoration: "none", cursor: "pointer" },
-  backBtn: { background: "#6c757d", color: "#fff", border: "none", borderRadius: "5px", padding: "7px 16px", fontSize: "0.85rem", fontWeight: 500, textDecoration: "none", cursor: "pointer" },
+  addBtn: {
+    display: "inline-flex", alignItems: "center", gap: "6px",
+    background: "linear-gradient(135deg, #2e7d32, #43a047)",
+    color: "#fff", border: "none", borderRadius: "50px", padding: "9px 22px",
+    fontSize: "0.9rem", fontWeight: 600, textDecoration: "none", cursor: "pointer",
+    boxShadow: "0 2px 8px rgba(46,125,50,0.35)", transition: "transform 0.15s ease, box-shadow 0.15s ease",
+  },
+  backBtn: {
+    display: "inline-flex", alignItems: "center", gap: "6px",
+    background: "#fff", color: "#2d6a4f", border: "1.5px solid #2d6a4f",
+    borderRadius: "6px", padding: "8px 18px", fontSize: "0.85rem", fontWeight: 600,
+    textDecoration: "none", cursor: "pointer", transition: "all 0.15s ease",
+  },
   toolbar: { display: "flex", alignItems: "center", gap: "10px", padding: "12px 20px", flexWrap: "wrap", borderBottom: "1px solid #f0f0f0" },
   showEntries: { display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "#555" },
   select: { border: "1px solid #ccc", borderRadius: "4px", padding: "3px 6px", fontSize: "0.85rem", background: "#fff" },
@@ -26,6 +45,7 @@ const S = {
   pagination: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", fontSize: "0.84rem", color: "#666", borderTop: "1px solid #f0f0f0" },
   pager: { display: "flex", gap: "6px" },
   pageBtn: { border: "1px solid #ccc", background: "#fff", borderRadius: "4px", padding: "5px 12px", fontSize: "0.83rem", cursor: "pointer", color: "#444" },
+  pageBtnDisabled: { opacity: 0.45, cursor: "not-allowed" },
   rowActions: { display: "flex", gap: "4px" },
   rowBtnView: { border: "none", borderRadius: "4px", padding: "4px 8px", fontSize: "0.8rem", cursor: "pointer", background: "#cce5ff" },
   rowBtnEdit: { border: "none", borderRadius: "4px", padding: "4px 8px", fontSize: "0.8rem", cursor: "pointer", background: "#fff3cd" },
@@ -55,7 +75,22 @@ const S = {
   addRowBtn: { background: "#f0faf4", border: "1px dashed #2d6a4f", color: "#2d6a4f", borderRadius: "5px", padding: "6px 16px", fontSize: "0.84rem", cursor: "pointer", marginBottom: "16px" },
   formFooter: { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" },
   cancelBtn: { background: "#fff", border: "1px solid #ccc", color: "#555", borderRadius: "5px", padding: "8px 22px", fontSize: "0.87rem", cursor: "pointer" },
-  submitBtn: { background: "#2d6a4f", color: "#fff", border: "none", borderRadius: "5px", padding: "8px 22px", fontSize: "0.87rem", fontWeight: 600, cursor: "pointer" },
+  submitBtn: {
+    background: "linear-gradient(135deg, #2e7d32, #43a047)", color: "#fff", border: "none",
+    borderRadius: "5px", padding: "8px 22px", fontSize: "0.87rem", fontWeight: 600, cursor: "pointer",
+    boxShadow: "0 2px 8px rgba(46,125,50,0.3)",
+  },
+  errorBanner: { background: "#f8d7da", color: "#721c24", padding: "10px 16px", borderRadius: "6px", marginBottom: "14px", fontSize: "0.85rem" },
+  loadingWrap: { padding: "40px", textAlign: "center", color: "#888" },
+  // View modal
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modalBox: { background: "#fff", borderRadius: "10px", width: "560px", maxWidth: "92vw", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.25)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" },
+  modalCloseBtn: { border: "none", background: "transparent", fontSize: "1.3rem", cursor: "pointer", color: "#888", lineHeight: 1 },
+  modalBody: { padding: "20px" },
+  modalRow: { display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f3f3f3", fontSize: "0.88rem" },
+  modalLabel: { color: "#777", fontWeight: 600 },
+  modalValue: { color: "#222" },
 };
 
 function badgeStyle(status) {
@@ -69,27 +104,26 @@ function badgeStyle(status) {
   }
 }
 
-// ── Dummy data ───────────────────────────────────────────────────────────────
-
-const DUMMY_DATA = [
-  { id: 1, date: "04/06/2026", referenceNo: "ST-2026-001", locationFrom: "Main Warehouse", locationTo: "Branch A",  status: "Completed",  shippingCharges: "0.00",    totalAmount: "12500.00", additionalNotes: "-" },
-  { id: 2, date: "03/06/2026", referenceNo: "ST-2026-002", locationFrom: "Branch A",        locationTo: "Branch B",  status: "Pending",    shippingCharges: "150.00",  totalAmount: "8200.00",  additionalNotes: "Fragile items" },
-  { id: 3, date: "02/06/2026", referenceNo: "ST-2026-003", locationFrom: "Branch B",        locationTo: "Branch C",  status: "In Transit", shippingCharges: "200.00",  totalAmount: "5400.00",  additionalNotes: "-" },
-  { id: 4, date: "01/06/2026", referenceNo: "ST-2026-004", locationFrom: "Main Warehouse",  locationTo: "Branch C",  status: "Cancelled",  shippingCharges: "0.00",    totalAmount: "3100.00",  additionalNotes: "Order cancelled" },
-];
-
 const ALL_COLUMNS = [
-  { key: "date",            label: "Date" },
-  { key: "referenceNo",     label: "Reference No" },
-  { key: "locationFrom",    label: "Location (From)" },
-  { key: "locationTo",      label: "Location (To)" },
+  { key: "transfer_date",   label: "Date" },
+  { key: "transfer_number", label: "Reference No" },
+  { key: "location_from",   label: "Location (From)" },
+  { key: "location_to",     label: "Location (To)" },
   { key: "status",          label: "Status" },
-  { key: "shippingCharges", label: "Shipping Charges" },
-  { key: "totalAmount",     label: "Total Amount" },
-  { key: "additionalNotes", label: "Additional Notes" },
+  { key: "total_amount",    label: "Total Amount" },
+  { key: "notes",           label: "Additional Notes" },
 ];
 
+// Locations are not yet backed by a dedicated table in the database,
+// so this is a static list. Update here if/when locations become dynamic.
 const LOCATIONS = ["Main Warehouse", "Branch A", "Branch B", "Branch C"];
+
+function formatDate(d) {
+  if (!d) return "-";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleDateString("en-GB");
+}
 
 // ── Utility: trigger file download ──────────────────────────────────────────
 
@@ -103,8 +137,6 @@ function downloadFile(content, filename, type) {
   URL.revokeObjectURL(url);
 }
 
-// ── Export CSV ───────────────────────────────────────────────────────────────
-
 function exportCSV(rows, visibleCols) {
   const headers = visibleCols.map((c) => c.label).join(",");
   const body = rows
@@ -112,8 +144,6 @@ function exportCSV(rows, visibleCols) {
     .join("\n");
   downloadFile(`${headers}\n${body}`, "stock_transfers.csv", "text/csv;charset=utf-8;");
 }
-
-// ── Export Excel (simple HTML table → .xls) ─────────────────────────────────
 
 function exportExcel(rows, visibleCols) {
   const headerRow = visibleCols.map((c) => `<th>${c.label}</th>`).join("");
@@ -123,8 +153,6 @@ function exportExcel(rows, visibleCols) {
   const html = `<table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>`;
   downloadFile(html, "stock_transfers.xls", "application/vnd.ms-excel");
 }
-
-// ── Export PDF (using browser print with styled iframe) ──────────────────────
 
 function exportPDF(rows, visibleCols, orientation = "portrait") {
   const headerRow = visibleCols.map((c) => `<th>${c.label}</th>`).join("");
@@ -162,19 +190,94 @@ function exportPDF(rows, visibleCols, orientation = "portrait") {
   setTimeout(() => { win.print(); win.close(); }, 400);
 }
 
-// ── Print table ──────────────────────────────────────────────────────────────
-
 function printTable(rows, visibleCols) {
   exportPDF(rows, visibleCols, "landscape");
+}
+
+// ── VIEW MODAL ───────────────────────────────────────────────────────────────
+
+function ViewStockTransferModal({ id, onClose }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchStockTransferById(id)
+      .then((res) => { if (active) setData(res); })
+      .catch((err) => { if (active) setError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id]);
+
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modalBox} onClick={(e) => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <h3 style={{ margin: 0, fontSize: "1.05rem", color: "#1a1a1a" }}>Stock Transfer Details</h3>
+          <button style={S.modalCloseBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={S.modalBody}>
+          {loading && <div style={S.loadingWrap}>Loading...</div>}
+          {error && <div style={S.errorBanner}>{error}</div>}
+          {data && (
+            <>
+              <div style={S.modalRow}><span style={S.modalLabel}>Reference No</span><span style={S.modalValue}>{data.transfer_number}</span></div>
+              <div style={S.modalRow}><span style={S.modalLabel}>Date</span><span style={S.modalValue}>{formatDate(data.transfer_date)}</span></div>
+              <div style={S.modalRow}><span style={S.modalLabel}>Location (From)</span><span style={S.modalValue}>{data.location_from}</span></div>
+              <div style={S.modalRow}><span style={S.modalLabel}>Location (To)</span><span style={S.modalValue}>{data.location_to}</span></div>
+              <div style={S.modalRow}><span style={S.modalLabel}>Status</span><span style={badgeStyle(data.status)}>{data.status}</span></div>
+              <div style={S.modalRow}><span style={S.modalLabel}>Notes</span><span style={S.modalValue}>{data.notes || "-"}</span></div>
+
+              <div style={S.sectionTitle}>Products</div>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.formThSmall}>Product</th>
+                    <th style={S.formThSmall}>SKU</th>
+                    <th style={S.formThSmall}>Qty</th>
+                    <th style={S.formThSmall}>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.items || []).map((it) => (
+                    <tr key={it.id}>
+                      <td style={S.formTdSmall}>{it.product_name || "-"}</td>
+                      <td style={S.formTdSmall}>{it.sku || "-"}</td>
+                      <td style={S.formTdSmall}>{it.quantity}</td>
+                      <td style={S.subtotal}>₹{Number(it.subtotal || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ textAlign: "right", marginTop: 10, fontWeight: 700, color: "#2d6a4f" }}>
+                Total: ₹{Number(data.total_amount || 0).toFixed(2)}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── LIST STOCK TRANSFERS ────────────────────────────────────────────────────
 
 export function ListStockTransfers() {
+  const navigate = useNavigate();
   const [entries, setEntries] = useState(25);
   const [search, setSearch]   = useState("");
-  const [data]                = useState(DUMMY_DATA);
+  const [page, setPage]       = useState(1);
+
+  const [rows, setRows]       = useState([]);
+  const [total, setTotal]     = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
   const [hoveredRow, setHoveredRow] = useState(null);
+  const [viewingId, setViewingId]   = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Column visibility
   const [visibleKeys, setVisibleKeys] = useState(ALL_COLUMNS.map((c) => c.key));
@@ -187,23 +290,44 @@ export function ListStockTransfers() {
 
   const visibleCols = ALL_COLUMNS.filter((c) => visibleKeys.includes(c.key));
 
-  const filtered = data.filter(
-    (row) =>
-      row.referenceNo.toLowerCase().includes(search.toLowerCase()) ||
-      row.locationFrom.toLowerCase().includes(search.toLowerCase()) ||
-      row.locationTo.toLowerCase().includes(search.toLowerCase())
-  );
+  const loadData = useCallback(() => {
+    setLoading(true);
+    setError("");
+    fetchAllStockTransfers({ page, limit: entries, search })
+      .then((res) => {
+        setRows(res.stockTransfers || []);
+        setTotal(res.total || 0);
+      })
+      .catch((err) => setError(err.message || "Failed to load stock transfers"))
+      .finally(() => setLoading(false));
+  }, [page, entries, search]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   const toggleCol = (key) => {
     setVisibleKeys((prev) =>
       prev.includes(key)
-        ? prev.length > 1 ? prev.filter((k) => k !== key) : prev // keep at least 1
+        ? prev.length > 1 ? prev.filter((k) => k !== key) : prev
         : [...prev, key]
     );
   };
 
-  // Close dropdowns when clicking outside
   const closeMenus = () => { setShowColMenu(false); setShowPdfMenu(false); };
+
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Delete stock transfer "${row.transfer_number}"? This cannot be undone.`)) return;
+    try {
+      setDeletingId(row.id);
+      await deleteStockTransfer(row.id);
+      loadData();
+    } catch (err) {
+      alert(err.message || "Failed to delete stock transfer");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / entries));
 
   return (
     <div style={S.page} onClick={closeMenus}>
@@ -213,7 +337,12 @@ export function ListStockTransfers() {
         {/* Header */}
         <div style={S.cardHeader}>
           <h2 style={S.cardTitle}>All Stock Transfers</h2>
-          <Link to="/stock-transfers/create" style={S.addBtn}>
+          <Link
+            to="/stock-transfers/create"
+            style={S.addBtn}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(46,125,50,0.45)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(46,125,50,0.35)"; }}
+          >
             <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>+</span> Add
           </Link>
         </div>
@@ -223,7 +352,7 @@ export function ListStockTransfers() {
           {/* Show entries */}
           <div style={S.showEntries}>
             <span>Show</span>
-            <select style={S.select} value={entries} onChange={(e) => setEntries(Number(e.target.value))}>
+            <select style={S.select} value={entries} onChange={(e) => { setEntries(Number(e.target.value)); setPage(1); }}>
               {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
             <span>entries</span>
@@ -231,44 +360,24 @@ export function ListStockTransfers() {
 
           {/* Action buttons */}
           <div style={S.actionsRow}>
-            {/* Export CSV */}
-            <button
-              style={S.actionBtn}
-              onClick={(e) => { e.stopPropagation(); exportCSV(filtered, visibleCols); }}
-              title="Download as CSV"
-            >
+            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); exportCSV(rows, visibleCols); }} title="Download as CSV">
               <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236c757d' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3C/svg%3E" alt="" />
               Export CSV
             </button>
 
-            {/* Export Excel */}
-            <button
-              style={S.actionBtn}
-              onClick={(e) => { e.stopPropagation(); exportExcel(filtered, visibleCols); }}
-              title="Download as Excel"
-            >
+            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); exportExcel(rows, visibleCols); }} title="Download as Excel">
               <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23217346' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M3 9h18M9 3v18'/%3E%3C/svg%3E" alt="" />
               Export Excel
             </button>
 
-            {/* Print */}
-            <button
-              style={S.actionBtn}
-              onClick={(e) => { e.stopPropagation(); printTable(filtered, visibleCols); }}
-              title="Print table"
-            >
+            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); printTable(rows, visibleCols); }} title="Print table">
               <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpolyline points='6 9 6 2 18 2 18 9'/%3E%3Cpath d='M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2'/%3E%3Crect x='6' y='14' width='12' height='8'/%3E%3C/svg%3E" alt="" />
               Print
             </button>
 
-            {/* Column Visibility */}
             <div style={S.colVisDropdown} onClick={(e) => e.stopPropagation()}>
               <button
-                style={{
-                  ...S.actionBtn,
-                  background: showColMenu ? "#f0f4f1" : "#fff",
-                  borderColor: showColMenu ? "#2d6a4f" : "#d0d0d0",
-                }}
+                style={{ ...S.actionBtn, background: showColMenu ? "#f0f4f1" : "#fff", borderColor: showColMenu ? "#2d6a4f" : "#d0d0d0" }}
                 onClick={() => { setShowColMenu((v) => !v); setShowPdfMenu(false); }}
                 title="Show/hide columns"
               >
@@ -282,21 +391,12 @@ export function ListStockTransfers() {
                     return (
                       <div
                         key={col.key}
-                        style={{
-                          ...S.colVisItem,
-                          ...(hovColItem === col.key ? S.colVisItemHover : {}),
-                          fontWeight: checked ? 600 : 400,
-                        }}
+                        style={{ ...S.colVisItem, ...(hovColItem === col.key ? S.colVisItemHover : {}), fontWeight: checked ? 600 : 400 }}
                         onClick={() => toggleCol(col.key)}
                         onMouseEnter={() => setHovColItem(col.key)}
                         onMouseLeave={() => setHovColItem(null)}
                       >
-                        <span style={{
-                          width: "16px", height: "16px", border: "1px solid #ccc",
-                          borderRadius: "3px", background: checked ? "#2d6a4f" : "#fff",
-                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          flexShrink: 0,
-                        }}>
+                        <span style={{ width: "16px", height: "16px", border: "1px solid #ccc", borderRadius: "3px", background: checked ? "#2d6a4f" : "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           {checked && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
                         </span>
                         {col.label}
@@ -307,14 +407,9 @@ export function ListStockTransfers() {
               )}
             </div>
 
-            {/* Export PDF dropdown */}
             <div style={S.pdfDropdown} onClick={(e) => e.stopPropagation()}>
               <button
-                style={{
-                  ...S.actionBtn,
-                  background: showPdfMenu ? "#f0f4f1" : "#fff",
-                  borderColor: showPdfMenu ? "#2d6a4f" : "#d0d0d0",
-                }}
+                style={{ ...S.actionBtn, background: showPdfMenu ? "#f0f4f1" : "#fff", borderColor: showPdfMenu ? "#2d6a4f" : "#d0d0d0" }}
                 onClick={() => { setShowPdfMenu((v) => !v); setShowColMenu(false); }}
                 title="Export as PDF"
               >
@@ -324,16 +419,13 @@ export function ListStockTransfers() {
               {showPdfMenu && (
                 <div style={S.pdfMenu}>
                   {[
-                    { label: "📄 Portrait (A4)",   orientation: "portrait" },
-                    { label: "🖨️ Landscape (A4)",  orientation: "landscape" },
+                    { label: "📄 Portrait (A4)",  orientation: "portrait" },
+                    { label: "🖨️ Landscape (A4)", orientation: "landscape" },
                   ].map((opt) => (
                     <div
                       key={opt.orientation}
-                      style={{
-                        ...S.pdfMenuItem,
-                        background: hovPdfItem === opt.orientation ? "#f5f5f5" : "transparent",
-                      }}
-                      onClick={() => { exportPDF(filtered, visibleCols, opt.orientation); setShowPdfMenu(false); }}
+                      style={{ ...S.pdfMenuItem, background: hovPdfItem === opt.orientation ? "#f5f5f5" : "transparent" }}
+                      onClick={() => { exportPDF(rows, visibleCols, opt.orientation); setShowPdfMenu(false); }}
                       onMouseEnter={() => setHovPdfItem(opt.orientation)}
                       onMouseLeave={() => setHovPdfItem(null)}
                     >
@@ -351,11 +443,13 @@ export function ListStockTransfers() {
             <input
               style={S.searchInput}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search ..."
             />
           </div>
         </div>
+
+        {error && <div style={{ ...S.errorBanner, margin: "14px 20px 0" }}>{error}</div>}
 
         {/* Table */}
         <div style={S.tableWrap}>
@@ -371,14 +465,12 @@ export function ListStockTransfers() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleCols.length + 1} style={S.emptyTd}>
-                    No data available in table
-                  </td>
-                </tr>
+              {loading ? (
+                <tr><td colSpan={visibleCols.length + 1} style={S.emptyTd}>Loading...</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={visibleCols.length + 1} style={S.emptyTd}>No data available in table</td></tr>
               ) : (
-                filtered.map((row) => (
+                rows.map((row) => (
                   <tr
                     key={row.id}
                     style={{ background: hoveredRow === row.id ? "#f7fbf9" : "transparent" }}
@@ -389,8 +481,12 @@ export function ListStockTransfers() {
                       <td key={col.key} style={S.td}>
                         {col.key === "status" ? (
                           <span style={badgeStyle(row[col.key])}>{row[col.key]}</span>
-                        ) : col.key === "shippingCharges" || col.key === "totalAmount" ? (
-                          `₹${row[col.key]}`
+                        ) : col.key === "total_amount" ? (
+                          `₹${Number(row[col.key] || 0).toFixed(2)}`
+                        ) : col.key === "transfer_date" ? (
+                          formatDate(row[col.key])
+                        ) : col.key === "notes" ? (
+                          row[col.key] || "-"
                         ) : (
                           row[col.key]
                         )}
@@ -398,9 +494,16 @@ export function ListStockTransfers() {
                     ))}
                     <td style={S.td}>
                       <div style={S.rowActions}>
-                        <button style={S.rowBtnView} title="View">👁</button>
-                        <button style={S.rowBtnEdit} title="Edit">✏️</button>
-                        <button style={S.rowBtnDelete} title="Delete">🗑</button>
+                        <button style={S.rowBtnView} title="View" onClick={() => setViewingId(row.id)}>👁</button>
+                        <button style={S.rowBtnEdit} title="Edit" onClick={() => navigate(`/stock-transfers/${row.id}/edit`)}>✏️</button>
+                        <button
+                          style={{ ...S.rowBtnDelete, opacity: deletingId === row.id ? 0.5 : 1 }}
+                          title="Delete"
+                          disabled={deletingId === row.id}
+                          onClick={() => handleDelete(row)}
+                        >
+                          🗑
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -413,81 +516,209 @@ export function ListStockTransfers() {
         {/* Pagination */}
         <div style={S.pagination}>
           <span>
-            {filtered.length === 0
+            {total === 0
               ? "Showing 0 to 0 of 0 entries"
-              : `Showing 1 to ${Math.min(entries, filtered.length)} of ${filtered.length} entries`}
+              : `Showing ${(page - 1) * entries + 1} to ${Math.min(page * entries, total)} of ${total} entries`}
           </span>
           <div style={S.pager}>
-            <button style={S.pageBtn}>Previous</button>
-            <button style={S.pageBtn}>Next</button>
+            <button
+              style={{ ...S.pageBtn, ...(page <= 1 ? S.pageBtnDisabled : {}) }}
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+            <button
+              style={{ ...S.pageBtn, ...(page >= totalPages ? S.pageBtnDisabled : {}) }}
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
           </div>
         </div>
       </div>
+
+      {viewingId && <ViewStockTransferModal id={viewingId} onClose={() => setViewingId(null)} />}
     </div>
   );
 }
 
-// ── ADD STOCK TRANSFER ──────────────────────────────────────────────────────
+// ── ADD / EDIT STOCK TRANSFER (shared form) ─────────────────────────────────
 
-export function AddStockTransfer() {
+function StockTransferForm({ mode }) {
   const navigate = useNavigate();
+  const { id }   = useParams();
+  const isEdit   = mode === "edit";
+
   const [form, setForm] = useState({
-    date: new Date().toISOString().split("T")[0],
-    referenceNo: `ST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`,
-    locationFrom: "",
-    locationTo: "",
-    shippingCharges: "",
-    additionalNotes: "",
+    transfer_date: new Date().toISOString().split("T")[0],
+    transfer_number: "",
+    location_from: "",
+    location_to: "",
+    notes: "",
     status: "Pending",
   });
   const [products, setProducts] = useState([
-    { id: 1, name: "", quantity: 1, unitCost: "", subtotal: "" },
+    { rowId: 1, product_id: "", quantity: 1, cost_price: 0 },
   ]);
+
+  const [productOptions, setProductOptions] = useState([]);
+  const [loading, setLoading]   = useState(isEdit);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState("");
+
+  // Load product dropdown options
+  useEffect(() => {
+    fetchProductsForTransfer()
+      .then((list) => setProductOptions(list || []))
+      .catch((err) => setError(err.message || "Failed to load products"));
+  }, []);
+
+  // Load existing transfer when editing
+  useEffect(() => {
+    if (!isEdit) return;
+    let active = true;
+    setLoading(true);
+    fetchStockTransferById(id)
+      .then((data) => {
+        if (!active) return;
+        setForm({
+          transfer_date: data.transfer_date ? data.transfer_date.split("T")[0] : "",
+          transfer_number: data.transfer_number || "",
+          location_from: data.location_from || "",
+          location_to: data.location_to || "",
+          notes: data.notes || "",
+          status: data.status || "Pending",
+        });
+        setProducts(
+          (data.items || []).map((it, idx) => ({
+            rowId: it.id || idx + 1,
+            product_id: it.product_id,
+            quantity: it.quantity,
+            cost_price: it.cost_price || 0,
+          }))
+        );
+      })
+      .catch((err) => setError(err.message || "Failed to load stock transfer"))
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [isEdit, id]);
 
   const set = (field, val) => setForm((f) => ({ ...f, [field]: val }));
 
-  const updateProduct = (idx, field, val) => {
+  const productById = (pid) => productOptions.find((p) => String(p.id) === String(pid));
+
+  const updateProductRow = (idx, field, val) => {
     setProducts((prev) =>
       prev.map((p, i) => {
         if (i !== idx) return p;
         const updated = { ...p, [field]: val };
-        if (field === "quantity" || field === "unitCost") {
-          const qty  = field === "quantity"  ? Number(val) : Number(p.quantity);
-          const cost = field === "unitCost"  ? Number(val) : Number(p.unitCost);
-          updated.subtotal = qty && cost ? `₹${(qty * cost).toFixed(2)}` : "";
+        if (field === "product_id") {
+          const prod = productById(val);
+          updated.cost_price = prod ? Number(prod.cost_price) || 0 : 0;
         }
         return updated;
       })
     );
   };
 
-  const addRow    = () => setProducts((prev) => [...prev, { id: Date.now(), name: "", quantity: 1, unitCost: "", subtotal: "" }]);
+  const addRow    = () => setProducts((prev) => [...prev, { rowId: Date.now(), product_id: "", quantity: 1, cost_price: 0 }]);
   const removeRow = (idx) => setProducts((prev) => prev.filter((_, i) => i !== idx));
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    alert("Stock Transfer saved successfully!");
-    navigate("/stock-transfers");
+  const subtotalFor = (row) => {
+    const qty  = Number(row.quantity) || 0;
+    const cost = Number(row.cost_price) || 0;
+    return qty * cost;
   };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!form.location_from || !form.location_to) {
+      setError("Both source and destination locations are required.");
+      return;
+    }
+    if (form.location_from === form.location_to) {
+      setError("Source and destination locations must be different.");
+      return;
+    }
+    const validItems = products.filter((p) => p.product_id);
+    if (validItems.length === 0) {
+      setError("At least one product is required.");
+      return;
+    }
+
+    const payload = {
+      transfer_date: form.transfer_date,
+      location_from: form.location_from,
+      location_to: form.location_to,
+      status: form.status,
+      notes: form.notes,
+      items: validItems.map((p) => ({
+        product_id: p.product_id,
+        quantity: Number(p.quantity) || 1,
+      })),
+    };
+    if (!isEdit && form.transfer_number) payload.transfer_number = form.transfer_number;
+
+    try {
+      setSaving(true);
+      if (isEdit) {
+        await updateStockTransfer(id, payload);
+      } else {
+        await createStockTransfer(payload);
+      }
+      navigate("/stock-transfers");
+    } catch (err) {
+      setError(err.message || "Failed to save stock transfer");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={S.page}>
+        <h1 style={S.pageTitle}>Stock Transfers</h1>
+        <div style={S.card}><div style={S.loadingWrap}>Loading...</div></div>
+      </div>
+    );
+  }
 
   return (
     <div style={S.page}>
       <h1 style={S.pageTitle}>Stock Transfers</h1>
       <div style={S.card}>
         <div style={S.cardHeader}>
-          <h2 style={S.cardTitle}>Add Stock Transfer</h2>
-          <Link to="/stock-transfers" style={S.backBtn}>← Back to List</Link>
+          <h2 style={S.cardTitle}>{isEdit ? "Edit Stock Transfer" : "Add Stock Transfer"}</h2>
+          <Link
+            to="/stock-transfers"
+            style={S.backBtn}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#2d6a4f"; e.currentTarget.style.color = "#fff"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#2d6a4f"; }}
+          >
+            ← Back to List
+          </Link>
         </div>
 
         <form onSubmit={handleSubmit} style={S.form}>
+          {error && <div style={S.errorBanner}>{error}</div>}
+
           <div style={S.formGrid}>
             <div style={S.formGroup}>
               <label style={S.label}>Date <span style={S.req}>*</span></label>
-              <input type="date" style={S.input} value={form.date} onChange={(e) => set("date", e.target.value)} required />
+              <input type="date" style={S.input} value={form.transfer_date} onChange={(e) => set("transfer_date", e.target.value)} required />
             </div>
             <div style={S.formGroup}>
               <label style={S.label}>Reference No</label>
-              <input type="text" style={S.input} value={form.referenceNo} onChange={(e) => set("referenceNo", e.target.value)} />
+              <input
+                type="text" style={S.input} value={form.transfer_number}
+                placeholder={isEdit ? "" : "Auto-generated if left blank"}
+                onChange={(e) => set("transfer_number", e.target.value)}
+                disabled={isEdit}
+              />
             </div>
             <div style={S.formGroup}>
               <label style={S.label}>Status <span style={S.req}>*</span></label>
@@ -503,21 +734,17 @@ export function AddStockTransfer() {
           <div style={S.formGrid}>
             <div style={S.formGroup}>
               <label style={S.label}>Location (From) <span style={S.req}>*</span></label>
-              <select style={S.input} value={form.locationFrom} onChange={(e) => set("locationFrom", e.target.value)} required>
+              <select style={S.input} value={form.location_from} onChange={(e) => set("location_from", e.target.value)} required>
                 <option value="">-- Select location --</option>
                 {LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
             <div style={S.formGroup}>
               <label style={S.label}>Location (To) <span style={S.req}>*</span></label>
-              <select style={S.input} value={form.locationTo} onChange={(e) => set("locationTo", e.target.value)} required>
+              <select style={S.input} value={form.location_to} onChange={(e) => set("location_to", e.target.value)} required>
                 <option value="">-- Select location --</option>
-                {LOCATIONS.filter((l) => l !== form.locationFrom).map((l) => <option key={l} value={l}>{l}</option>)}
+                {LOCATIONS.filter((l) => l !== form.location_from).map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
-            </div>
-            <div style={S.formGroup}>
-              <label style={S.label}>Shipping Charges</label>
-              <input type="number" style={S.input} placeholder="0.00" value={form.shippingCharges} onChange={(e) => set("shippingCharges", e.target.value)} min="0" step="0.01" />
             </div>
           </div>
 
@@ -526,24 +753,34 @@ export function AddStockTransfer() {
             <table style={S.table}>
               <thead>
                 <tr>
-                  {["Product Name *", "Quantity *", "Unit Cost", "Subtotal", "Action"].map((h) => (
+                  {["Product *", "Quantity *", "Unit Cost", "Subtotal", "Action"].map((h) => (
                     <th key={h} style={S.formThSmall}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {products.map((p, idx) => (
-                  <tr key={p.id}>
+                  <tr key={p.rowId}>
                     <td style={S.formTdSmall}>
-                      <input style={S.inputSm} placeholder="Type to search product..." value={p.name} onChange={(e) => updateProduct(idx, "name", e.target.value)} required />
+                      <select
+                        style={S.inputSm}
+                        value={p.product_id}
+                        onChange={(e) => updateProductRow(idx, "product_id", e.target.value)}
+                        required
+                      >
+                        <option value="">-- Select product --</option>
+                        {productOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.product_name}{opt.sku ? ` (${opt.sku})` : ""}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td style={S.formTdSmall}>
-                      <input type="number" style={S.inputSm} min="1" value={p.quantity} onChange={(e) => updateProduct(idx, "quantity", e.target.value)} required />
+                      <input type="number" style={S.inputSm} min="1" value={p.quantity} onChange={(e) => updateProductRow(idx, "quantity", e.target.value)} required />
                     </td>
-                    <td style={S.formTdSmall}>
-                      <input type="number" style={S.inputSm} placeholder="0.00" min="0" step="0.01" value={p.unitCost} onChange={(e) => updateProduct(idx, "unitCost", e.target.value)} />
-                    </td>
-                    <td style={S.subtotal}>{p.subtotal || "-"}</td>
+                    <td style={S.formTdSmall}>₹{Number(p.cost_price || 0).toFixed(2)}</td>
+                    <td style={S.subtotal}>₹{subtotalFor(p).toFixed(2)}</td>
                     <td style={S.formTdSmall}>
                       <button type="button" style={{ ...S.rowBtnDelete, opacity: products.length === 1 ? 0.3 : 1 }} onClick={() => removeRow(idx)} disabled={products.length === 1}>🗑</button>
                     </td>
@@ -556,15 +793,25 @@ export function AddStockTransfer() {
 
           <div style={S.formGroup}>
             <label style={S.label}>Additional Notes</label>
-            <textarea style={S.textarea} rows={3} placeholder="Enter any additional notes..." value={form.additionalNotes} onChange={(e) => set("additionalNotes", e.target.value)} />
+            <textarea style={S.textarea} rows={3} placeholder="Enter any additional notes..." value={form.notes} onChange={(e) => set("notes", e.target.value)} />
           </div>
 
           <div style={S.formFooter}>
             <button type="button" style={S.cancelBtn} onClick={() => navigate("/stock-transfers")}>Cancel</button>
-            <button type="submit" style={S.submitBtn}>Save Stock Transfer</button>
+            <button type="submit" style={{ ...S.submitBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>
+              {saving ? "Saving..." : isEdit ? "Update Stock Transfer" : "Save Stock Transfer"}
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
+}
+
+export function AddStockTransfer() {
+  return <StockTransferForm mode="add" />;
+}
+
+export function EditStockTransfer() {
+  return <StockTransferForm mode="edit" />;
 }

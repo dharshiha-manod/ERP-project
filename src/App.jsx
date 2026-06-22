@@ -155,8 +155,7 @@ function AppLayout() {
           <Route path="/roles"                   element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><Roles /></FeatureRoute>} />
           <Route path="/sales-commission-agents" element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><SalesCommissionAgents /></FeatureRoute>} />
 
-          {/* ── Contacts (FIXED) ──────────────────────────────────────────── */}
-          {/* /contacts and /contacts?type=supplier both load SuppliersPage */}
+          {/* ── Contacts ──────────────────────────────────────────────────── */}
           <Route path="/contacts"            element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
           <Route path="/contacts/suppliers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
           <Route path="/contacts/customers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><CustomersPage /></FeatureRoute>} />
@@ -177,9 +176,14 @@ function AppLayout() {
           <Route path="/brands"                 element={<FeatureRoute feature={FEATURES.PRODUCTS}><Brands /></FeatureRoute>} />
           <Route path="/warranties"             element={<FeatureRoute feature={FEATURES.PRODUCTS}><Warranties /></FeatureRoute>} />
 
-          {/* Manufacturing */}
+          {/* ── Manufacturing (includes all sub-pages) ──────────────────── */}
           <Route path="/manufacturing"   element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
           <Route path="/manufacturing/*" element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
+
+          {/* ── Production Planning (now nested under Manufacturing in the  */}
+          {/*    sidebar, but URL paths are kept identical for zero breakage) */}
+          <Route path="/production-planning"   element={<FeatureRoute feature={FEATURES.MANUFACTURING}><ProductionPlanning /></FeatureRoute>} />
+          <Route path="/production-planning/*" element={<FeatureRoute feature={FEATURES.MANUFACTURING}><ProductionPlanning /></FeatureRoute>} />
 
           {/* Purchases */}
           <Route path="/purchases"              element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
@@ -254,9 +258,6 @@ function AppLayout() {
           <Route path="/reports/sales-representative"  element={<FeatureRoute feature={FEATURES.REPORTS}><SalesRepresentativeReport /></FeatureRoute>} />
           <Route path="/reports/activity-log"          element={<FeatureRoute feature={FEATURES.REPORTS}><ActivityLogReport /></FeatureRoute>} />
 
-          {/* Production Planning */}
-          <Route path="/production-planning"    element={<FeatureRoute feature={FEATURES.PRODUCTION_PLANNING}><ProductionPlanning /></FeatureRoute>} />
-          <Route path="/production-planning/*"  element={<FeatureRoute feature={FEATURES.PRODUCTION_PLANNING}><ProductionPlanning /></FeatureRoute>} />
         </Routes>
       </main>
     </div>

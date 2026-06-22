@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * src/featurePermissionMap.js  (FIXED v2)
+ * src/featurePermissionMap.js  (FIXED v2 + Manufacturing merge)
  *
  * Root cause of anbu seeing Home + Notifications:
  *   FEATURES.DASHBOARD and FEATURES.NOTIFICATIONS had no entry
@@ -8,6 +8,9 @@
  *   `if (!checker) return true` → always showed to everyone.
  *
  * Fix: every FEATURE now has an explicit checker.
+ *
+ * v3 change: PRODUCTION_PLANNING removed — Production Planning
+ * is now a submenu under Manufacturing and inherits its checker.
  * ============================================================
  */
 import { FEATURES } from "./planAccess";
@@ -50,14 +53,13 @@ export const FEATURE_PERM_MAP = {
     hp("Product", "View product"),
 
   // ── Manufacturing ─────────────────────────────────────────
+  // Also covers Production Planning (now a submenu under Manufacturing).
   [FEATURES.MANUFACTURING]: (hp) =>
     hp("Manufacturing", "View Recipe") ||
     hp("Manufacturing", "Access Production"),
 
-  // ── Production Planning ───────────────────────────────────
-  [FEATURES.PRODUCTION_PLANNING]: (hp) =>
-    hp("Manufacturing", "View Recipe") ||
-    hp("Manufacturing", "Access Production"),
+  // NOTE: PRODUCTION_PLANNING removed — it is nested under Manufacturing
+  // and shares the same permission checker above.
 
   // ── Purchases ─────────────────────────────────────────────
   [FEATURES.PURCHASES]: (hp) =>

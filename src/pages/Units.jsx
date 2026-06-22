@@ -1,29 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { unitsAPI } from "../api/productAPI";
 
-const SAMPLE_UNITS = [
-  { name: "Pieces", shortName: "Pc(s)", allowDecimal: "No" },
-  { name: "Kilogram", shortName: "Kg", allowDecimal: "Yes" },
-  { name: "Gram", shortName: "g", allowDecimal: "Yes" },
-  { name: "Litre", shortName: "L", allowDecimal: "Yes" },
-  { name: "Millilitre", shortName: "mL", allowDecimal: "Yes" },
-  { name: "Box", shortName: "Box", allowDecimal: "No" },
-  { name: "Pack", shortName: "Pk", allowDecimal: "No" },
-  { name: "Dozen", shortName: "Doz", allowDecimal: "No" },
-  { name: "Meter", shortName: "m", allowDecimal: "Yes" },
-  { name: "Centimeter", shortName: "cm", allowDecimal: "Yes" },
-  { name: "Pair", shortName: "Pr", allowDecimal: "No" },
-  { name: "Set", shortName: "Set", allowDecimal: "No" },
-  { name: "Ton", shortName: "Tn", allowDecimal: "Yes" },
-  { name: "Bundle", shortName: "Bndl", allowDecimal: "No" },
-];
-
+// ── Export helpers (unchanged from original) ──
 function exportCSV(units) {
   if (!units.length) { alert("No data to export"); return; }
   const headers = ["Name", "Short Name", "Allow Decimal"];
-  const rows = units.map(u => [`"${u.name}"`, `"${u.shortName}"`, `"${u.allowDecimal}"`]);
+  const rows = units.map(u => [`"${u.name}"`, `"${u.short_name}"`, `"${u.allow_decimal ? 'Yes' : 'No'}"`]);
   const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -33,7 +18,7 @@ function exportCSV(units) {
 
 function exportExcel(units) {
   if (!units.length) { alert("No data to export"); return; }
-  const data = units.map(u => ({ Name: u.name, "Short Name": u.shortName, "Allow Decimal": u.allowDecimal }));
+  const data = units.map(u => ({ Name: u.name, "Short Name": u.short_name, "Allow Decimal": u.allow_decimal ? "Yes" : "No" }));
   const ws = XLSX.utils.json_to_sheet(data);
   ws["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 15 }];
   const wb = XLSX.utils.book_new();
@@ -48,7 +33,7 @@ function exportPDF(units) {
   doc.setFontSize(10); doc.text(`Exported: ${new Date().toLocaleDateString()}`, 14, 22);
   autoTable(doc, {
     head: [["Name", "Short Name", "Allow Decimal"]],
-    body: units.map(u => [u.name, u.shortName, u.allowDecimal]),
+    body: units.map(u => [u.name, u.short_name, u.allow_decimal ? "Yes" : "No"]),
     startY: 28, styles: { fontSize: 10 },
     headStyles: { fillColor: [46, 125, 50] },
   });
@@ -64,45 +49,115 @@ function printUnits(units) {
   </style></head><body>
     <h2>Units List</h2><p>${new Date().toLocaleDateString()}</p>
     <table><thead><tr><th>Name</th><th>Short Name</th><th>Allow Decimal</th></tr></thead>
-    <tbody>${units.map(u => `<tr><td>${u.name}</td><td>${u.shortName}</td><td>${u.allowDecimal}</td></tr>`).join("")}</tbody>
+    <tbody>${units.map(u => `<tr><td>${u.name}</td><td>${u.short_name}</td><td>${u.allow_decimal ? "Yes" : "No"}</td></tr>`).join("")}</tbody>
     </table></body></html>`);
   win.document.close(); win.print();
 }
 
 export default function Units() {
-  const [units, setUnits] = useState(SAMPLE_UNITS);
+  const [units, setUnits]         = useState([]);
+  const [total, setTotal]         = useState(0);
+  const [page, setPage]           = useState(1);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [editIndex, setEditIndex] = useState(null);
-  const [form, setForm] = useState({ name: "", shortName: "", allowDecimal: "", isMultiple: false });
-  const [search, setSearch] = useState("");
-  const [perPage, setPerPage] = useState(25);
+  const [editUnit, setEditUnit]   = useState(null);
+  const [form, setForm]           = useState({ name: "", shortName: "", allowDecimal: "", isMultiple: false });
+  const [saving, setSaving]       = useState(false);
+  const [search, setSearch]       = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [perPage, setPerPage]     = useState(25);
 
-  const openAdd = () => { setForm({ name: "", shortName: "", allowDecimal: "", isMultiple: false }); setEditIndex(null); setShowModal(true); };
-  const openEdit = (i) => { setForm({ ...units[i], isMultiple: false }); setEditIndex(i); setShowModal(true); };
-
-  const handleSave = () => {
-    if (!form.name.trim() || !form.shortName.trim() || !form.allowDecimal) { alert("Please fill all required fields."); return; }
-    if (editIndex !== null) {
-      const updated = [...units]; updated[editIndex] = { name: form.name, shortName: form.shortName, allowDecimal: form.allowDecimal };
-      setUnits(updated);
-    } else {
-      setUnits([...units, { name: form.name, shortName: form.shortName, allowDecimal: form.allowDecimal }]);
+  const loadUnits = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await unitsAPI.getAll({ page, limit: perPage, search });
+      setUnits(data.units || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      setError(err.message || "Failed to load units");
+    } finally {
+      setLoading(false);
     }
-    setShowModal(false);
+  }, [page, perPage, search]);
+
+  useEffect(() => { loadUnits(); }, [loadUnits]);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const openAdd = () => {
+    setForm({ name: "", shortName: "", allowDecimal: "", isMultiple: false });
+    setEditUnit(null);
+    setShowModal(true);
   };
 
-  const handleDelete = (i) => { if (window.confirm("Delete this unit?")) setUnits(units.filter((_, idx) => idx !== i)); };
+  const openEdit = (unit) => {
+    setForm({
+      name: unit.name,
+      shortName: unit.short_name,
+      allowDecimal: unit.allow_decimal ? "Yes" : "No",
+      isMultiple: false
+    });
+    setEditUnit(unit);
+    setShowModal(true);
+  };
 
-  const filtered = units.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.shortName.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.shortName.trim() || !form.allowDecimal) {
+      alert("Please fill all required fields."); return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name,
+        short_name: form.shortName,
+        allow_decimal: form.allowDecimal === "Yes"
+      };
+      if (editUnit) {
+        await unitsAPI.update(editUnit.id, payload);
+      } else {
+        await unitsAPI.create(payload);
+      }
+      setShowModal(false);
+      setPage(1);
+      await loadUnits();
+    } catch (err) {
+      alert(err.message || "Failed to save unit");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (unit) => {
+    if (!window.confirm(`Delete unit "${unit.name}"?`)) return;
+    try {
+      await unitsAPI.delete(unit.id);
+      await loadUnits();
+    } catch (err) {
+      alert(err.message || "Failed to delete unit");
+    }
+  };
+
+  const totalPages = Math.ceil(total / perPage);
+  const showing = units.length === 0
+    ? "0 to 0 of 0"
+    : `${(page - 1) * perPage + 1} to ${(page - 1) * perPage + units.length} of ${total}`;
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", color: "#333" }}>
       <h2 style={{ fontWeight: 700, fontSize: 24, marginBottom: 4 }}>
         Units <span style={{ fontWeight: 400, fontSize: 16, color: "#666" }}>Manage your units</span>
       </h2>
+
+      {error && (
+        <div style={{ background: "#fff3cd", border: "1px solid #ffc107", borderRadius: 6, padding: "10px 16px", marginBottom: 12, color: "#856404" }}>
+          {error}
+        </div>
+      )}
 
       <div style={{ background: "#fff", borderRadius: 8, padding: "24px", marginTop: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -113,7 +168,7 @@ export default function Units() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13 }}>Show</span>
-            <select value={perPage} onChange={e => setPerPage(Number(e.target.value))} style={inputSm}>
+            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }} style={inputSm}>
               {[10, 25, 50, 100].map(n => <option key={n}>{n}</option>)}
             </select>
             <span style={{ fontSize: 13 }}>entries</span>
@@ -124,7 +179,7 @@ export default function Units() {
             <button onClick={() => printUnits(units)} style={btn.outline}>🖨 Print</button>
             <button style={btn.outline}>⊞ Column visibility</button>
             <button onClick={() => exportPDF(units)} style={btn.pdf}><span style={icon.pdf}>PDF</span> Export PDF</button>
-            <input placeholder="Search ..." value={search} onChange={e => setSearch(e.target.value)} style={inputSearch} />
+            <input placeholder="Search ..." value={searchInput} onChange={e => setSearchInput(e.target.value)} style={inputSearch} />
           </div>
         </div>
 
@@ -141,21 +196,23 @@ export default function Units() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={4} style={{ textAlign: "center", padding: 28, color: "#888" }}>Loading...</td></tr>
+            ) : units.length === 0 ? (
               <tr><td colSpan={4} style={{ textAlign: "center", padding: 28, color: "#888" }}>No data available in table</td></tr>
             ) : (
-              filtered.slice(0, perPage).map((u, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #f0f0f0", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+              units.map((u, i) => (
+                <tr key={u.id} style={{ borderBottom: "1px solid #f0f0f0", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
                   <td style={td}><strong>{u.name}</strong></td>
-                  <td style={td}><code style={{ background: "#f3f4f6", padding: "2px 8px", borderRadius: 4, fontSize: 13 }}>{u.shortName}</code></td>
+                  <td style={td}><code style={{ background: "#f3f4f6", padding: "2px 8px", borderRadius: 4, fontSize: 13 }}>{u.short_name}</code></td>
                   <td style={td}>
-                    <span style={{ background: u.allowDecimal === "Yes" ? "#dcfce7" : "#fee2e2", color: u.allowDecimal === "Yes" ? "#15803d" : "#dc2626", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 500 }}>
-                      {u.allowDecimal}
+                    <span style={{ background: u.allow_decimal ? "#dcfce7" : "#fee2e2", color: u.allow_decimal ? "#15803d" : "#dc2626", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 500 }}>
+                      {u.allow_decimal ? "Yes" : "No"}
                     </span>
                   </td>
                   <td style={td}>
-                    <button onClick={() => openEdit(i)} style={btn.editSm}>✏ Edit</button>
-                    <button onClick={() => handleDelete(i)} style={btn.delSm}>🗑 Delete</button>
+                    <button onClick={() => openEdit(u)} style={btn.editSm}>✏ Edit</button>
+                    <button onClick={() => handleDelete(u)} style={btn.delSm}>🗑 Delete</button>
                   </td>
                 </tr>
               ))
@@ -164,11 +221,17 @@ export default function Units() {
         </table>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, fontSize: 13, color: "#555" }}>
-          <span>Showing {filtered.length === 0 ? "0 to 0 of 0" : `1 to ${Math.min(perPage, filtered.length)} of ${filtered.length}`} entries</span>
+          <span>Showing {showing} entries</span>
           <div style={{ display: "flex", gap: 6 }}>
-            <button style={btn.page}>Previous</button>
-            <button style={{ ...btn.page, background: "#2e7d32", color: "#fff", border: "none" }}>1</button>
-            <button style={btn.page}>Next</button>
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+              style={{ ...btn.page, opacity: page <= 1 ? 0.5 : 1, cursor: page <= 1 ? "not-allowed" : "pointer" }}>
+              Previous
+            </button>
+            <button style={{ ...btn.page, background: "#2e7d32", color: "#fff", border: "none" }}>{page}</button>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+              style={{ ...btn.page, opacity: page >= totalPages ? 0.5 : 1, cursor: page >= totalPages ? "not-allowed" : "pointer" }}>
+              Next
+            </button>
           </div>
         </div>
       </div>
@@ -177,7 +240,7 @@ export default function Units() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
           <div style={{ background: "#fff", borderRadius: 10, padding: 28, width: 500, maxWidth: "95vw", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h5 style={{ fontWeight: 700, fontSize: 18, margin: 0 }}>{editIndex !== null ? "Edit" : "Add"} Unit</h5>
+              <h5 style={{ fontWeight: 700, fontSize: 18, margin: 0 }}>{editUnit ? "Edit" : "Add"} Unit</h5>
               <button onClick={() => setShowModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#888" }}>×</button>
             </div>
 
@@ -201,7 +264,10 @@ export default function Units() {
             </label>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
-              <button onClick={handleSave} style={btn.green}>🖫 Save</button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ ...btn.green, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}>
+                {saving ? "Saving..." : "🖫 Save"}
+              </button>
               <button onClick={() => setShowModal(false)} style={{ background: "#343a40", color: "#fff", border: "none", borderRadius: 6, padding: "9px 24px", fontSize: 14, cursor: "pointer" }}>Close</button>
             </div>
           </div>

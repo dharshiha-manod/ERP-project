@@ -1,24 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { variationsAPI } from "../api/productAPI";
 
-const SAMPLE_VARIATIONS = [
-  { id: 1, name: "Color", values: ["Red", "Blue", "Green", "Black", "White", "Yellow", "Orange", "Purple"] },
-  { id: 2, name: "Size", values: ["XS", "S", "M", "L", "XL", "XXL", "3XL"] },
-  { id: 3, name: "Storage", values: ["64GB", "128GB", "256GB", "512GB", "1TB"] },
-  { id: 4, name: "RAM", values: ["4GB", "6GB", "8GB", "12GB", "16GB", "32GB"] },
-  { id: 5, name: "Material", values: ["Cotton", "Polyester", "Leather", "Denim", "Silk", "Wool"] },
-  { id: 6, name: "Shoe Size", values: ["UK 6", "UK 7", "UK 8", "UK 9", "UK 10", "UK 11", "UK 12"] },
-  { id: 7, name: "Weight", values: ["250g", "500g", "1kg", "2kg", "5kg"] },
-  { id: 8, name: "Connectivity", values: ["WiFi", "4G", "5G", "Bluetooth", "WiFi + 4G"] },
-  { id: 9, name: "Finish", values: ["Matte", "Glossy", "Satin", "Metallic", "Brushed"] },
-  { id: 10, name: "Pack Size", values: ["Single", "Twin Pack", "3-Pack", "6-Pack", "12-Pack"] },
-];
-
+// ── Export helpers (unchanged from original) ──
 function exportCSV(variations) {
   if (!variations.length) { alert("No data"); return; }
-  const rows = variations.map(v => [`"${v.name}"`, `"${v.values.join(" | ")}"`]);
+  const rows = variations.map(v => [`"${v.name}"`, `"${v.values.map(x => x.value || x).join(" | ")}"`]);
   const csv = ['"Variations","Values"', ...rows.map(r => r.join(","))].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -28,7 +17,7 @@ function exportCSV(variations) {
 
 function exportExcel(variations) {
   if (!variations.length) { alert("No data"); return; }
-  const data = variations.map(v => ({ Variations: v.name, Values: v.values.join(" | ") }));
+  const data = variations.map(v => ({ Variations: v.name, Values: v.values.map(x => x.value || x).join(" | ") }));
   const ws = XLSX.utils.json_to_sheet(data);
   ws["!cols"] = [{ wch: 30 }, { wch: 60 }];
   const wb = XLSX.utils.book_new();
@@ -43,7 +32,7 @@ function exportPDF(variations) {
   doc.setFontSize(10); doc.text(`Exported: ${new Date().toLocaleDateString()}`, 14, 22);
   autoTable(doc, {
     head: [["Variation", "Values"]],
-    body: variations.map(v => [v.name, v.values.join(", ")]),
+    body: variations.map(v => [v.name, v.values.map(x => x.value || x).join(", ")]),
     startY: 28, styles: { fontSize: 9 },
     headStyles: { fillColor: [46, 125, 50] },
   });
@@ -59,31 +48,74 @@ function printVariations(variations) {
   </style></head><body>
     <h2>Variations List</h2><p>${new Date().toLocaleDateString()}</p>
     <table><thead><tr><th>Variation</th><th>Values</th></tr></thead>
-    <tbody>${variations.map(v => `<tr><td>${v.name}</td><td>${v.values.join(", ")}</td></tr>`).join("")}</tbody>
+    <tbody>${variations.map(v => `<tr><td>${v.name}</td><td>${v.values.map(x => x.value || x).join(", ")}</td></tr>`).join("")}</tbody>
     </table></body></html>`);
   win.document.close(); win.print();
 }
 
 export default function Variations() {
-  const [variations, setVariations] = useState(SAMPLE_VARIATIONS);
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [search, setSearch] = useState("");
+  const [variations, setVariations]   = useState([]);
+  const [total, setTotal]             = useState(0);
+  const [page, setPage]               = useState(1);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState("");
+  const [showModal, setShowModal]     = useState(false);
+  const [editItem, setEditItem]       = useState(null);
+  const [search, setSearch]           = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [showEntries, setShowEntries] = useState(25);
 
-  const filtered = variations.filter(v => v.name.toLowerCase().includes(search.toLowerCase()));
-
-  const handleSave = (variation) => {
-    if (editItem) {
-      setVariations(prev => prev.map(v => v.id === editItem.id ? { ...variation, id: editItem.id } : v));
-    } else {
-      setVariations(prev => [...prev, { ...variation, id: Date.now() }]);
+  const loadVariations = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await variationsAPI.getAll({ page, limit: showEntries, search });
+      setVariations(data.variations || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      setError(err.message || "Failed to load variations");
+    } finally {
+      setLoading(false);
     }
-    setShowModal(false); setEditItem(null);
+  }, [page, showEntries, search]);
+
+  useEffect(() => { loadVariations(); }, [loadVariations]);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const handleSave = async (variation) => {
+    try {
+      if (editItem) {
+        await variationsAPI.update(editItem.id, variation);
+      } else {
+        await variationsAPI.create(variation);
+      }
+      setShowModal(false);
+      setEditItem(null);
+      setPage(1);
+      await loadVariations();
+    } catch (err) {
+      alert(err.message || "Failed to save variation");
+    }
   };
 
   const handleEdit = (v) => { setEditItem(v); setShowModal(true); };
-  const handleDelete = (id) => setVariations(prev => prev.filter(v => v.id !== id));
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this variation?")) return;
+    try {
+      await variationsAPI.delete(id);
+      await loadVariations();
+    } catch (err) {
+      alert(err.message || "Failed to delete variation");
+    }
+  };
+
+  const totalPages = Math.ceil(total / showEntries);
+  const showing = variations.length === 0 ? "0" : `${(page - 1) * showEntries + 1}`;
 
   return (
     <div style={s.page}>
@@ -97,24 +129,30 @@ export default function Variations() {
         </button>
       </div>
 
+      {error && (
+        <div style={{ background: "#fff3cd", border: "1px solid #ffc107", borderRadius: 6, padding: "10px 16px", marginBottom: 12, color: "#856404" }}>
+          {error}
+        </div>
+      )}
+
       <div style={s.card}>
         <h2 style={s.cardTitle}>All variations</h2>
 
         <div style={s.toolbar}>
           <div style={s.toolLeft}>
             <span style={s.toolText}>Show</span>
-            <select style={s.entriesSelect} value={showEntries} onChange={e => setShowEntries(+e.target.value)}>
+            <select style={s.entriesSelect} value={showEntries} onChange={e => { setShowEntries(+e.target.value); setPage(1); }}>
               {[10, 25, 50, 100].map(n => <option key={n}>{n}</option>)}
             </select>
             <span style={s.toolText}>entries</span>
           </div>
           <div style={s.toolRight}>
-            <button style={s.toolBtnCsv} onClick={() => exportCSV(variations)}><span style={s.iconCsv}>CSV</span> Export CSV</button>
-            <button style={s.toolBtnXls} onClick={() => exportExcel(variations)}><span style={s.iconXls}>XLS</span> Export Excel</button>
-            <button style={s.toolBtn} onClick={() => printVariations(variations)}>🖨 Print</button>
+            <button onClick={() => exportCSV(variations)} style={s.toolBtnCsv}><span style={s.iconCsv}>CSV</span> Export CSV</button>
+            <button onClick={() => exportExcel(variations)} style={s.toolBtnXls}><span style={s.iconXls}>XLS</span> Export Excel</button>
+            <button onClick={() => printVariations(variations)} style={s.toolBtn}>🖨 Print</button>
             <button style={s.toolBtn}>⊞ Column visibility</button>
-            <button style={s.toolBtnPdf} onClick={() => exportPDF(variations)}><span style={s.iconPdf}>PDF</span> Export PDF ▾</button>
-            <input style={s.searchBox} placeholder="Search …" value={search} onChange={e => setSearch(e.target.value)} />
+            <button onClick={() => exportPDF(variations)} style={s.toolBtnPdf}><span style={s.iconPdf}>PDF</span> Export PDF</button>
+            <input placeholder="Search ..." value={searchInput} onChange={e => setSearchInput(e.target.value)} style={s.searchBox} />
           </div>
         </div>
 
@@ -122,22 +160,24 @@ export default function Variations() {
           <table style={s.table}>
             <thead>
               <tr style={s.theadRow}>
-                <th style={s.th}>Variations ↕</th>
-                <th style={s.th}>Values ↕</th>
-                <th style={s.th}>Action ↕</th>
+                <th style={s.th}>Variations</th>
+                <th style={s.th}>Values</th>
+                <th style={s.th}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={3} style={s.noData}>Loading...</td></tr>
+              ) : variations.length === 0 ? (
                 <tr><td colSpan={3} style={s.noData}>No data available in table</td></tr>
               ) : (
-                filtered.slice(0, showEntries).map((v, i) => (
+                variations.map((v, i) => (
                   <tr key={v.id} style={i % 2 === 0 ? s.rowEven : s.rowOdd}>
-                    <td style={{ ...s.td, fontWeight: 600 }}>{v.name}</td>
+                    <td style={s.td}><strong>{v.name}</strong></td>
                     <td style={s.td}>
                       <div style={s.valuesWrap}>
-                        {v.values.map(val => (
-                          <span key={val} style={s.valueBadge}>{val}</span>
+                        {(v.values || []).map((val, vi) => (
+                          <span key={vi} style={s.valueBadge}>{val.value || val}</span>
                         ))}
                       </div>
                     </td>
@@ -153,10 +193,12 @@ export default function Variations() {
         </div>
 
         <div style={s.footerRow}>
-          <span>Showing {filtered.length === 0 ? "0" : "1"} to {Math.min(filtered.length, showEntries)} of {filtered.length} entries</span>
+          <span>Showing {showing} to {Math.min((page - 1) * showEntries + variations.length, total)} of {total} entries</span>
           <div style={s.pagination}>
-            <button style={s.pageBtn}>Previous</button>
-            <button style={s.pageBtn}>Next</button>
+            <button style={{ ...s.pageBtn, opacity: page <= 1 ? 0.5 : 1 }}
+              onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>Previous</button>
+            <button style={{ ...s.pageBtn, opacity: page >= totalPages ? 0.5 : 1 }}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Next</button>
           </div>
         </div>
       </div>
@@ -174,18 +216,28 @@ export default function Variations() {
 }
 
 function AddVariationModal({ initial, onSave, onClose }) {
-  const [name, setName] = useState(initial?.name || "");
-  const [values, setValues] = useState(initial?.values || [""]);
+  const [name, setName]     = useState(initial?.name || "");
+  const [values, setValues] = useState(
+    initial?.values?.length
+      ? initial.values.map(v => v.value || v)
+      : [""]
+  );
+  const [saving, setSaving] = useState(false);
 
-  const addValue = () => setValues(v => [...v, ""]);
+  const addValue    = () => setValues(v => [...v, ""]);
   const updateValue = (i, val) => setValues(v => v.map((x, idx) => idx === i ? val : x));
   const removeValue = (i) => setValues(v => v.filter((_, idx) => idx !== i));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) { alert("Variation Name is required"); return; }
     const cleaned = values.map(v => v.trim()).filter(Boolean);
     if (cleaned.length === 0) { alert("At least one value is required"); return; }
-    onSave({ name: name.trim(), values: cleaned });
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), values: cleaned });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -222,7 +274,10 @@ function AddVariationModal({ initial, onSave, onClose }) {
           </div>
         </div>
         <div style={m.footer}>
-          <button style={m.btnSave} onClick={handleSave}>🖫 Save</button>
+          <button style={{ ...m.btnSave, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}
+            onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "🖫 Save"}
+          </button>
           <button style={m.btnClose} onClick={onClose}>Close</button>
         </div>
       </div>

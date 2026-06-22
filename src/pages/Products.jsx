@@ -1,13 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
+import { productsAPI, brandsAPI, unitsAPI, categoriesAPI } from "../api/productAPI";
 
-const UNITS = ["Piece", "Kg", "Litre", "Box", "Pack", "Dozen"];
-const BRANDS = ["Samsung", "Apple", "Sony", "LG", "Bosch", "Generic"];
-const CATEGORIES = ["Electronics", "Clothing", "Food & Beverage", "Stationery", "Home & Kitchen", "Other"];
-const SUB_CATEGORIES = ["Mobile Phones", "Laptops", "Accessories", "Kitchen Appliances", "Office Supplies", "Beverages"];
-const TAXES = ["None", "GST 5%", "GST 12%", "GST 18%", "GST 28%"];
-const TAX_TYPES = ["Exclusive", "Inclusive"];
+// ── Static options (unchanged from original) ──
+const TAXES        = ["None", "GST 5%", "GST 12%", "GST 18%", "GST 28%"];
+const TAX_TYPES    = ["Exclusive", "Inclusive"];
 const PRODUCT_TYPES = ["Single", "Variable"];
 const BARCODE_TYPES = ["Code 128 (C128)", "EAN-13", "EAN-8", "QR Code", "UPC-A"];
 
@@ -23,32 +21,11 @@ const EMPTY_FORM = {
   image: null, imagePreview: null,
 };
 
-const SEED_PRODUCTS = [
-  { id: 1, name: "Samsung Galaxy S24", sku: "SGS24-128-BLK", barcodeType: "EAN-13", unit: "Piece", brand: "Samsung", category: "Electronics", subCategory: "Mobile Phones", businessLocation: "Manodtechnologies (BL0001)", alertQty: "5", manageStock: true, description: "Latest Samsung flagship smartphone", weight: "0.167", prepTime: "", tax: "GST 18%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "52999", incTax: "62539", margin: "22.00", excTaxSell: "64690", image: null, imagePreview: null, currentStock: 42 },
-  { id: 2, name: "Apple iPhone 15 Pro", sku: "AIPH15P-256", barcodeType: "EAN-13", unit: "Piece", brand: "Apple", category: "Electronics", subCategory: "Mobile Phones", businessLocation: "Manodtechnologies (BL0001)", alertQty: "3", manageStock: true, description: "Apple iPhone 15 Pro 256GB", weight: "0.187", prepTime: "", tax: "GST 18%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "109900", incTax: "129682", margin: "18.00", excTaxSell: "134990", image: null, imagePreview: null, currentStock: 18 },
-  { id: 3, name: "Sony WH-1000XM5 Headphones", sku: "SNY-WH1000XM5", barcodeType: "Code 128 (C128)", unit: "Piece", brand: "Sony", category: "Electronics", subCategory: "Accessories", businessLocation: "Manodtechnologies (BL0001)", alertQty: "8", manageStock: true, description: "Industry-leading noise cancelling headphones", weight: "0.250", prepTime: "", tax: "GST 18%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "22000", incTax: "25960", margin: "25.00", excTaxSell: "29990", image: null, imagePreview: null, currentStock: 35 },
-  { id: 4, name: "LG 32\" 4K Monitor", sku: "LG-32UN880-B", barcodeType: "EAN-13", unit: "Piece", brand: "LG", category: "Electronics", subCategory: "Accessories", businessLocation: "Manodtechnologies (BL0001)", alertQty: "4", manageStock: true, description: "32 inch UltraFine 4K USB-C Monitor", weight: "5.900", prepTime: "", tax: "GST 18%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "41500", incTax: "48970", margin: "20.00", excTaxSell: "49990", image: null, imagePreview: null, currentStock: 12 },
-  { id: 5, name: "Bosch Cordless Drill Set", sku: "BSH-GSR12V-15", barcodeType: "Code 128 (C128)", unit: "Piece", brand: "Bosch", category: "Home & Kitchen", subCategory: "Kitchen Appliances", businessLocation: "Manodtechnologies (BL0001)", alertQty: "6", manageStock: true, description: "12V Professional Cordless Drill/Driver", weight: "1.100", prepTime: "", tax: "GST 12%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "5200", incTax: "5824", margin: "30.00", excTaxSell: "6999", image: null, imagePreview: null, currentStock: 27 },
-  { id: 6, name: "A4 Premium Copy Paper 500 Sheets", sku: "PAPER-A4-500", barcodeType: "EAN-8", unit: "Pack", brand: "Generic", category: "Stationery", subCategory: "Office Supplies", businessLocation: "Manodtechnologies (BL0001)", alertQty: "20", manageStock: true, description: "80 GSM A4 White Copy Paper", weight: "2.400", prepTime: "", tax: "GST 5%", sellingPriceTaxType: "Inclusive", productType: "Single", excTax: "285", incTax: "299", margin: "20.00", excTaxSell: "349", image: null, imagePreview: null, currentStock: 156 },
-  { id: 7, name: "Nescafe Gold Blend 200g", sku: "NSCF-GOLD-200", barcodeType: "EAN-13", unit: "Box", brand: "Generic", category: "Food & Beverage", subCategory: "Beverages", businessLocation: "Manodtechnologies (BL0001)", alertQty: "15", manageStock: true, description: "Premium instant coffee blend, 200g jar", weight: "0.280", prepTime: "", tax: "GST 5%", sellingPriceTaxType: "Inclusive", productType: "Single", excTax: "445", incTax: "467", margin: "22.00", excTaxSell: "549", image: null, imagePreview: null, currentStock: 88 },
-  { id: 8, name: "MacBook Air M3 13-inch", sku: "APPL-MBA-M3-256", barcodeType: "EAN-13", unit: "Piece", brand: "Apple", category: "Electronics", subCategory: "Laptops", businessLocation: "Manodtechnologies (BL0001)", alertQty: "2", manageStock: true, description: "MacBook Air 13-inch, M3 chip, 8GB RAM, 256GB SSD", weight: "1.240", prepTime: "", tax: "GST 18%", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "88999", incTax: "105019", margin: "15.00", excTaxSell: "114900", image: null, imagePreview: null, currentStock: 9 },
-  { id: 9, name: "Classmate Notebook 200 Pages", sku: "CLS-NB200-RLD", barcodeType: "EAN-8", unit: "Piece", brand: "Generic", category: "Stationery", subCategory: "Office Supplies", businessLocation: "Manodtechnologies (BL0001)", alertQty: "50", manageStock: true, description: "A4 Ruled Notebook, 200 pages", weight: "0.320", prepTime: "", tax: "None", sellingPriceTaxType: "Exclusive", productType: "Single", excTax: "55", incTax: "55", margin: "35.00", excTaxSell: "75", image: null, imagePreview: null, currentStock: 240 },
-  { id: 10, name: "Instant Noodles Masala Pack 12x", sku: "MAGGI-12PK-MSL", barcodeType: "EAN-13", unit: "Box", brand: "Generic", category: "Food & Beverage", subCategory: "Beverages", businessLocation: "Manodtechnologies (BL0001)", alertQty: "30", manageStock: true, description: "Masala Instant Noodles, 12-pack carton", weight: "0.840", prepTime: "", tax: "GST 5%", sellingPriceTaxType: "Inclusive", productType: "Single", excTax: "140", incTax: "147", margin: "15.00", excTaxSell: "169", image: null, imagePreview: null, currentStock: 0 },
-];
-
-let _products = [...SEED_PRODUCTS];
-let _listeners = [];
-const subscribe = (fn) => { _listeners.push(fn); return () => { _listeners = _listeners.filter(l => l !== fn); }; };
-const getProducts = () => _products;
-const setProducts = (updater) => {
-  _products = typeof updater === "function" ? updater(_products) : updater;
-  _listeners.forEach(fn => fn(_products));
-};
-
+// ── Export helpers (unchanged from original) ──
 const exportCSV = (products) => {
   if (!products.length) { alert("No products to export"); return; }
   const headers = ["Product Name","SKU","Barcode Type","Unit","Brand","Category","Sub Category","Business Location","Alert Qty","Tax","Tax Type","Product Type","Purchase Price (Exc.)","Purchase Price (Inc.)","Margin (%)","Selling Price (Exc.)","Current Stock","Weight","Description"];
-  const rows = products.map(p => [p.name,p.sku,p.barcodeType,p.unit,p.brand,p.category,p.subCategory,p.businessLocation,p.alertQty,p.tax,p.sellingPriceTaxType,p.productType,p.excTax,p.incTax,p.margin,p.excTaxSell,p.currentStock??0,p.weight,p.description]);
+  const rows = products.map(p => [p.name,p.sku,p.barcode_type||p.barcodeType,p.unit,p.brand,p.category,p.sub_category||p.subCategory,p.business_location||p.businessLocation,p.alert_qty||p.alertQty,p.tax,p.selling_price_tax_type||p.sellingPriceTaxType,p.product_type||p.productType,p.exc_tax||p.excTax,p.inc_tax||p.incTax,p.margin,p.exc_tax_sell||p.excTaxSell,p.current_stock??p.currentStock??0,p.weight,p.description]);
   const csv = [headers,...rows].map(r=>r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(",")).join("\n");
   const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
@@ -58,9 +35,9 @@ const exportCSV = (products) => {
 
 const exportExcel = (products) => {
   if (!products.length) { alert("No products to export"); return; }
-  const data = products.map(p => ({"Product Name":p.name,"SKU":p.sku||"","Barcode Type":p.barcodeType||"","Unit":p.unit||"","Brand":p.brand||"","Category":p.category||"","Sub Category":p.subCategory||"","Business Location":p.businessLocation||"","Alert Qty":p.alertQty||"","Applicable Tax":p.tax||"","Tax Type":p.sellingPriceTaxType||"","Product Type":p.productType||"","Purchase Price (Exc. Tax)":p.excTax||"","Purchase Price (Inc. Tax)":p.incTax||"","Margin (%)":p.margin||"","Selling Price (Exc. Tax)":p.excTaxSell||"","Current Stock":p.currentStock??0,"Weight (kg)":p.weight||"","Description":p.description||""}));
+  const data = products.map(p => ({"Product Name":p.name,"SKU":p.sku||"","Unit":p.unit||"","Brand":p.brand||"","Category":p.category||"","Selling Price":p.exc_tax_sell||p.excTaxSell||"","Current Stock":p.current_stock??p.currentStock??0,"Status":p.status||"Active"}));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = Object.keys(data[0]).map(k=>({wch:Math.max(k.length+2,18)}));
+  ws["!cols"] = Object.keys(data[0]).map(k=>({wch:Math.max(k.length+2,16)}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,"Products");
   XLSX.writeFile(wb,"products.xlsx");
@@ -68,14 +45,15 @@ const exportExcel = (products) => {
 
 const exportPDF = (products) => {
   if (!products.length) { alert("No products to export"); return; }
-  const rows = products.map(p=>`<tr><td>${p.name}</td><td>${p.sku||''}</td><td>${p.unit||''}</td><td>${p.brand||''}</td><td>${p.category||''}</td><td>Rs.${p.excTaxSell||'-'}</td><td>${p.currentStock??0}</td><td>${p.productType}</td><td>${p.tax}</td></tr>`).join("");
-  const html = `<!DOCTYPE html><html><head><title>Products</title><style>body{font-family:sans-serif;font-size:11px;padding:20px}h2{color:#1a1a2e}table{width:100%;border-collapse:collapse}th{background:#2d7a3a;color:#fff;padding:7px 8px;text-align:left}td{padding:6px 8px;border-bottom:1px solid #eee}tr:nth-child(even){background:#f9f9f9}.footer{margin-top:20px;font-size:10px;color:#999;text-align:center}</style></head><body><h2>Products Report</h2><p style="color:#666;font-size:11px">Generated: ${new Date().toLocaleString()}</p><table><thead><tr><th>Product</th><th>SKU</th><th>Unit</th><th>Brand</th><th>Category</th><th>Selling Price</th><th>Stock</th><th>Type</th><th>Tax</th></tr></thead><tbody>${rows}</tbody></table><div class="footer">Manod Technologies - V7.0 | Copyright 2026</div></body></html>`;
+  const rows = products.map(p=>`<tr><td>${p.name}</td><td>${p.sku||''}</td><td>${p.unit||''}</td><td>${p.brand||''}</td><td>${p.category||''}</td><td>Rs.${p.exc_tax_sell||p.excTaxSell||'-'}</td><td>${p.current_stock??p.currentStock??0}</td><td>${p.product_type||p.productType}</td><td>${p.tax}</td></tr>`).join("");
+  const html = `<!DOCTYPE html><html><head><title>Products</title><style>body{font-family:sans-serif;font-size:11px;padding:20px}h2{color:#1a1a2e}table{width:100%;border-collapse:collapse}th{background:#2d7a3a;color:#fff;padding:7px 8px;text-align:left}td{padding:6px 8px;border-bottom:1px solid #eee}tr:nth-child(even){background:#f9f9f9}</style></head><body><h2>Products Report</h2><p style="color:#666;font-size:11px">Generated: ${new Date().toLocaleString()}</p><table><thead><tr><th>Product</th><th>SKU</th><th>Unit</th><th>Brand</th><th>Category</th><th>Selling Price</th><th>Stock</th><th>Type</th><th>Tax</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
   const win = window.open("","_blank");
   win.document.write(html);
   win.document.close();
   win.print();
 };
 
+// ── Field wrapper (unchanged from original) ──
 function Field({ label, children, style }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
@@ -85,11 +63,64 @@ function Field({ label, children, style }) {
   );
 }
 
-export function AddProductForm({ onSaved }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+// ─────────────────────────────────────────────────────────────
+// ADD PRODUCT FORM
+// ─────────────────────────────────────────────────────────────
+export function AddProductForm({ onSaved, editProduct }) {
+  const [form, setForm]       = useState(editProduct ? {
+    name:                editProduct.name || "",
+    sku:                 editProduct.sku  || "",
+    barcodeType:         editProduct.barcode_type || "Code 128 (C128)",
+    unit:                editProduct.unit  || "",
+    brand:               editProduct.brand || "",
+    category:            editProduct.category || "",
+    subCategory:         editProduct.sub_category || "",
+    businessLocation:    editProduct.business_location || "Manodtechnologies (BL0001)",
+    alertQty:            editProduct.alert_qty ?? "",
+    manageStock:         editProduct.manage_stock ?? true,
+    description:         editProduct.description || "",
+    weight:              editProduct.weight ?? "",
+    prepTime:            editProduct.prep_time ?? "",
+    tax:                 editProduct.tax || "None",
+    sellingPriceTaxType: editProduct.selling_price_tax_type || "Exclusive",
+    productType:         editProduct.product_type || "Single",
+    excTax:              editProduct.exc_tax ?? "",
+    incTax:              editProduct.inc_tax ?? "",
+    margin:              editProduct.margin ?? "25.00",
+    excTaxSell:          editProduct.exc_tax_sell ?? "",
+    image: null, imagePreview: null,
+  } : EMPTY_FORM);
+
+  const [saving, setSaving]       = useState(false);
+  const [units, setUnits]         = useState([]);
+  const [brands, setBrands]       = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
   const fileRef = useRef();
   const navigate = useNavigate();
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Load dropdown data from API
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [u, b, c] = await Promise.all([
+          unitsAPI.getAll({ limit: 100 }),
+          brandsAPI.getAll({ limit: 100 }),
+          categoriesAPI.getAll({ limit: 100 }),
+        ]);
+        setUnits(u.units || []);
+        setBrands(b.brands || []);
+        // Split into parent categories and sub-categories
+        const allCats = c.categories || [];
+        setCategories(allCats.filter(cat => !cat.parent_id));
+        setSubCategories(allCats.filter(cat => !!cat.parent_id));
+      } catch (err) {
+        console.error("Failed to load dropdown data:", err.message);
+      }
+    };
+    load();
+  }, []);
 
   const handleImage = (e) => {
     const file = e.target.files[0];
@@ -100,14 +131,50 @@ export function AddProductForm({ onSaved }) {
     reader.readAsDataURL(file);
   };
 
-  const save = (andNew = false) => {
+  const save = async (andNew = false) => {
     if (!form.name.trim()) { alert("Product Name is required"); return; }
-    if (!form.unit) { alert("Unit is required"); return; }
-    const product = { ...form, id: Date.now(), currentStock: 0 };
-    setProducts(prev => [...prev, product]);
-    if (onSaved) { onSaved(product); return; }
-    if (andNew) setForm(EMPTY_FORM);
-    else navigate("/products/");
+    if (!form.unit)        { alert("Unit is required"); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        name:                    form.name,
+        sku:                     form.sku || null,
+        barcode_type:            form.barcodeType,
+        unit:                    form.unit,
+        brand:                   form.brand || null,
+        category:                form.category || null,
+        sub_category:            form.subCategory || null,
+        business_location:       form.businessLocation,
+        alert_qty:               form.alertQty || 0,
+        manage_stock:            form.manageStock,
+        description:             form.description || null,
+        weight:                  form.weight || null,
+        prep_time:               form.prepTime || null,
+        tax:                     form.tax,
+        selling_price_tax_type:  form.sellingPriceTaxType,
+        product_type:            form.productType,
+        exc_tax:                 form.excTax || 0,
+        inc_tax:                 form.incTax || 0,
+        margin:                  form.margin || 0,
+        exc_tax_sell:            form.excTaxSell || 0,
+        status:                  "Active",
+      };
+
+      let saved;
+      if (editProduct) {
+        saved = await productsAPI.update(editProduct.id, payload);
+      } else {
+        saved = await productsAPI.create(payload);
+      }
+
+      if (onSaved) { onSaved(saved.product); return; }
+      if (andNew)  { setForm(EMPTY_FORM); }
+      else          { navigate("/products/"); }
+    } catch (err) {
+      alert(err.message || "Failed to save product");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -116,26 +183,64 @@ export function AddProductForm({ onSaved }) {
         <div style={s.row3}>
           <Field label="Product Name *"><input style={s.input} placeholder="e.g. Samsung Galaxy S24" value={form.name} onChange={e=>set("name",e.target.value)}/></Field>
           <Field label="SKU"><input style={s.input} placeholder="e.g. SGS24-128-BLK" value={form.sku} onChange={e=>set("sku",e.target.value)}/></Field>
-          <Field label="Barcode Type *"><select style={s.input} value={form.barcodeType} onChange={e=>set("barcodeType",e.target.value)}>{BARCODE_TYPES.map(b=><option key={b}>{b}</option>)}</select></Field>
+          <Field label="Barcode Type *">
+            <select style={s.input} value={form.barcodeType} onChange={e=>set("barcodeType",e.target.value)}>
+              {BARCODE_TYPES.map(b=><option key={b}>{b}</option>)}
+            </select>
+          </Field>
         </div>
         <div style={s.row3}>
-          <Field label="Unit *"><select style={s.input} value={form.unit} onChange={e=>set("unit",e.target.value)}><option value="">Please Select</option>{UNITS.map(u=><option key={u}>{u}</option>)}</select></Field>
-          <Field label="Brand"><select style={s.input} value={form.brand} onChange={e=>set("brand",e.target.value)}><option value="">Please Select</option>{BRANDS.map(b=><option key={b}>{b}</option>)}</select></Field>
-          <Field label="Category"><select style={s.input} value={form.category} onChange={e=>set("category",e.target.value)}><option value="">Please Select</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+          <Field label="Unit *">
+            <select style={s.input} value={form.unit} onChange={e=>set("unit",e.target.value)}>
+              <option value="">Please Select</option>
+              {units.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Brand">
+            <select style={s.input} value={form.brand} onChange={e=>set("brand",e.target.value)}>
+              <option value="">Please Select</option>
+              {brands.map(b=><option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Category">
+            <select style={s.input} value={form.category} onChange={e=>set("category",e.target.value)}>
+              <option value="">Please Select</option>
+              {categories.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </Field>
         </div>
         <div style={s.row3}>
-          <Field label="Sub Category"><select style={s.input} value={form.subCategory} onChange={e=>set("subCategory",e.target.value)}><option value="">Please Select</option>{SUB_CATEGORIES.map(sc=><option key={sc}>{sc}</option>)}</select></Field>
-          <Field label="Business Locations"><div style={s.locationBox}><span style={s.locationBadge}>x {form.businessLocation}</span></div></Field>
-          <Field label="Alert Quantity"><input style={s.input} placeholder="e.g. 10" type="number" value={form.alertQty} onChange={e=>set("alertQty",e.target.value)}/></Field>
+          <Field label="Sub Category">
+            <select style={s.input} value={form.subCategory} onChange={e=>set("subCategory",e.target.value)}>
+              <option value="">Please Select</option>
+              {subCategories.map(sc=><option key={sc.id} value={sc.name}>{sc.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Business Locations">
+            <div style={s.locationBox}><span style={s.locationBadge}>x {form.businessLocation}</span></div>
+          </Field>
+          <Field label="Alert Quantity">
+            <input style={s.input} placeholder="e.g. 10" type="number" value={form.alertQty} onChange={e=>set("alertQty",e.target.value)}/>
+          </Field>
         </div>
         <div style={s.row2}>
-          <Field label=""><label style={s.checkLabel}><input type="checkbox" checked={form.manageStock} onChange={e=>set("manageStock",e.target.checked)} style={{marginRight:8,accentColor:"#2d7a3a"}}/><span style={{fontWeight:600,color:"#374151"}}>Manage Stock?</span><span style={{color:"#888",fontSize:12,marginLeft:6,fontStyle:"italic"}}>Enable stock management at product level</span></label></Field>
+          <Field label="">
+            <label style={s.checkLabel}>
+              <input type="checkbox" checked={form.manageStock} onChange={e=>set("manageStock",e.target.checked)} style={{marginRight:8,accentColor:"#2d7a3a"}}/>
+              <span style={{fontWeight:600,color:"#374151"}}>Manage Stock?</span>
+              <span style={{color:"#888",fontSize:12,marginLeft:6,fontStyle:"italic"}}>Enable stock management at product level</span>
+            </label>
+          </Field>
         </div>
         <div style={s.row2}>
-          <Field label="Product Description"><textarea style={{...s.input,height:100,resize:"vertical"}} placeholder="Enter product description..." value={form.description} onChange={e=>set("description",e.target.value)}/></Field>
+          <Field label="Product Description">
+            <textarea style={{...s.input,height:100,resize:"vertical"}} placeholder="Enter product description..." value={form.description} onChange={e=>set("description",e.target.value)}/>
+          </Field>
           <Field label="Product Image">
             <div style={s.imgArea}>
-              {form.imagePreview?<img src={form.imagePreview} alt="preview" style={s.imgPreview}/>:<div style={s.imgEmpty}>No image</div>}
+              {form.imagePreview
+                ? <img src={form.imagePreview} alt="preview" style={s.imgPreview}/>
+                : <div style={s.imgEmpty}>No image</div>}
               <button style={s.browseBtn} onClick={()=>fileRef.current.click()}>Browse...</button>
               <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleImage}/>
               <span style={s.imgNote}>Max File size: 5MB · Aspect ratio 1:1</span>
@@ -150,10 +255,22 @@ export function AddProductForm({ onSaved }) {
 
       <div style={s.card}>
         <div style={s.row2}>
-          <Field label="Applicable Tax"><select style={s.input} value={form.tax} onChange={e=>set("tax",e.target.value)}>{TAXES.map(t=><option key={t}>{t}</option>)}</select></Field>
-          <Field label="Selling Price Tax Type *"><select style={s.input} value={form.sellingPriceTaxType} onChange={e=>set("sellingPriceTaxType",e.target.value)}>{TAX_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+          <Field label="Applicable Tax">
+            <select style={s.input} value={form.tax} onChange={e=>set("tax",e.target.value)}>
+              {TAXES.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Selling Price Tax Type *">
+            <select style={s.input} value={form.sellingPriceTaxType} onChange={e=>set("sellingPriceTaxType",e.target.value)}>
+              {TAX_TYPES.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </Field>
         </div>
-        <Field label="Product Type *" style={{maxWidth:320}}><select style={s.input} value={form.productType} onChange={e=>set("productType",e.target.value)}>{PRODUCT_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+        <Field label="Product Type *" style={{maxWidth:320}}>
+          <select style={s.input} value={form.productType} onChange={e=>set("productType",e.target.value)}>
+            {PRODUCT_TYPES.map(t=><option key={t}>{t}</option>)}
+          </select>
+        </Field>
         <div style={s.pricingWrap}>
           <div style={s.pricingHead}>
             <div>Default Purchase Price</div><div>x Margin(%)</div><div>Default Selling Price</div><div>Product Image</div>
@@ -165,13 +282,17 @@ export function AddProductForm({ onSaved }) {
               <div style={{...s.pricingFieldLabel,marginTop:10}}>Inc. tax *</div>
               <input style={s.input} placeholder="0.00" type="number" value={form.incTax} onChange={e=>set("incTax",e.target.value)}/>
             </div>
-            <div style={s.pricingCell}><input style={s.input} type="number" value={form.margin} onChange={e=>set("margin",e.target.value)}/></div>
+            <div style={s.pricingCell}>
+              <input style={s.input} type="number" value={form.margin} onChange={e=>set("margin",e.target.value)}/>
+            </div>
             <div style={s.pricingCell}>
               <div style={s.pricingFieldLabel}>Exc. Tax</div>
               <input style={s.input} placeholder="0.00" type="number" value={form.excTaxSell} onChange={e=>set("excTaxSell",e.target.value)}/>
             </div>
             <div style={s.pricingCell}>
-              {form.imagePreview?<img src={form.imagePreview} alt="product" style={{width:64,height:64,objectFit:"cover",borderRadius:6}}/>:<span style={{color:"#bbb",fontSize:13}}>No file chosen</span>}
+              {form.imagePreview
+                ? <img src={form.imagePreview} alt="product" style={{width:64,height:64,objectFit:"cover",borderRadius:6}}/>
+                : <span style={{color:"#bbb",fontSize:13}}>No file chosen</span>}
               <div style={s.imgNote}>Max 5MB · 1:1</div>
             </div>
           </div>
@@ -179,14 +300,23 @@ export function AddProductForm({ onSaved }) {
       </div>
 
       <div style={s.formFooter}>
-        <button style={s.btnSaveStock} onClick={()=>save(false)}>Save &amp; Add Opening Stock</button>
-        <button style={s.btnSaveAnother} onClick={()=>save(true)}>Save And Add Another</button>
-        <button style={s.btnSave} onClick={()=>save(false)}>Save</button>
+        <button style={{...s.btnSaveStock, opacity: saving ? 0.7 : 1}} onClick={()=>save(false)} disabled={saving}>
+          {saving ? "Saving..." : "Save & Add Opening Stock"}
+        </button>
+        <button style={{...s.btnSaveAnother, opacity: saving ? 0.7 : 1}} onClick={()=>save(true)} disabled={saving}>
+          {saving ? "Saving..." : "Save And Add Another"}
+        </button>
+        <button style={{...s.btnSave, opacity: saving ? 0.7 : 1}} onClick={()=>save(false)} disabled={saving}>
+          {saving ? "Saving..." : "Save"}
+        </button>
       </div>
     </div>
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// ADD PRODUCT PAGE
+// ─────────────────────────────────────────────────────────────
 export function AddProductPage() {
   const navigate = useNavigate();
   return (
@@ -197,48 +327,97 @@ export function AddProductPage() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+// LIST PRODUCTS (default export)
+// ─────────────────────────────────────────────────────────────
 export default function ListProducts() {
   const navigate = useNavigate();
-  const [products, setLocalProducts] = useState(getProducts());
-  const [search, setSearch] = useState("");
+  const [products, setProducts]     = useState([]);
+  const [total, setTotal]           = useState(0);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [search, setSearch]         = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [showEntries, setShowEntries] = useState(25);
-  const [activeTab, setActiveTab] = useState("all");
-  const [selected, setSelected] = useState([]);
+  const [activeTab, setActiveTab]   = useState("all");
+  const [selected, setSelected]     = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [editProduct, setEditProduct] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
-  useState(() => { const unsub = subscribe(setLocalProducts); return unsub; });
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await productsAPI.getAll({
+        page: currentPage,
+        limit: showEntries,
+        search,
+      });
+      setProducts(data.products || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      setError(err.message || "Failed to load products");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, showEntries, search]);
 
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.sku||"").toLowerCase().includes(search.toLowerCase()) ||
-    (p.category||"").toLowerCase().includes(search.toLowerCase()) ||
-    (p.brand||"").toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / showEntries));
-  const paginated = filtered.slice((currentPage-1)*showEntries, currentPage*showEntries);
+  // Search debounce
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setCurrentPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const toggleSelect = (id) => setSelected(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
-  const toggleAll = () => setSelected(selected.length===paginated.length?[]:paginated.map(p=>p.id));
+  const totalPages = Math.max(1, Math.ceil(total / showEntries));
 
-  const deleteProduct = (id) => {
+  const toggleSelect  = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleAll     = () => setSelected(selected.length === products.length && products.length > 0 ? [] : products.map(p => p.id));
+
+  const handleDelete = async (id) => {
     if (!window.confirm("Delete this product?")) return;
-    setProducts(prev=>prev.filter(p=>p.id!==id));
-    setLocalProducts(getProducts());
+    try {
+      await productsAPI.delete(id);
+      await loadProducts();
+    } catch (err) {
+      alert(err.message || "Failed to delete product");
+    }
   };
 
-  const deleteSelected = () => {
+  const handleDeleteSelected = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
     if (!window.confirm(`Delete ${selected.length} product(s)?`)) return;
-    setProducts(prev=>prev.filter(p=>!selected.includes(p.id)));
-    setLocalProducts(getProducts());
-    setSelected([]);
+    try {
+      await Promise.all(selected.map(id => productsAPI.delete(id)));
+      setSelected([]);
+      await loadProducts();
+    } catch (err) {
+      alert(err.message || "Failed to delete products");
+    }
+  };
+
+  const handleDeactivateSelected = async () => {
+    if (!selected.length) { alert("Select at least one product"); return; }
+    try {
+      await Promise.all(selected.map(id => productsAPI.updateStatus(id, "Inactive")));
+      setSelected([]);
+      await loadProducts();
+    } catch (err) {
+      alert(err.message || "Failed to deactivate products");
+    }
+  };
+
+  const openEdit = (product) => {
+    setEditProduct(product);
+    setShowEditModal(true);
   };
 
   const stockStyle = (qty) => {
-    if (qty===0) return {bg:"#fee2e2",color:"#991b1b"};
-    if (qty<10) return {bg:"#fef3c7",color:"#92400e"};
-    return {bg:"#d1fae5",color:"#065f46"};
+    if (qty === 0) return { bg: "#fee2e2", color: "#991b1b" };
+    if (qty < 10)  return { bg: "#fef3c7", color: "#92400e" };
+    return { bg: "#d1fae5", color: "#065f46" };
   };
 
   return (
@@ -253,6 +432,12 @@ export default function ListProducts() {
           <button style={s.btnExcel} onClick={()=>exportExcel(products)}>Download Excel</button>
         </div>
       </div>
+
+      {error && (
+        <div style={{ background: "#fff3cd", border: "1px solid #ffc107", borderRadius: 6, padding: "10px 16px", marginBottom: 12, color: "#856404" }}>
+          {error}
+        </div>
+      )}
 
       <div style={s.filtersBar}>
         <span style={{color:"#2d7a3a",fontWeight:600,fontSize:14}}>Filters</span>
@@ -279,7 +464,7 @@ export default function ListProducts() {
           <button style={s.toolBtn} onClick={()=>exportPDF(products)}>Print</button>
           <button style={s.toolBtn}>Column visibility</button>
           <button style={{...s.toolBtn,...s.toolBtnPDF}} onClick={()=>exportPDF(products)}><span style={{...s.tbIcon,background:"#d32f2f"}}>PDF</span>Export PDF</button>
-          <input style={s.searchBox} placeholder="Search ..." value={search} onChange={e=>{setSearch(e.target.value);setCurrentPage(1);}}/>
+          <input style={s.searchBox} placeholder="Search ..." value={searchInput} onChange={e=>{setSearchInput(e.target.value);}}/>
         </div>
       </div>
 
@@ -287,7 +472,7 @@ export default function ListProducts() {
         <table style={s.table}>
           <thead>
             <tr style={s.theadRow}>
-              <th style={s.th}><input type="checkbox" checked={selected.length===paginated.length&&paginated.length>0} onChange={toggleAll}/></th>
+              <th style={s.th}><input type="checkbox" checked={selected.length===products.length&&products.length>0} onChange={toggleAll}/></th>
               <th style={s.th}>Product Image</th>
               <th style={s.th}>Action</th>
               <th style={s.th}>Product</th>
@@ -300,34 +485,48 @@ export default function ListProducts() {
               <th style={s.th}>Brand</th>
               <th style={s.th}>Tax</th>
               <th style={s.th}>SKU</th>
+              <th style={s.th}>Status</th>
             </tr>
           </thead>
           <tbody>
-            {paginated.length===0?(
-              <tr><td colSpan={13} style={s.noData}>No data available in table</td></tr>
-            ):(
-              paginated.map((p,i)=>{
-                const sc=stockStyle(p.currentStock??0);
+            {loading ? (
+              <tr><td colSpan={14} style={s.noData}>Loading...</td></tr>
+            ) : products.length === 0 ? (
+              <tr><td colSpan={14} style={s.noData}>No data available in table</td></tr>
+            ) : (
+              products.map((p, i) => {
+                const sc = stockStyle(p.current_stock ?? 0);
                 return (
                   <tr key={p.id} style={i%2===0?s.rowEven:s.rowOdd}
                     onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"}
                     onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#fafafa"}>
                     <td style={s.td}><input type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggleSelect(p.id)}/></td>
-                    <td style={s.td}>{p.imagePreview?<img src={p.imagePreview} alt={p.name} style={{width:42,height:42,objectFit:"cover",borderRadius:6,border:"1px solid #e5e7eb"}}/>:<div style={s.noImg}>-</div>}</td>
                     <td style={s.td}>
-                      <button style={s.actionEdit} onClick={()=>navigate("/products/create")}>Edit</button>
-                      <button style={s.actionDel} onClick={()=>deleteProduct(p.id)}>Del</button>
+                      {p.image_url
+                        ? <img src={p.image_url} alt={p.name} style={{width:42,height:42,objectFit:"cover",borderRadius:6,border:"1px solid #e5e7eb"}}/>
+                        : <div style={s.noImg}>-</div>}
+                    </td>
+                    <td style={s.td}>
+                      <button style={s.actionEdit} onClick={()=>openEdit(p)}>Edit</button>
+                      <button style={s.actionDel}  onClick={()=>handleDelete(p.id)}>Del</button>
                     </td>
                     <td style={{...s.td,fontWeight:500}}>{p.name}</td>
-                    <td style={s.td}>{p.businessLocation}</td>
-                    <td style={s.td}>{p.excTax?`Rs.${Number(p.excTax).toLocaleString("en-IN")}`:"--"}</td>
-                    <td style={{...s.td,fontWeight:600}}>{p.excTaxSell?`Rs.${Number(p.excTaxSell).toLocaleString("en-IN")}`:"--"}</td>
-                    <td style={s.td}><span style={{...s.stockBadge,background:sc.bg,color:sc.color}}>{p.currentStock??0}</span></td>
-                    <td style={s.td}>{p.productType}</td>
-                    <td style={s.td}>{p.category||"--"}</td>
-                    <td style={s.td}>{p.brand||"--"}</td>
+                    <td style={s.td}>{p.business_location}</td>
+                    <td style={s.td}>{p.exc_tax ? `Rs.${Number(p.exc_tax).toLocaleString("en-IN")}` : "--"}</td>
+                    <td style={{...s.td,fontWeight:600}}>{p.exc_tax_sell ? `Rs.${Number(p.exc_tax_sell).toLocaleString("en-IN")}` : "--"}</td>
+                    <td style={s.td}><span style={{...s.stockBadge,background:sc.bg,color:sc.color}}>{p.current_stock ?? 0}</span></td>
+                    <td style={s.td}>{p.product_type}</td>
+                    <td style={s.td}>{p.category || "--"}</td>
+                    <td style={s.td}>{p.brand || "--"}</td>
                     <td style={s.td}>{p.tax}</td>
-                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{p.sku||"--"}</td>
+                    <td style={{...s.td,fontFamily:"monospace",fontSize:12}}>{p.sku || "--"}</td>
+                    <td style={s.td}>
+                      <span style={{
+                        background: p.status === "Active" ? "#d1fae5" : "#fee2e2",
+                        color:      p.status === "Active" ? "#065f46" : "#991b1b",
+                        borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 500
+                      }}>{p.status || "Active"}</span>
+                    </td>
                   </tr>
                 );
               })
@@ -337,22 +536,44 @@ export default function ListProducts() {
       </div>
 
       <div style={s.bulkRow}>
-        <button style={s.bulkDel} onClick={deleteSelected}>Delete Selected</button>
+        <button style={s.bulkDel}   onClick={handleDeleteSelected}>Delete Selected</button>
         <button style={s.bulkAdd}>Add to location</button>
         <button style={s.bulkRem}>Remove from location</button>
-        <button style={s.bulkDeact}>Deactivate Selected</button>
+        <button style={s.bulkDeact} onClick={handleDeactivateSelected}>Deactivate Selected</button>
       </div>
 
       <div style={s.footerRow}>
-        <span>Showing {paginated.length===0?"0":`${(currentPage-1)*showEntries+1}`} to {Math.min(currentPage*showEntries,filtered.length)} of {filtered.length} entries</span>
+        <span>
+          Showing {products.length===0?"0":`${(currentPage-1)*showEntries+1}`} to {Math.min(currentPage*showEntries,total)} of {total} entries
+        </span>
         <div style={s.pagination}>
           <button style={s.pageBtn} onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1}>Previous</button>
-          {Array.from({length:totalPages},(_,i)=>(
-            <button key={i+1} style={{...s.pageBtn,...(currentPage===i+1?s.pageBtnActive:{})}} onClick={()=>setCurrentPage(i+1)}>{i+1}</button>
-          ))}
+          {Array.from({length: Math.min(totalPages, 5)}, (_, i) => {
+            const pg = i + 1;
+            return (
+              <button key={pg} style={{...s.pageBtn,...(currentPage===pg?s.pageBtnActive:{})}} onClick={()=>setCurrentPage(pg)}>{pg}</button>
+            );
+          })}
+          {totalPages > 5 && <span style={{padding:"5px 8px",color:"#6b7280"}}>...</span>}
           <button style={s.pageBtn} onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages}>Next</button>
         </div>
       </div>
+
+      {/* Edit Product Modal */}
+      {showEditModal && editProduct && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:1000, overflowY:"auto", display:"flex", justifyContent:"center", padding:"40px 16px" }}>
+          <div style={{ background:"#f9fafb", borderRadius:12, width:"100%", maxWidth:900, padding:28, maxHeight:"90vh", overflowY:"auto" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+              <h2 style={{ margin:0, fontSize:22, fontWeight:700, color:"#1a1a2e" }}>Edit Product</h2>
+              <button onClick={()=>setShowEditModal(false)} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"#666" }}>×</button>
+            </div>
+            <AddProductForm
+              editProduct={editProduct}
+              onSaved={() => { setShowEditModal(false); loadProducts(); }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

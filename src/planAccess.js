@@ -6,26 +6,26 @@ import { getSubscription } from "./pages/Subscription";
 
 // Feature keys — group sidebar items + routes under these
 export const FEATURES = {
-  DASHBOARD:          "dashboard",
-  POS:                "pos",
-  PRODUCTS:           "products",
-  SELL:               "sell",
-  CONTACTS:           "contacts",
+  DASHBOARD:       "dashboard",
+  POS:             "pos",
+  PRODUCTS:        "products",
+  SELL:            "sell",
+  CONTACTS:        "contacts",
 
-  REPORTS:            "reports",
-  STOCK_TRANSFERS:    "stock_transfers",
-  STOCK_ADJUSTMENT:   "stock_adjustment",
-  EXPENSES:           "expenses",
-  PURCHASES:          "purchases",
-  MANUFACTURING:      "manufacturing",
+  REPORTS:         "reports",
+  STOCK_TRANSFERS: "stock_transfers",
+  STOCK_ADJUSTMENT:"stock_adjustment",
+  EXPENSES:        "expenses",
+  PURCHASES:       "purchases",
+  MANUFACTURING:   "manufacturing",   // ← covers Production Planning too now
 
-  USER_MANAGEMENT:    "user_management",
-  SETTINGS:           "settings",
-  NOTIFICATIONS:      "notifications",
-  CRM:                "crm",
-  HRM:                "hrm",
-  ESSENTIALS:         "essentials",
-  PRODUCTION_PLANNING:"production_planning",
+  USER_MANAGEMENT: "user_management",
+  SETTINGS:        "settings",
+  NOTIFICATIONS:   "notifications",
+  CRM:             "crm",
+  HRM:             "hrm",
+  ESSENTIALS:      "essentials",
+  // PRODUCTION_PLANNING removed — now nested under MANUFACTURING
 };
 
 // What each plan includes
@@ -73,8 +73,8 @@ export function hasFeature(featureKey) {
 
 export function getPlanLabel() {
   const plan = getCurrentPlan();
-  if (plan === "trial") return "Free Trial";
+  if (plan === "trial")   return "Free Trial";
   if (plan === "starter") return "Starter";
-  if (plan === "pro") return "Pro";
+  if (plan === "pro")     return "Pro";
   return "No Plan";
 }
