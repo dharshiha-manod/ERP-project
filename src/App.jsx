@@ -32,7 +32,7 @@ import Contacts, {
 } from "./pages/Contacts";
 
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
-import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
+import { ListStockTransfers, AddStockTransfer, EditStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
 import { ListExpenses, AddExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 import NotificationTemplates from "./pages/NotificationTemplates";
@@ -210,7 +210,7 @@ function AppLayout() {
           {/* Stock Transfers */}
           <Route path="/stock-transfers"        element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><ListStockTransfers /></FeatureRoute>} />
           <Route path="/stock-transfers/create" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><AddStockTransfer /></FeatureRoute>} />
-
+<Route path="/stock-transfers/:id/edit" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><EditStockTransfer /></FeatureRoute>} />
           {/* Stock Adjustment */}
           <Route path="/stock-adjustments"        element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><ListStockAdjustments /></FeatureRoute>} />
           <Route path="/stock-adjustments/create" element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><AddStockAdjustment /></FeatureRoute>} />

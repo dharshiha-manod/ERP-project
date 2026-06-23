@@ -93,6 +93,21 @@ const S = {
   modalValue: { color: "#222" },
 };
 
+// Global anchor-color rules elsewhere in the app can override inline
+// `color` on <Link> (which renders an <a>) with !important, making the
+// Add/Back buttons hard to read. This scoped override wins that fight.
+const BTN_COLOR_OVERRIDE = `
+  .st-add-btn, .st-add-btn:visited, .st-add-btn:hover, .st-add-btn:focus {
+    color: #ffffff !important;
+  }
+  .st-back-btn, .st-back-btn:visited, .st-back-btn:focus {
+    color: #2d6a4f !important;
+  }
+  .st-back-btn:hover {
+    color: #ffffff !important;
+  }
+`;
+
 function badgeStyle(status) {
   const base = { display: "inline-block", borderRadius: "20px", padding: "3px 10px", fontSize: "0.75rem", fontWeight: 600 };
   switch (status?.toLowerCase()) {
@@ -331,6 +346,7 @@ export function ListStockTransfers() {
 
   return (
     <div style={S.page} onClick={closeMenus}>
+      <style>{BTN_COLOR_OVERRIDE}</style>
       <h1 style={S.pageTitle}>Stock Transfers</h1>
 
       <div style={S.card}>
@@ -339,6 +355,7 @@ export function ListStockTransfers() {
           <h2 style={S.cardTitle}>All Stock Transfers</h2>
           <Link
             to="/stock-transfers/create"
+            className="st-add-btn"
             style={S.addBtn}
             onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(46,125,50,0.45)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(46,125,50,0.35)"; }}
@@ -689,12 +706,14 @@ function StockTransferForm({ mode }) {
 
   return (
     <div style={S.page}>
+      <style>{BTN_COLOR_OVERRIDE}</style>
       <h1 style={S.pageTitle}>Stock Transfers</h1>
       <div style={S.card}>
         <div style={S.cardHeader}>
           <h2 style={S.cardTitle}>{isEdit ? "Edit Stock Transfer" : "Add Stock Transfer"}</h2>
           <Link
             to="/stock-transfers"
+            className="st-back-btn"
             style={S.backBtn}
             onMouseEnter={(e) => { e.currentTarget.style.background = "#2d6a4f"; e.currentTarget.style.color = "#fff"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#2d6a4f"; }}
