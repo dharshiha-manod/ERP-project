@@ -1,1504 +1,1462 @@
-import { useState, useMemo } from "react";
+/**
+ * Manufacturing.jsx  — Manod ERP
+ * ─────────────────────────────────────────────────────────────────
+ * Single-file Manufacturing module.  All 10 tabs live here:
+ *   Production Planning · BOM · Work Orders · Production ·
+ *   Resources · Machines · Schedule · Quality Control ·
+ *   Maintenance · Production Reports
+ *
+ * Data: GET / POST / PUT / DELETE  →  /api/manufacturing/*
+ * Auth: Bearer token from localStorage("manod_token")
+ * ─────────────────────────────────────────────────────────────────
+ */
 
-// ─── Design Tokens ────────────────────────────────────────────────────────────
-const T = {
-  green: "#1a5c38", greenDark: "#134429", greenMid: "#256b43",
-  greenLight: "#e8f4ee", greenFaint: "#f2faf5",
-  accent: "#f0a500", accentSoft: "#fff8e6",
-  red: "#c0392b", redSoft: "#fdf0ef",
-  blue: "#2563eb", blueSoft: "#eff6ff",
-  purple: "#7c3aed", purpleSoft: "#f5f3ff",
-  amber: "#d97706", amberSoft: "#fffbeb",
-  teal: "#0d9488", tealSoft: "#f0fdfa",
-  text: "#111827", textMid: "#4b5563", textLight: "#9ca3af",
-  border: "#e5e7eb", borderMid: "#d1d5db",
-  bg: "#f8fafc", card: "#ffffff",
-  shadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
-  shadowMd: "0 4px 12px rgba(0,0,0,0.08)",
+import { useState, useEffect, useCallback } from "react";
+
+// ─── API ──────────────────────────────────────────────────────────
+const API = "/api/manufacturing";
+
+const authHeaders = () => ({
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}`,
+});
+
+async function api(path, opts = {}) {
+  const res = await fetch(`${API}${path}`, { headers: authHeaders(), ...opts });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    throw new Error(err.message || "Request failed");
+  }
+  return res.json();
+}
+
+// ─── Design tokens ────────────────────────────────────────────────
+const G = {
+  green:     "#1a5c38",
+  greenDark: "#144a2e",
+  greenMid:  "#256b43",
+  g100:      "#e8f4ee",
+  g50:       "#f2faf5",
+  amber:     "#b45309",
+  amberBg:   "#fffbeb",
+  amberBdr:  "#fde68a",
+  red:       "#b91c1c",
+  redBg:     "#fef2f2",
+  redBdr:    "#fecaca",
+  blue:      "#1d4ed8",
+  blueBg:    "#eff6ff",
+  blueBdr:   "#bfdbfe",
+  purple:    "#6d28d9",
+  purpleBg:  "#f5f3ff",
+  n900:      "#111827",
+  n800:      "#1f2937",
+  n700:      "#374151",
+  n600:      "#4b5563",
+  n500:      "#6b7280",
+  n400:      "#9ca3af",
+  n300:      "#d1d5db",
+  n200:      "#e5e7eb",
+  n100:      "#f3f4f6",
+  n50:       "#f9fafb",
+  white:     "#ffffff",
+  sh:        "0 1px 3px rgba(0,0,0,.09),0 1px 2px rgba(0,0,0,.05)",
+  shMd:      "0 4px 8px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.05)",
+  shLg:      "0 10px 24px rgba(0,0,0,.10)",
+  shXl:      "0 20px 48px rgba(0,0,0,.14)",
 };
 
-// ─── Reusable Primitives ─────────────────────────────────────────────────────
+// ─── Status config ────────────────────────────────────────────────
+const SC = {
+  planned:     { txt: G.blue,   bg: G.blueBg,   bdr: G.blueBdr   },
+  in_progress: { txt: G.amber,  bg: G.amberBg,  bdr: G.amberBdr  },
+  completed:   { txt: G.green,  bg: G.g100,     bdr: "#6ee7b7"   },
+  on_hold:     { txt: G.amber,  bg: G.amberBg,  bdr: G.amberBdr  },
+  active:      { txt: G.green,  bg: G.g100,     bdr: "#6ee7b7"   },
+  inactive:    { txt: G.n500,   bg: G.n100,     bdr: G.n300      },
+  running:     { txt: G.green,  bg: G.g100,     bdr: "#6ee7b7"   },
+  idle:        { txt: G.amber,  bg: G.amberBg,  bdr: G.amberBdr  },
+  maintenance: { txt: G.red,    bg: G.redBg,    bdr: G.redBdr    },
+  passed:      { txt: G.green,  bg: G.g100,     bdr: "#6ee7b7"   },
+  failed:      { txt: G.red,    bg: G.redBg,    bdr: G.redBdr    },
+  pending:     { txt: G.amber,  bg: G.amberBg,  bdr: G.amberBdr  },
+  scheduled:   { txt: G.blue,   bg: G.blueBg,   bdr: G.blueBdr   },
+  overdue:     { txt: G.red,    bg: G.redBg,    bdr: G.redBdr    },
+  low:         { txt: G.blue,   bg: G.blueBg,   bdr: G.blueBdr   },
+  medium:      { txt: G.amber,  bg: G.amberBg,  bdr: G.amberBdr  },
+  high:        { txt: G.red,    bg: G.redBg,    bdr: G.redBdr    },
+};
 
-const Badge = ({ label, color = T.green, bg = T.greenLight, dot }) => (
-  <span style={{
-    display: "inline-flex", alignItems: "center", gap: 5,
-    fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20,
-    color, background: bg, letterSpacing: 0.3, whiteSpace: "nowrap",
-  }}>
-    {dot && <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />}
-    {label}
-  </span>
-);
+// ─── Tiny components ──────────────────────────────────────────────
 
-const KPI = ({ icon, label, value, sub, color = T.green, bg = T.greenLight, trend }) => (
-  <div style={{
-    background: T.card, borderRadius: 12, padding: "20px 22px",
-    border: `1px solid ${T.border}`, boxShadow: T.shadow,
-    display: "flex", alignItems: "flex-start", gap: 16,
-  }}>
-    <div style={{
-      width: 44, height: 44, borderRadius: 10, background: bg,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 20, flexShrink: 0,
-    }}>{icon}</div>
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 24, fontWeight: 700, color: T.text, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 12, color: T.textMid, marginTop: 4, fontWeight: 600 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: trend === "up" ? T.green : trend === "dn" ? T.red : T.textLight, marginTop: 3 }}>{sub}</div>}
-    </div>
-  </div>
-);
-
-const ProgressBar = ({ pct, color, height = 6 }) => {
-  const c = color || (pct === 100 ? T.green : pct > 60 ? T.greenMid : pct > 30 ? T.accent : T.red);
+function Chip({ status, label }) {
+  const c = SC[status] || { txt: G.n500, bg: G.n100, bdr: G.n300 };
   return (
-    <div style={{ background: T.border, borderRadius: 4, height, width: "100%", overflow: "hidden" }}>
-      <div style={{ width: `${pct}%`, height: "100%", background: c, borderRadius: 4, transition: "width .3s" }} />
-    </div>
-  );
-};
-
-const StatusDot = ({ status }) => {
-  const map = {
-    active: T.green, running: T.green, completed: T.green, approved: T.green,
-    planned: T.blue, in_progress: T.accent, pending: T.accent, scheduled: T.blue,
-    on_hold: T.red, idle: T.textLight, maintenance: T.red, failed: T.red,
-    draft: T.textLight, rejected: T.red,
-  };
-  return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: map[status] || T.textLight, marginRight: 6 }} />;
-};
-
-const Input = ({ label, ...props }) => (
-  <div>
-    {label && <div style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5 }}>{label}</div>}
-    <input {...props} style={{
-      width: "100%", border: `1px solid ${T.borderMid}`, borderRadius: 8,
-      padding: "8px 12px", fontSize: 13, color: T.text, background: T.card,
-      outline: "none", boxSizing: "border-box", ...props.style,
-    }} />
-  </div>
-);
-
-const Select = ({ label, children, ...props }) => (
-  <div>
-    {label && <div style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5 }}>{label}</div>}
-    <select {...props} style={{
-      width: "100%", border: `1px solid ${T.borderMid}`, borderRadius: 8,
-      padding: "8px 12px", fontSize: 13, color: T.text, background: T.card,
-      outline: "none", boxSizing: "border-box", ...props.style,
-    }}>{children}</select>
-  </div>
-);
-
-const Btn = ({ children, variant = "primary", size = "md", ...props }) => {
-  const styles = {
-    primary: { background: T.green, color: "#fff", border: "none" },
-    secondary: { background: "#fff", color: T.text, border: `1px solid ${T.borderMid}` },
-    danger: { background: T.red, color: "#fff", border: "none" },
-    ghost: { background: "transparent", color: T.textMid, border: `1px solid ${T.border}` },
-    success: { background: "#059669", color: "#fff", border: "none" },
-  };
-  const sizes = { sm: "6px 12px", md: "8px 16px", lg: "10px 22px" };
-  return (
-    <button {...props} style={{
-      ...styles[variant], padding: sizes[size], borderRadius: 8,
-      fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex",
-      alignItems: "center", gap: 6, transition: "all .15s", ...props.style,
-    }}>{children}</button>
-  );
-};
-
-const SectionHeader = ({ title, sub, actions }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-    <div>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: T.text }}>{title}</h2>
-      {sub && <p style={{ margin: "4px 0 0", fontSize: 13, color: T.textMid }}>{sub}</p>}
-    </div>
-    {actions && <div style={{ display: "flex", gap: 8 }}>{actions}</div>}
-  </div>
-);
-
-const Card = ({ children, style }) => (
-  <div style={{ background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, boxShadow: T.shadow, ...style }}>
-    {children}
-  </div>
-);
-
-const Th = ({ children, style }) => (
-  <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: "uppercase", letterSpacing: 0.6, background: T.bg, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", ...style }}>{children}</th>
-);
-const Td = ({ children, style }) => (
-  <td style={{ padding: "12px 14px", fontSize: 13, color: T.text, borderBottom: `1px solid ${T.border}`, ...style }}>{children}</td>
-);
-
-// ─── Modal ────────────────────────────────────────────────────────────────────
-const Modal = ({ title, onClose, children, width = 540 }) => (
-  <div style={{
-    position: "fixed", inset: 0, background: "rgba(0,0,0,.45)",
-    display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000,
-  }}>
-    <div style={{
-      background: T.card, borderRadius: 16, padding: 32, width, maxWidth: "95vw",
-      maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", position: "relative",
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      fontSize: 11, fontWeight: 600, letterSpacing: .3,
+      padding: "3px 9px", borderRadius: 20,
+      color: c.txt, background: c.bg, border: `1px solid ${c.bdr}`,
+      whiteSpace: "nowrap",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: T.text }}>{title}</h3>
-        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: T.textLight, lineHeight: 1 }}>×</button>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.txt, flexShrink: 0 }} />
+      {label || status?.replace(/_/g, " ").replace(/\b\w/g, x => x.toUpperCase())}
+    </span>
+  );
+}
+
+function Bar({ pct = 0, h = 6 }) {
+  const color = pct >= 100 ? G.green : pct > 60 ? G.greenMid : pct > 30 ? G.amber : G.red;
+  return (
+    <div style={{ background: G.n200, borderRadius: 99, height: h, overflow: "hidden", minWidth: 80 }}>
+      <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color, borderRadius: 99, transition: "width .4s" }} />
+    </div>
+  );
+}
+
+function KCard({ icon, label, value, sub, accent }) {
+  const ac = accent || G.green;
+  return (
+    <div style={{
+      background: G.white, borderRadius: 12, padding: "18px 20px",
+      boxShadow: G.sh, border: `1px solid ${G.n200}`,
+      display: "flex", alignItems: "center", gap: 14,
+    }}>
+      <div style={{ width: 44, height: 44, borderRadius: 10, background: `${ac}18`,
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{icon}</div>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: G.n500, textTransform: "uppercase", letterSpacing: .5, marginBottom: 3 }}>{label}</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: G.n900, lineHeight: 1 }}>{value ?? "—"}</div>
+        {sub && <div style={{ fontSize: 12, color: G.n500, marginTop: 2 }}>{sub}</div>}
       </div>
+    </div>
+  );
+}
+
+// ─── Shared input styles ──────────────────────────────────────────
+const inp = { width: "100%", padding: "8px 11px", borderRadius: 7, border: `1px solid ${G.n300}`, fontSize: 13, color: G.n800, background: G.white, boxSizing: "border-box", outline: "none" };
+const sel = { ...inp, cursor: "pointer" };
+const ta  = { ...inp, resize: "vertical", minHeight: 64 };
+const btnPri = { background: `linear-gradient(135deg,${G.green},${G.greenMid})`, color: G.white, border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, boxShadow: `0 2px 6px ${G.green}40` };
+const btnOut = { background: G.white, color: G.green, border: `1.5px solid ${G.green}`, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 };
+const btnGh  = { background: G.n100, color: G.n700, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+const btnDel = { background: G.redBg, color: G.red, border: `1px solid ${G.redBdr}`, borderRadius: 6, padding: "4px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
+const btnEdit= { background: G.g50, color: G.green, border: `1px solid ${G.g100}`, borderRadius: 6, padding: "4px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
+const btnView= { background: G.blueBg, color: G.blue, border: `1px solid ${G.blueBdr}`, borderRadius: 6, padding: "4px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
+
+// ─── Field & form helpers ─────────────────────────────────────────
+const Lbl = ({ t, req }) => (
+  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: G.n600, marginBottom: 4 }}>
+    {t}{req && <span style={{ color: G.red }}> *</span>}
+  </label>
+);
+
+function Fld({ label, req, span, children }) {
+  return (
+    <div style={span ? { gridColumn: "span 2" } : {}}>
+      <Lbl t={label} req={req} />
       {children}
     </div>
-  </div>
-);
+  );
+}
 
-const ModalFooter = ({ onClose, onSave, saveLabel = "Save" }) => (
-  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 28 }}>
-    <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-    <Btn variant="primary" onClick={onSave}>{saveLabel}</Btn>
-  </div>
-);
+function FGrid({ children, cols = 2 }) {
+  return <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: "12px 16px" }}>{children}</div>;
+}
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
-const useToast = () => {
-  const [toast, setToast] = useState(null);
-  const show = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-  const el = toast ? (
+// ─── Modal ────────────────────────────────────────────────────────
+function Mdl({ title, subtitle, onClose, children, wide }) {
+  useEffect(() => { document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.52)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={onClose}>
+      <div style={{ background: G.white, borderRadius: 16, padding: 0, width: wide ? 760 : 540, maxWidth: "95vw", maxHeight: "90vh", boxShadow: G.shXl, display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "18px 24px 14px", borderBottom: `1px solid ${G.n100}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: G.n900 }}>{title}</div>
+              {subtitle && <div style={{ fontSize: 12, color: G.n500, marginTop: 2 }}>{subtitle}</div>}
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: G.n400, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        </div>
+        <div style={{ padding: "18px 24px", overflowY: "auto", flex: 1 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function MdlFoot({ onClose, onSave, saveLabel = "Save", saving }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 16, borderTop: `1px solid ${G.n100}`, marginTop: 4 }}>
+      <button onClick={onClose} style={btnGh}>Cancel</button>
+      <button onClick={onSave} disabled={saving} style={{ ...btnPri, opacity: saving ? .7 : 1 }}>{saving ? "Saving…" : saveLabel}</button>
+    </div>
+  );
+}
+
+// ─── Table ────────────────────────────────────────────────────────
+function Tbl({ cols, rows, onEdit, onDelete, onView, loading, emptyMsg = "No records found." }) {
+  if (loading) return (
+    <div style={{ textAlign: "center", padding: "40px 0", color: G.n400, fontSize: 13 }}>
+      <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>Loading…
+    </div>
+  );
+  if (!rows?.length) return (
+    <div style={{ textAlign: "center", padding: "40px 0", color: G.n400, fontSize: 13 }}>
+      <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>{emptyMsg}
+    </div>
+  );
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: G.n50, borderBottom: `1px solid ${G.n200}` }}>
+            {cols.map(c => (
+              <th key={c.k || c.label} style={{ padding: "9px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: G.n500, textTransform: "uppercase", letterSpacing: .6, whiteSpace: "nowrap" }}>
+                {c.label}
+              </th>
+            ))}
+            <th style={{ padding: "9px 14px", fontSize: 10, fontWeight: 700, color: G.n500, textTransform: "uppercase", letterSpacing: .6 }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={row.id || i} style={{ borderBottom: `1px solid ${G.n100}`, transition: "background .1s" }}
+              onMouseEnter={e => e.currentTarget.style.background = G.g50}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {cols.map(c => (
+                <td key={c.k || c.label} style={{ padding: "11px 14px", color: G.n700, verticalAlign: "middle" }}>
+                  {c.r ? c.r(row[c.k], row) : (row[c.k] ?? "—")}
+                </td>
+              ))}
+              <td style={{ padding: "11px 14px", verticalAlign: "middle" }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  {onView   && <button style={btnView}  onClick={() => onView(row)}>👁</button>}
+                  {onEdit   && <button style={btnEdit}  onClick={() => onEdit(row)}>✏️</button>}
+                  {onDelete && <button style={btnDel}   onClick={() => onDelete(row)}>🗑</button>}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PgBar({ total, page, perPage, onPage }) {
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const from  = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to    = Math.min(page * perPage, total);
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: `1px solid ${G.n100}`, fontSize: 12, color: G.n500 }}>
+      <span>Showing {from}–{to} of {total}</span>
+      <div style={{ display: "flex", gap: 4 }}>
+        {[{ l: "‹ Prev", p: page - 1, d: page <= 1 }, { l: "Next ›", p: page + 1, d: page >= pages }].map(({ l, p, d }) => (
+          <button key={l} onClick={() => !d && onPage(p)} disabled={d} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${G.n200}`, background: d ? G.n100 : G.white, color: d ? G.n300 : G.n700, cursor: d ? "default" : "pointer", fontSize: 12, fontWeight: 600 }}>{l}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SBar({ search, setSearch, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: `1px solid ${G.n100}`, flexWrap: "wrap" }}>
+      {children}
+      <div style={{ position: "relative", marginLeft: "auto" }}>
+        <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: G.n400, pointerEvents: "none" }}>🔍</span>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ ...inp, paddingLeft: 28, width: 190 }} />
+      </div>
+    </div>
+  );
+}
+
+function Card({ children, style }) {
+  return <div style={{ background: G.white, borderRadius: 12, border: `1px solid ${G.n200}`, boxShadow: G.sh, overflow: "hidden", ...style }}>{children}</div>;
+}
+
+function Divider({ title }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 10px" }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: G.n500, textTransform: "uppercase", letterSpacing: .7, whiteSpace: "nowrap" }}>{title}</div>
+      <div style={{ flex: 1, height: 1, background: G.n200 }} />
+    </div>
+  );
+}
+
+// ─── Toast ────────────────────────────────────────────────────────
+function useToast() {
+  const [t, setT] = useState(null);
+  const show = useCallback((msg, type = "success") => {
+    setT({ msg, type });
+    setTimeout(() => setT(null), 3500);
+  }, []);
+  const ac = { success: G.green, error: G.red, info: G.blue };
+  const ic = { success: "✓", error: "✕", info: "i" };
+  const el = t ? (
     <div style={{
-      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-      background: T.card, borderRadius: 10, padding: "12px 20px",
-      boxShadow: T.shadowMd, borderLeft: `4px solid ${toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.blue}`,
-      display: "flex", alignItems: "center", gap: 10, minWidth: 260,
-      animation: "fadeUp .2s ease",
+      position: "fixed", top: 24, right: 24, zIndex: 9999,
+      background: G.white, borderRadius: 10, padding: "12px 18px",
+      boxShadow: G.shLg, borderLeft: `5px solid ${ac[t.type] || G.green}`,
+      display: "flex", alignItems: "center", gap: 12, minWidth: 280,
+      animation: "mfgIn .25s ease",
     }}>
-      <style>{`@keyframes fadeUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-      <span style={{ fontSize: 16 }}>{toast.type === "success" ? "✅" : toast.type === "error" ? "❌" : "ℹ️"}</span>
-      <span style={{ fontSize: 13, color: T.text, fontWeight: 500 }}>{toast.msg}</span>
+      <style>{`@keyframes mfgIn{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+      <span style={{ width: 22, height: 22, borderRadius: "50%", background: ac[t.type] || G.green, color: G.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{ic[t.type]}</span>
+      <span style={{ fontSize: 14, color: G.n800, flex: 1, fontWeight: 500 }}>{t.msg}</span>
+      <button onClick={() => setT(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: G.n400 }}>×</button>
     </div>
   ) : null;
-  return { show, Toast: el };
-};
+  return { show, el };
+}
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 1 — PRODUCTION PLANNING (Kanban + Gantt overview)
-// ═══════════════════════════════════════════════════════════════════════════════
-const WO_SEED = [
-  { id: "WO-001", product: "Industrial Valve A3", qty: 200, unit: "pcs", start: "2026-06-10", end: "2026-06-18", status: "in_progress", priority: "high", pct: 65, team: "Team Alpha" },
-  { id: "WO-002", product: "Pump Housing B7", qty: 50, unit: "pcs", start: "2026-06-12", end: "2026-06-25", status: "planned", priority: "medium", pct: 0, team: "Team Beta" },
-  { id: "WO-003", product: "Control Panel CP-12", qty: 30, unit: "pcs", start: "2026-06-05", end: "2026-06-11", status: "completed", priority: "high", pct: 100, team: "Team Gamma" },
-  { id: "WO-004", product: "Conveyor Belt Section", qty: 120, unit: "mtrs", start: "2026-06-08", end: "2026-06-20", status: "on_hold", priority: "low", pct: 20, team: "Team Alpha" },
-  { id: "WO-005", product: "Hydraulic Cylinder HC5", qty: 80, unit: "pcs", start: "2026-06-14", end: "2026-06-28", status: "planned", priority: "high", pct: 0, team: "Team Beta" },
-  { id: "WO-006", product: "Gear Box Assembly GX3", qty: 40, unit: "pcs", start: "2026-06-16", end: "2026-06-30", status: "planned", priority: "medium", pct: 0, team: "Team Gamma" },
-];
+// ══════════════════════════════════════════════════════════════════
+// TAB 1 — PRODUCTION PLANNING
+// ══════════════════════════════════════════════════════════════════
+function PlanningTab({ show }) {
+  const [plans,  setPlans]  = useState([]);
+  const [load,   setLoad]   = useState(true);
+  const [search, setSearch] = useState("");
+  const [page,   setPage]   = useState(1);
+  const [fStatus,setFS]     = useState("");
+  const [modal,  setModal]  = useState(false);
+  const [edit,   setEdit]   = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
 
-const PRIORITY_CFG = {
-  high: { label: "High", color: T.red, bg: "#fdf0ef" },
-  medium: { label: "Medium", color: T.amber, bg: "#fffbeb" },
-  low: { label: "Low", color: T.blue, bg: T.blueSoft },
-};
-const STATUS_CFG = {
-  planned: { label: "Planned", color: T.blue, bg: T.blueSoft },
-  in_progress: { label: "In Progress", color: T.amber, bg: T.amberSoft },
-  completed: { label: "Completed", color: T.green, bg: T.greenLight },
-  on_hold: { label: "On Hold", color: T.red, bg: T.redSoft },
-};
+  const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-function ProductionPlanningPage() {
-  const [orders, setOrders] = useState(WO_SEED);
-  const [view, setView] = useState("kanban");
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ product: "", qty: "", unit: "pcs", start: "", end: "", priority: "medium", team: "" });
-  const { show, Toast } = useToast();
+  const fetch = useCallback(async () => {
+    setLoad(true);
+    try { setPlans(await api("/plans")); }
+    catch (e) { show(e.message, "error"); }
+    finally { setLoad(false); }
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
 
-  const cols = [
-    { key: "planned", label: "Planned", color: T.blue },
-    { key: "in_progress", label: "In Progress", color: T.amber },
-    { key: "completed", label: "Completed", color: T.green },
-    { key: "on_hold", label: "On Hold", color: T.red },
-  ];
+  const filtered = plans.filter(p =>
+    (!fStatus || p.status === fStatus) &&
+    `${p.title} ${p.assigned_team}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const paged = filtered.slice((page - 1) * PER, page * PER);
 
-  const addOrder = () => {
-    if (!form.product || !form.qty) { show("Fill required fields", "error"); return; }
-    setOrders(o => [...o, { ...form, id: `WO-00${o.length + 1}`, qty: +form.qty, status: "planned", pct: 0 }]);
-    setShowModal(false); show("Work order created"); setForm({ product: "", qty: "", unit: "pcs", start: "", end: "", priority: "medium", team: "" });
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ title: r.title, description: r.description || "", start_date: r.start_date || "", end_date: r.end_date || "", status: r.status, priority: r.priority, assigned_team: r.assigned_team || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.title || !form.start_date || !form.end_date) { show("Title, Start Date and End Date are required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/plans/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setPlans(p => p.map(x => x.id === edit.id ? d : x)); show("Plan updated."); }
+      else       { const d = await api("/plans", { method: "POST", body: JSON.stringify(form) }); setPlans(p => [d, ...p]); show("Plan created."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
   };
 
-  const ganttDays = Array.from({ length: 21 }, (_, i) => i + 10);
+  const del = async r => {
+    if (!confirm(`Delete plan "${r.title}"?`)) return;
+    try { await api(`/plans/${r.id}`, { method: "DELETE" }); setPlans(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "title",         label: "Plan Title",    r: v => <span style={{ fontWeight: 600, color: G.n800 }}>{v}</span> },
+    { k: "start_date",    label: "Start" },
+    { k: "end_date",      label: "End" },
+    { k: "assigned_team", label: "Team" },
+    { k: "priority",      label: "Priority",      r: v => <Chip status={v} /> },
+    { k: "status",        label: "Status",        r: v => <Chip status={v} /> },
+  ];
 
   return (
     <div>
-      {Toast}
-      <SectionHeader
-        title="Production Planning"
-        sub="Track work orders across stages · June 2026"
-        actions={<>
-          <div style={{ display: "flex", background: T.bg, borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
-            {["kanban", "gantt"].map(v => (
-              <button key={v} onClick={() => setView(v)} style={{
-                padding: "7px 16px", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                background: view === v ? T.green : "transparent", color: view === v ? "#fff" : T.textMid,
-              }}>{v === "kanban" ? "⊞ Kanban" : "📅 Gantt"}</button>
-            ))}
-          </div>
-          <Btn onClick={() => setShowModal(true)}>＋ New Work Order</Btn>
-        </>}
-      />
-
-      {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="📋" label="Total Orders" value={orders.length} bg={T.greenLight} />
-        <KPI icon="⚙️" label="In Progress" value={orders.filter(o => o.status === "in_progress").length} bg={T.amberSoft} color={T.amber} sub="Active now" />
-        <KPI icon="🕐" label="Planned" value={orders.filter(o => o.status === "planned").length} bg={T.blueSoft} color={T.blue} sub="Queued" />
-        <KPI icon="✅" label="Completed" value={orders.filter(o => o.status === "completed").length} bg={T.greenLight} color={T.green} sub="This month" trend="up" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="📋" label="Total Plans"  value={plans.length} />
+        <KCard icon="🕒" label="Planned"      value={plans.filter(p => p.status === "planned").length}     accent={G.blue} />
+        <KCard icon="⚙️" label="In Progress"  value={plans.filter(p => p.status === "in_progress").length} accent={G.amber} />
+        <KCard icon="✅" label="Completed"    value={plans.filter(p => p.status === "completed").length}   accent={G.green} />
       </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <select value={fStatus} onChange={e => { setFS(e.target.value); setPage(1); }} style={{ ...sel, width: 150 }}>
+            <option value="">All Status</option>
+            {["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+          </select>
+          <button style={btnPri} onClick={openAdd}>+ Add Plan</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
 
-      {/* Kanban View */}
-      {view === "kanban" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
-          {cols.map(col => (
-            <div key={col.key}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: col.color }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{col.label}</span>
-                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, background: col.color + "20", color: col.color, padding: "2px 8px", borderRadius: 12 }}>
-                  {orders.filter(o => o.status === col.key).length}
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {orders.filter(o => o.status === col.key).map(o => (
-                  <Card key={o.id} style={{ padding: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: T.green }}>{o.id}</span>
-                      <Badge label={PRIORITY_CFG[o.priority].label} color={PRIORITY_CFG[o.priority].color} bg={PRIORITY_CFG[o.priority].bg} />
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 6 }}>{o.product}</div>
-                    <div style={{ fontSize: 11, color: T.textMid, marginBottom: 10 }}>{o.qty} {o.unit} · {o.team}</div>
-                    {o.pct > 0 && <><ProgressBar pct={o.pct} /><div style={{ fontSize: 11, color: T.textMid, marginTop: 4 }}>{o.pct}% done</div></>}
-                    <div style={{ fontSize: 11, color: T.textLight, marginTop: 8 }}>{o.start} → {o.end}</div>
-                    <select value={o.status} onChange={e => setOrders(orders.map(x => x.id === o.id ? { ...x, status: e.target.value } : x))}
-                      style={{ marginTop: 10, width: "100%", fontSize: 11, border: `1px solid ${T.borderMid}`, borderRadius: 6, padding: "4px 8px", color: T.text, background: T.bg, cursor: "pointer" }}>
-                      {cols.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                    </select>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Gantt View */}
-      {view === "gantt" && (
-        <Card>
-          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 14 }}>
-            📅 Gantt — June 2026
-          </div>
-          <div style={{ padding: 20, overflowX: "auto" }}>
-            <div style={{ minWidth: 700 }}>
-              <div style={{ display: "flex", marginBottom: 8 }}>
-                <div style={{ width: 200, flexShrink: 0 }} />
-                {ganttDays.map(d => (
-                  <div key={d} style={{ flex: 1, textAlign: "center", fontSize: 10, color: d === 23 ? T.green : T.textLight, fontWeight: d === 23 ? 800 : 400 }}>
-                    {d % 5 === 0 || d === 23 ? d : ""}
-                  </div>
-                ))}
-              </div>
-              {orders.map(o => {
-                const s = +o.start.split("-")[2];
-                const e = +o.end.split("-")[2];
-                const left = `${Math.max(0, (s - 10) / 21 * 100)}%`;
-                const width = `${Math.min(100, (e - Math.max(s, 10) + 1) / 21 * 100)}%`;
-                const cfg = STATUS_CFG[o.status];
-                return (
-                  <div key={o.id} style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                    <div style={{ width: 200, flexShrink: 0, paddingRight: 16 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{o.id}</div>
-                      <div style={{ fontSize: 11, color: T.textMid, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>{o.product}</div>
-                    </div>
-                    <div style={{ flex: 1, position: "relative", height: 28, background: T.bg, borderRadius: 4 }}>
-                      <div style={{ position: "absolute", height: "100%", left, width, background: cfg.color, borderRadius: 6, opacity: 0.85, display: "flex", alignItems: "center", paddingLeft: 8, overflow: "hidden" }}>
-                        <span style={{ fontSize: 10, color: "#fff", fontWeight: 700, whiteSpace: "nowrap" }}>{o.pct}% · {o.team}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {showModal && (
-        <Modal title="New Work Order" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Product Name *" value={form.product} onChange={e => setForm({ ...form, product: e.target.value })} placeholder="e.g. Industrial Valve A3" /></div>
-            <Input label="Quantity *" type="number" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} />
-            <Select label="Unit" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
-              {["pcs", "kg", "mtrs", "ltrs", "boxes"].map(u => <option key={u}>{u}</option>)}
-            </Select>
-            <Input label="Start Date *" type="date" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })} />
-            <Input label="End Date *" type="date" value={form.end} onChange={e => setForm({ ...form, end: e.target.value })} />
-            <Select label="Priority" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
-              {Object.entries(PRIORITY_CFG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </Select>
-            <Input label="Assigned Team" value={form.team} onChange={e => setForm({ ...form, team: e.target.value })} placeholder="e.g. Team Alpha" />
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={addOrder} saveLabel="Create Work Order" />
-        </Modal>
+      {modal && (
+        <Mdl title={edit ? "Edit Plan" : "New Production Plan"} subtitle="Fill in the plan details" onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Plan Title" req span><input style={inp} value={form.title} onChange={e => sf("title", e.target.value)} placeholder="e.g. Q3 Industrial Valve Run" /></Fld>
+            <Fld label="Start Date" req><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
+            <Fld label="End Date"   req><input type="date" style={inp} value={form.end_date}   onChange={e => sf("end_date",   e.target.value)} /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["planned","in_progress","completed","on_hold"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Priority"><select style={sel} value={form.priority} onChange={e => sf("priority", e.target.value)}>{["low","medium","high"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
+            <Fld label="Description" span><textarea style={ta} value={form.description} onChange={e => sf("description", e.target.value)} placeholder="Optional notes…" /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Create Plan"} />
+        </Mdl>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 2 — BILL OF MATERIALS
-// ═══════════════════════════════════════════════════════════════════════════════
-const BOM_SEED = [
-  { id: "BOM-001", product: "Industrial Valve A3", version: "v2.1", components: 8, cost: "₹4,250", status: "active", lastUpdated: "2026-06-10" },
-  { id: "BOM-002", product: "Pump Housing B7", version: "v1.0", components: 5, cost: "₹2,800", status: "active", lastUpdated: "2026-06-08" },
-  { id: "BOM-003", product: "Control Panel CP-12", version: "v3.0", components: 12, cost: "₹8,900", status: "draft", lastUpdated: "2026-06-05" },
-  { id: "BOM-004", product: "Gear Box Assembly", version: "v1.2", components: 6, cost: "₹3,600", status: "active", lastUpdated: "2026-06-01" },
-];
+// ══════════════════════════════════════════════════════════════════
+// TAB 2 — BILL OF MATERIALS
+// ══════════════════════════════════════════════════════════════════
+function BOMTab({ show }) {
+  const [boms, setBoms] = useState([]);
+  const [load, setLoad] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState(false);
+  const [view, setView] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
 
-const BOM_ITEMS = [
-  { item: "Steel Body", partNo: "ST-001", qty: 1, unit: "pcs", unitCost: "₹800", totalCost: "₹800", supplier: "Tamil Steel Co." },
-  { item: "Rubber Seal Kit", partNo: "RS-044", qty: 4, unit: "pcs", unitCost: "₹120", totalCost: "₹480", supplier: "RubberTech" },
-  { item: "Bolt Set M12", partNo: "BT-012", qty: 8, unit: "pcs", unitCost: "₹25", totalCost: "₹200", supplier: "Fastener Hub" },
-  { item: "Stainless Shaft", partNo: "SS-203", qty: 1, unit: "pcs", unitCost: "₹1,200", totalCost: "₹1,200", supplier: "Stainless Works" },
-  { item: "Pressure Gasket", partNo: "PG-011", qty: 2, unit: "pcs", unitCost: "₹180", totalCost: "₹360", supplier: "Sealtech" },
-];
+  const blankIng = () => ({ item_name: "", quantity: "", unit: "pcs", cost: "" });
+  const blank = { product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankIng()] };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const si = (i, k, v) => setForm(f => ({ ...f, ingredients: f.ingredients.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
 
-function BOMPage() {
-  const { show, Toast } = useToast();
-  const [selected, setSelected] = useState(BOM_SEED[0]);
-  const [showModal, setShowModal] = useState(false);
+  const fetch = useCallback(async () => {
+    setLoad(true);
+    try { setBoms(await api("/bom")); }
+    catch (e) { show(e.message, "error"); }
+    finally { setLoad(false); }
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = boms.filter(b => `${b.product_name} ${b.product_code}`.toLowerCase().includes(search.toLowerCase()));
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankIng()] }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.product_name || !form.quantity) { show("Product name and quantity required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/bom/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setBoms(p => p.map(x => x.id === edit.id ? d : x)); show("BOM updated."); }
+      else       { const d = await api("/bom", { method: "POST", body: JSON.stringify(form) }); setBoms(p => [d, ...p]); show("BOM created."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm(`Delete BOM for "${r.product_name}"?`)) return;
+    try { await api(`/bom/${r.id}`, { method: "DELETE" }); setBoms(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "product_code",  label: "Code",    r: v => <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: G.green, background: G.g50, padding: "2px 6px", borderRadius: 4 }}>{v || "—"}</span> },
+    { k: "product_name",  label: "Product", r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "quantity",      label: "Qty",     r: (v, r) => `${v} ${r.unit}` },
+    { k: "version",       label: "Version" },
+    { k: "ingredients",   label: "Components", r: v => <span style={{ fontWeight: 600 }}>{v?.length || 0}</span> },
+    { k: "status",        label: "Status",  r: v => <Chip status={v} /> },
+  ];
+
+  const totalCost = (bom) => bom.ingredients?.reduce((s, x) => s + (parseFloat(x.cost) || 0) * (parseFloat(x.quantity) || 0), 0) || 0;
 
   return (
     <div>
-      {Toast}
-      <SectionHeader
-        title="Bill of Materials"
-        sub="Define component structures for manufactured products"
-        actions={<Btn onClick={() => setShowModal(true)}>＋ New BOM</Btn>}
-      />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="📄" label="Total BOMs" value={BOM_SEED.length} bg={T.greenLight} />
-        <KPI icon="✅" label="Active" value={BOM_SEED.filter(b => b.status === "active").length} bg={T.greenLight} color={T.green} />
-        <KPI icon="✏️" label="Draft" value={BOM_SEED.filter(b => b.status === "draft").length} bg={T.amberSoft} color={T.amber} />
-        <KPI icon="🔩" label="Avg Components" value={Math.round(BOM_SEED.reduce((a, b) => a + b.components, 0) / BOM_SEED.length)} bg={T.blueSoft} color={T.blue} />
-      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <button style={btnPri} onClick={openAdd}>+ New BOM</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onView={r => setView(r)} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
-        {/* BOM List */}
-        <Card>
-          <div style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 13 }}>All BOMs</div>
-          <div>
-            {BOM_SEED.map(b => (
-              <div key={b.id} onClick={() => setSelected(b)} style={{
-                padding: "14px 16px", cursor: "pointer", borderBottom: `1px solid ${T.border}`,
-                background: selected?.id === b.id ? T.greenFaint : "transparent",
-                borderLeft: selected?.id === b.id ? `3px solid ${T.green}` : "3px solid transparent",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{b.id}</span>
-                  <Badge label={b.status} color={b.status === "active" ? T.green : T.amber} bg={b.status === "active" ? T.greenLight : T.amberSoft} />
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{b.product}</div>
-                <div style={{ fontSize: 11, color: T.textMid, marginTop: 3 }}>{b.version} · {b.components} components · {b.cost}</div>
+      {/* View BOM */}
+      {view && (
+        <Mdl title={view.product_name} subtitle={`${view.product_code || ""} · v${view.version}`} onClose={() => setView(null)} wide>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 18 }}>
+            {[["BOM Cost", `₹${totalCost(view).toLocaleString()}`], ["Base Qty", `${view.quantity} ${view.unit}`], ["Components", view.ingredients?.length || 0], ["Status", null]].map(([l, v]) => (
+              <div key={l} style={{ background: G.n50, borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: G.n400, textTransform: "uppercase", letterSpacing: .5, marginBottom: 4 }}>{l}</div>
+                {l === "Status" ? <Chip status={view.status} /> : <div style={{ fontSize: 16, fontWeight: 700, color: G.green }}>{v}</div>}
               </div>
             ))}
           </div>
-        </Card>
-
-        {/* BOM Detail */}
-        <Card>
-          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <span style={{ fontSize: 12, color: T.green, fontWeight: 700 }}>{selected?.id}</span>
-                <h3 style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 700, color: T.text }}>{selected?.product}</h3>
-                <span style={{ fontSize: 12, color: T.textMid }}>{selected?.version} · Updated {selected?.lastUpdated}</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Btn variant="secondary" size="sm">📋 Duplicate</Btn>
-                <Btn variant="primary" size="sm">✏️ Edit BOM</Btn>
-              </div>
-            </div>
+          {view.ingredients?.length > 0 && (
+            <>
+              <Divider title="Components" />
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr style={{ background: G.green }}>
+                  {["Item Name", "Qty", "Unit", "Unit Cost ₹", "Total ₹"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: G.white, fontSize: 11, fontWeight: 700 }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {view.ingredients.map((ing, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${G.n100}`, background: i % 2 ? G.n50 : G.white }}>
+                      <td style={{ padding: "9px 12px", fontWeight: 600 }}>{ing.item_name}</td>
+                      <td style={{ padding: "9px 12px" }}>{ing.quantity}</td>
+                      <td style={{ padding: "9px 12px", color: G.n500 }}>{ing.unit}</td>
+                      <td style={{ padding: "9px 12px" }}>₹{(parseFloat(ing.cost) || 0).toLocaleString()}</td>
+                      <td style={{ padding: "9px 12px", fontWeight: 700, color: G.green }}>₹{((parseFloat(ing.quantity) || 0) * (parseFloat(ing.cost) || 0)).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: G.g50, fontWeight: 700 }}>
+                    <td colSpan={4} style={{ padding: "9px 12px", textAlign: "right" }}>Total Material Cost</td>
+                    <td style={{ padding: "9px 12px", color: G.green, fontSize: 14 }}>₹{totalCost(view).toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </>
+          )}
+          {view.notes && <div style={{ marginTop: 14, padding: "10px 14px", background: G.amberBg, borderRadius: 8, fontSize: 13, color: G.amber, border: `1px solid ${G.amberBdr}` }}>📝 {view.notes}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+            <button onClick={() => setView(null)} style={btnGh}>Close</button>
           </div>
+        </Mdl>
+      )}
+
+      {/* Add / Edit BOM */}
+      {modal && (
+        <Mdl title={edit ? "Edit BOM" : "New Bill of Materials"} subtitle="Define product structure and component costs" onClose={() => setModal(false)} wide>
+          <FGrid cols={2}>
+            <Fld label="Product Name" req span><input style={inp} value={form.product_name} onChange={e => sf("product_name", e.target.value)} placeholder="Industrial Valve A3" /></Fld>
+            <Fld label="Product Code"><input style={inp} value={form.product_code} onChange={e => sf("product_code", e.target.value)} placeholder="IVA3-001" /></Fld>
+            <Fld label="Base Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Unit"><select style={sel} value={form.unit} onChange={e => sf("unit", e.target.value)}>{["pcs", "kg", "ltrs", "mtrs", "boxes"].map(u => <option key={u}>{u}</option>)}</select></Fld>
+            <Fld label="Version"><input style={inp} value={form.version} onChange={e => sf("version", e.target.value)} /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option></select></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+
+          <Divider title="Components / Ingredients" />
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <Th>#</Th><Th>Component</Th><Th>Part No.</Th><Th>Qty</Th><Th>Unit</Th><Th>Unit Cost</Th><Th>Total Cost</Th><Th>Supplier</Th>
-                </tr>
-              </thead>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 8 }}>
+              <thead><tr style={{ background: G.n50, borderBottom: `1px solid ${G.n200}` }}>
+                {["Item Name", "Qty", "Unit", "Unit Cost ₹", ""].map(h => <th key={h} style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: G.n500, textTransform: "uppercase" }}>{h}</th>)}
+              </tr></thead>
               <tbody>
-                {BOM_ITEMS.map((item, i) => (
-                  <tr key={i}>
-                    <Td><span style={{ color: T.textLight, fontWeight: 700 }}>{i + 1}</span></Td>
-                    <Td><span style={{ fontWeight: 600 }}>{item.item}</span></Td>
-                    <Td><code style={{ fontSize: 11, background: T.bg, padding: "2px 6px", borderRadius: 4 }}>{item.partNo}</code></Td>
-                    <Td>{item.qty}</Td>
-                    <Td>{item.unit}</Td>
-                    <Td>{item.unitCost}</Td>
-                    <Td><span style={{ fontWeight: 700 }}>{item.totalCost}</span></Td>
-                    <Td><span style={{ fontSize: 11, color: T.textMid }}>{item.supplier}</span></Td>
+                {form.ingredients.map((ing, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${G.n100}` }}>
+                    <td style={{ padding: "5px 6px" }}><input style={{ ...inp, width: 160 }} value={ing.item_name} onChange={e => si(i, "item_name", e.target.value)} placeholder="Steel Body" /></td>
+                    <td style={{ padding: "5px 6px" }}><input type="number" style={{ ...inp, width: 65 }} value={ing.quantity} onChange={e => si(i, "quantity", e.target.value)} min={0} /></td>
+                    <td style={{ padding: "5px 6px" }}><input style={{ ...inp, width: 70 }} value={ing.unit} onChange={e => si(i, "unit", e.target.value)} /></td>
+                    <td style={{ padding: "5px 6px" }}><input type="number" style={{ ...inp, width: 85 }} value={ing.cost} onChange={e => si(i, "cost", e.target.value)} min={0} /></td>
+                    <td style={{ padding: "5px 6px" }}><button onClick={() => setForm(f => ({ ...f, ingredients: f.ingredients.filter((_, j) => j !== i) }))} style={{ background: G.redBg, color: G.red, border: "none", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={6} style={{ padding: "12px 14px", fontWeight: 700, fontSize: 13, color: T.textMid }}>Total BOM Cost</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 700, fontSize: 14, color: T.green }}>{selected?.cost}</td>
-                  <td />
-                </tr>
-              </tfoot>
             </table>
           </div>
-        </Card>
-      </div>
+          <button onClick={() => setForm(f => ({ ...f, ingredients: [...f.ingredients, blankIng()] }))} style={{ ...btnOut, fontSize: 12, padding: "5px 12px", marginBottom: 4 }}>+ Add Component</button>
 
-      {showModal && (
-        <Modal title="New Bill of Materials" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1/-1" }}><Select label="Product *"><option>Select product...</option></Select></div>
-            <Input label="Version" placeholder="e.g. v1.0" />
-            <Select label="Status"><option>Draft</option><option>Active</option></Select>
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={() => { show("BOM created"); setShowModal(false); }} saveLabel="Create BOM" />
-        </Modal>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Create BOM"} />
+        </Mdl>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 3 — WORK ORDERS (table-focused with filters)
-// ═══════════════════════════════════════════════════════════════════════════════
-function WorkOrdersPage() {
-  const [orders, setOrders] = useState(WO_SEED);
-  const [filter, setFilter] = useState("all");
+// ══════════════════════════════════════════════════════════════════
+// TAB 3 — WORK ORDERS
+// ══════════════════════════════════════════════════════════════════
+function WorkOrdersTab({ show }) {
+  const [orders, setOrders] = useState([]);
+  const [load, setLoad] = useState(true);
   const [search, setSearch] = useState("");
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const { show, Toast } = useToast();
+  const [page, setPage] = useState(1);
+  const [fStatus, setFS] = useState("");
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
+
+  const blank = { wo_number: "", product_name: "", quantity: "", unit: "pcs", start_date: "", end_date: "", priority: "medium", status: "planned", assigned_team: "", progress: 0, notes: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setOrders(await api("/work-orders")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
 
   const filtered = orders.filter(o =>
-    (filter === "all" || o.status === filter) &&
-    (o.product.toLowerCase().includes(search.toLowerCase()) || o.id.includes(search))
+    (!fStatus || o.status === fStatus) &&
+    `${o.wo_number} ${o.product_name} ${o.assigned_team}`.toLowerCase().includes(search.toLowerCase())
   );
-
-  return (
-    <div>
-      {Toast}
-      <SectionHeader
-        title="Work Orders"
-        sub="Manage and track all manufacturing work orders"
-        actions={<Btn onClick={() => { setEditItem(null); setShowModal(true); }}>＋ New Work Order</Btn>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        {Object.entries(STATUS_CFG).map(([k, v]) => (
-          <KPI key={k} icon={k === "completed" ? "✅" : k === "in_progress" ? "⚙️" : k === "planned" ? "🕐" : "⏸️"}
-            label={v.label} value={orders.filter(o => o.status === k).length}
-            bg={v.bg} color={v.color} />
-        ))}
-      </div>
-
-      <Card>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search orders..."
-            style={{ border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "7px 12px", fontSize: 13, outline: "none", width: 220 }} />
-          {["all", ...Object.keys(STATUS_CFG)].map(s => (
-            <button key={s} onClick={() => setFilter(s)} style={{
-              padding: "6px 14px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-              background: filter === s ? T.green : T.bg, color: filter === s ? "#fff" : T.textMid,
-            }}>{s === "all" ? "All" : STATUS_CFG[s]?.label}</button>
-          ))}
-          <div style={{ marginLeft: "auto", fontSize: 12, color: T.textLight }}>{filtered.length} orders</div>
-        </div>
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>
-              <Th>WO ID</Th><Th>Product</Th><Th>Qty</Th><Th>Priority</Th><Th>Start</Th><Th>End</Th><Th>Progress</Th><Th>Team</Th><Th>Status</Th><Th>Actions</Th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(o => (
-                <tr key={o.id} style={{ transition: "background .15s" }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.greenFaint}
-                  onMouseLeave={e => e.currentTarget.style.background = ""}>
-                  <Td><span style={{ fontWeight: 700, color: T.green }}>{o.id}</span></Td>
-                  <Td><span style={{ fontWeight: 600 }}>{o.product}</span></Td>
-                  <Td>{o.qty} {o.unit}</Td>
-                  <Td><Badge label={PRIORITY_CFG[o.priority].label} color={PRIORITY_CFG[o.priority].color} bg={PRIORITY_CFG[o.priority].bg} /></Td>
-                  <Td style={{ color: T.textMid }}>{o.start}</Td>
-                  <Td style={{ color: T.textMid }}>{o.end}</Td>
-                  <Td style={{ minWidth: 120 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ flex: 1 }}><ProgressBar pct={o.pct} /></div>
-                      <span style={{ fontSize: 11, color: T.textMid, width: 30 }}>{o.pct}%</span>
-                    </div>
-                  </Td>
-                  <Td style={{ fontSize: 12 }}>{o.team}</Td>
-                  <Td>
-                    <select value={o.status} onChange={e => setOrders(orders.map(x => x.id === o.id ? { ...x, status: e.target.value } : x))}
-                      style={{ fontSize: 11, border: `1px solid ${T.borderMid}`, borderRadius: 6, padding: "4px 8px", background: T.bg, color: T.text }}>
-                      {Object.entries(STATUS_CFG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </Td>
-                  <Td>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="sm" variant="secondary" onClick={() => { setEditItem(o); setShowModal(true); }}>✏️</Btn>
-                      <Btn size="sm" variant="danger" onClick={() => { setOrders(orders.filter(x => x.id !== o.id)); show("Order deleted", "error"); }}>🗑️</Btn>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={10} style={{ textAlign: "center", padding: 40, color: T.textLight, fontSize: 14 }}>No work orders found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {showModal && (
-        <Modal title={editItem ? "Edit Work Order" : "New Work Order"} onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Product *" defaultValue={editItem?.product} placeholder="Product name" /></div>
-            <Input label="Quantity *" type="number" defaultValue={editItem?.qty} />
-            <Select label="Priority" defaultValue={editItem?.priority}>
-              {Object.entries(PRIORITY_CFG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </Select>
-            <Input label="Start Date" type="date" defaultValue={editItem?.start} />
-            <Input label="End Date" type="date" defaultValue={editItem?.end} />
-            <Input label="Assigned Team" defaultValue={editItem?.team} placeholder="Team name" />
-            <Input label="Progress %" type="number" defaultValue={editItem?.pct} min="0" max="100" />
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={() => { show("Saved"); setShowModal(false); }} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 4 — PRODUCTION (manufacturing runs with ingredients/outputs)
-// ═══════════════════════════════════════════════════════════════════════════════
-const PROD_SEED = [
-  { id: "PRD-001", date: "09/06/2026", ref: "PRD-0001", location: "Unit A - Chennai", product: "Masala Chai Blend", bom: "BOM-005", qty: 50, cost: "₹1,250", status: "completed" },
-  { id: "PRD-002", date: "08/06/2026", ref: "PRD-0002", location: "Unit B - Coimbatore", product: "Whole Wheat Bread", bom: "BOM-003", qty: 30, cost: "₹2,100", status: "in_progress" },
-  { id: "PRD-003", date: "07/06/2026", ref: "PRD-0003", location: "Unit A - Chennai", product: "Tomato Ketchup", bom: "BOM-007", qty: 100, cost: "₹4,500", status: "planned" },
-  { id: "PRD-004", date: "06/06/2026", ref: "PRD-0004", location: "Unit C - Madurai", product: "Mango Pickle", bom: "BOM-009", qty: 75, cost: "₹3,375", status: "completed" },
-  { id: "PRD-005", date: "05/06/2026", ref: "PRD-0005", location: "Unit B - Coimbatore", product: "Coconut Oil", bom: "BOM-002", qty: 60, cost: "₹7,200", status: "in_progress" },
-];
-
-function ProductionPage() {
-  const [prods, setProds] = useState(PROD_SEED);
-  const [showModal, setShowModal] = useState(false);
-  const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [loc, setLoc] = useState("");
-  const { show, Toast } = useToast();
-
-  const filtered = prods.filter(p =>
-    (!loc || p.location.includes(loc))
-  );
-
-  const statusColor = s => s === "completed" ? T.green : s === "in_progress" ? T.amber : T.blue;
-  const statusBg = s => s === "completed" ? T.greenLight : s === "in_progress" ? T.amberSoft : T.blueSoft;
-
-  return (
-    <div>
-      {Toast}
-      <SectionHeader
-        title="Production Runs"
-        sub="Log and manage all manufacturing production entries"
-        actions={<Btn onClick={() => setShowModal(true)}>＋ Add Production</Btn>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 20 }}>
-        <KPI icon="🏭" label="Total Runs" value={prods.length} bg={T.greenLight} />
-        <KPI icon="✅" label="Completed" value={prods.filter(p => p.status === "completed").length} bg={T.greenLight} color={T.green} />
-        <KPI icon="⚙️" label="In Progress" value={prods.filter(p => p.status === "in_progress").length} bg={T.amberSoft} color={T.amber} />
-        <KPI icon="📦" label="Total Qty" value={prods.reduce((a, b) => a + b.qty, 0)} bg={T.blueSoft} color={T.blue} sub="Units produced" />
-      </div>
-
-      {/* Filters */}
-      <Card style={{ padding: "12px 16px", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>🔽 Filters</span>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "6px 10px", fontSize: 13 }} />
-        <span style={{ color: T.textLight, fontSize: 12 }}>to</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "6px 10px", fontSize: 13 }} />
-        <select value={loc} onChange={e => setLoc(e.target.value)} style={{ border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "6px 10px", fontSize: 13 }}>
-          <option value="">All Locations</option>
-          {["Unit A - Chennai", "Unit B - Coimbatore", "Unit C - Madurai"].map(l => <option key={l}>{l}</option>)}
-        </select>
-        <Btn size="sm">Apply</Btn>
-        <Btn size="sm" variant="secondary" onClick={() => { setFrom(""); setTo(""); setLoc(""); }}>Reset</Btn>
-      </Card>
-
-      <Card>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>
-              <Th>Date</Th><Th>Ref No.</Th><Th>Location</Th><Th>Product</Th><Th>BOM</Th><Th>Qty</Th><Th>Total Cost</Th><Th>Status</Th><Th>Actions</Th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(p => (
-                <tr key={p.id}
-                  onMouseEnter={e => e.currentTarget.style.background = T.greenFaint}
-                  onMouseLeave={e => e.currentTarget.style.background = ""}>
-                  <Td style={{ color: T.textMid }}>{p.date}</Td>
-                  <Td><span style={{ fontWeight: 700, color: T.green, fontSize: 12 }}>{p.ref}</span></Td>
-                  <Td style={{ fontSize: 12 }}>{p.location}</Td>
-                  <Td><span style={{ fontWeight: 600 }}>{p.product}</span></Td>
-                  <Td><code style={{ fontSize: 11, background: T.bg, padding: "2px 6px", borderRadius: 4 }}>{p.bom}</code></Td>
-                  <Td><span style={{ fontWeight: 700 }}>{p.qty}</span></Td>
-                  <Td><span style={{ fontWeight: 700, color: T.green }}>{p.cost}</span></Td>
-                  <Td><Badge label={STATUS_CFG[p.status]?.label || p.status} color={statusColor(p.status)} bg={statusBg(p.status)} dot /></Td>
-                  <Td>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <Btn size="sm" variant="secondary">👁️ View</Btn>
-                      <Btn size="sm" variant="ghost" onClick={() => { setProds(prods.filter(x => x.id !== p.id)); show("Deleted", "error"); }}>🗑️</Btn>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {showModal && (
-        <Modal title="Add Production Run" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <Input label="Reference No." placeholder="Auto-generated" />
-            <Select label="Location"><option>Unit A - Chennai</option><option>Unit B - Coimbatore</option><option>Unit C - Madurai</option></Select>
-            <div style={{ gridColumn: "1/-1" }}><Select label="Product *"><option>Select product...</option></Select></div>
-            <Select label="BOM"><option>Select BOM...</option></Select>
-            <Input label="Quantity *" type="number" placeholder="0" />
-            <div style={{ gridColumn: "1/-1" }}><Input label="Notes" placeholder="Optional notes..." /></div>
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={() => { show("Production run added"); setShowModal(false); }} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 5 — RESOURCES (card grid with utilization)
-// ═══════════════════════════════════════════════════════════════════════════════
-const RES_SEED = [
-  { id: 1, name: "CNC Machine #1", type: "Machine", util: 78, status: "running", shift: "Morning", operator: "Rajan K.", nextMaint: "2026-07-20" },
-  { id: 2, name: "CNC Machine #2", type: "Machine", util: 45, status: "running", shift: "Evening", operator: "Suresh M.", nextMaint: "2026-08-01" },
-  { id: 3, name: "Assembly Line A", type: "Line", util: 90, status: "running", shift: "Full Day", operator: "Team Alpha", nextMaint: "2026-07-15" },
-  { id: 4, name: "Assembly Line B", type: "Line", util: 20, status: "idle", shift: "Morning", operator: "Team Beta", nextMaint: "2026-08-05" },
-  { id: 5, name: "Welding Station", type: "Station", util: 60, status: "running", shift: "Morning", operator: "Dinesh P.", nextMaint: "2026-07-28" },
-  { id: 6, name: "Paint Booth", type: "Station", util: 0, status: "maintenance", shift: "—", operator: "—", nextMaint: "2026-06-25" },
-];
-
-function ResourcesPage() {
-  const [resources, setResources] = useState(RES_SEED);
-  const [filter, setFilter] = useState("all");
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "Machine", shift: "Morning", operator: "" });
-  const { show, Toast } = useToast();
-
-  const filtered = resources.filter(r => filter === "all" || r.status === filter);
-
-  const statusColor = s => s === "running" ? T.green : s === "idle" ? T.amber : T.red;
-  const statusBg = s => s === "running" ? T.greenLight : s === "idle" ? T.amberSoft : T.redSoft;
-  const utilColor = u => u > 85 ? T.red : u > 50 ? T.green : T.amber;
-
-  return (
-    <div>
-      {Toast}
-      <SectionHeader
-        title="Resources"
-        sub="Monitor machine and workstation availability"
-        actions={<Btn onClick={() => setShowModal(true)}>＋ Add Resource</Btn>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="🏗️" label="Total Resources" value={resources.length} bg={T.greenLight} />
-        <KPI icon="▶️" label="Running" value={resources.filter(r => r.status === "running").length} bg={T.greenLight} color={T.green} sub="Active now" />
-        <KPI icon="⏸️" label="Idle" value={resources.filter(r => r.status === "idle").length} bg={T.amberSoft} color={T.amber} sub="Unassigned" />
-        <KPI icon="🔧" label="Maintenance" value={resources.filter(r => r.status === "maintenance").length} bg={T.redSoft} color={T.red} sub="Down time" />
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {["all", "running", "idle", "maintenance"].map(s => (
-          <button key={s} onClick={() => setFilter(s)} style={{
-            padding: "6px 16px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-            background: filter === s ? T.green : T.bg, color: filter === s ? "#fff" : T.textMid,
-            textTransform: "capitalize",
-          }}>{s === "all" ? "All" : s}</button>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-        {filtered.map(r => (
-          <Card key={r.id} style={{ borderTop: `3px solid ${statusColor(r.status)}` }}>
-            <div style={{ padding: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{r.name}</div>
-                  <div style={{ fontSize: 12, color: T.textMid, marginTop: 2 }}>{r.type}</div>
-                </div>
-                <Badge label={r.status.charAt(0).toUpperCase() + r.status.slice(1)} color={statusColor(r.status)} bg={statusBg(r.status)} dot />
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textMid, marginBottom: 4 }}>
-                  <span>Utilization</span>
-                  <span style={{ fontWeight: 700, color: utilColor(r.util) }}>{r.util}%</span>
-                </div>
-                <ProgressBar pct={r.util} color={utilColor(r.util)} height={8} />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-                {[["Shift", r.shift], ["Operator", r.operator], ["Next Maint.", r.nextMaint], ["Capacity", "100 u/day"]].map(([l, v]) => (
-                  <div key={l} style={{ background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ fontSize: 10, color: T.textLight, fontWeight: 600, marginBottom: 2 }}>{l}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{v}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <select value={r.status} onChange={e => setResources(resources.map(x => x.id === r.id ? { ...x, status: e.target.value } : x))}
-                  style={{ flex: 1, fontSize: 11, border: `1px solid ${T.borderMid}`, borderRadius: 6, padding: "5px 8px", background: T.bg }}>
-                  {["running", "idle", "maintenance"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                </select>
-                <Btn size="sm" variant="danger" onClick={() => { setResources(resources.filter(x => x.id !== r.id)); show("Removed", "error"); }}>🗑️</Btn>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {showModal && (
-        <Modal title="Add Resource" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Resource Name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. CNC Machine #3" /></div>
-            <Select label="Type" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-              {["Machine", "Line", "Station"].map(t => <option key={t}>{t}</option>)}
-            </Select>
-            <Select label="Shift" value={form.shift} onChange={e => setForm({ ...form, shift: e.target.value })}>
-              {["Morning", "Evening", "Full Day", "Night"].map(s => <option key={s}>{s}</option>)}
-            </Select>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Operator / Team" value={form.operator} onChange={e => setForm({ ...form, operator: e.target.value })} placeholder="e.g. Rajan K." /></div>
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={() => {
-            if (!form.name) { show("Name required", "error"); return; }
-            setResources([...resources, { id: Date.now(), ...form, util: 0, status: "idle", nextMaint: "—" }]);
-            show("Resource added"); setShowModal(false);
-          }} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 6 — MACHINES (technical detail + maintenance schedule)
-// ═══════════════════════════════════════════════════════════════════════════════
-const MACHINE_SEED = [
-  { id: "MCH-001", name: "CNC Milling Machine", model: "Haas VF-2", serial: "HVF2-20231", dept: "Machining", status: "running", hours: 1240, maxHours: 1500, lastMaint: "2026-05-20", nextMaint: "2026-07-20", operator: "Rajan K." },
-  { id: "MCH-002", name: "Hydraulic Press", model: "Atlas H-50T", serial: "AH50-20198", dept: "Forming", status: "running", hours: 890, maxHours: 1200, lastMaint: "2026-05-10", nextMaint: "2026-07-10", operator: "Arun S." },
-  { id: "MCH-003", name: "TIG Welding Unit", model: "Lincoln TIG 200", serial: "LT200-20214", dept: "Welding", status: "maintenance", hours: 1490, maxHours: 1500, lastMaint: "2026-06-09", nextMaint: "2026-06-25", operator: "Dinesh P." },
-  { id: "MCH-004", name: "Lathe Machine", model: "Precimax L-400", serial: "PML4-20187", dept: "Machining", status: "idle", hours: 320, maxHours: 1200, lastMaint: "2026-04-20", nextMaint: "2026-06-20", operator: "Unassigned" },
-];
-
-function MachinesPage() {
-  const [selected, setSelected] = useState(MACHINE_SEED[0]);
-  const statusColor = s => s === "running" ? T.green : s === "idle" ? T.amber : T.red;
-  const statusBg = s => s === "running" ? T.greenLight : s === "idle" ? T.amberSoft : T.redSoft;
-
-  return (
-    <div>
-      <SectionHeader
-        title="Machines"
-        sub="Track machine health, hours, and maintenance schedules"
-        actions={<Btn>＋ Register Machine</Btn>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="⚙️" label="Total Machines" value={MACHINE_SEED.length} bg={T.greenLight} />
-        <KPI icon="✅" label="Running" value={MACHINE_SEED.filter(m => m.status === "running").length} bg={T.greenLight} color={T.green} />
-        <KPI icon="🔧" label="In Maintenance" value={MACHINE_SEED.filter(m => m.status === "maintenance").length} bg={T.redSoft} color={T.red} />
-        <KPI icon="⚠️" label="Near Service Limit" value={MACHINE_SEED.filter(m => m.hours / m.maxHours > 0.85).length} bg={T.amberSoft} color={T.amber} sub="Above 85% hours" />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
-        <Card>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr>
-                <Th>Machine</Th><Th>Model</Th><Th>Dept</Th><Th>Hours Used</Th><Th>Health</Th><Th>Status</Th><Th>Next Maint.</Th>
-              </tr></thead>
-              <tbody>
-                {MACHINE_SEED.map(m => {
-                  const pct = Math.round(m.hours / m.maxHours * 100);
-                  const hColor = pct > 90 ? T.red : pct > 70 ? T.amber : T.green;
-                  return (
-                    <tr key={m.id} onClick={() => setSelected(m)} style={{ cursor: "pointer", background: selected?.id === m.id ? T.greenFaint : "" }}
-                      onMouseEnter={e => { if (selected?.id !== m.id) e.currentTarget.style.background = T.bg; }}
-                      onMouseLeave={e => { if (selected?.id !== m.id) e.currentTarget.style.background = ""; }}>
-                      <Td>
-                        <div style={{ fontWeight: 600 }}>{m.name}</div>
-                        <div style={{ fontSize: 11, color: T.textLight }}>{m.serial}</div>
-                      </Td>
-                      <Td style={{ fontSize: 12, color: T.textMid }}>{m.model}</Td>
-                      <Td><Badge label={m.dept} color={T.blue} bg={T.blueSoft} /></Td>
-                      <Td>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: hColor, marginBottom: 4 }}>{m.hours}/{m.maxHours}h</div>
-                        <ProgressBar pct={pct} color={hColor} />
-                      </Td>
-                      <Td style={{ textAlign: "center" }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: hColor }}>{100 - pct}%</div>
-                        <div style={{ fontSize: 10, color: T.textLight }}>remaining</div>
-                      </Td>
-                      <Td><Badge label={m.status.charAt(0).toUpperCase() + m.status.slice(1)} color={statusColor(m.status)} bg={statusBg(m.status)} dot /></Td>
-                      <Td style={{ fontSize: 12, color: pct > 90 ? T.red : T.textMid, fontWeight: pct > 90 ? 700 : 400 }}>{m.nextMaint}</Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {/* Machine Detail Panel */}
-        <Card style={{ alignSelf: "flex-start", position: "sticky", top: 20 }}>
-          <div style={{ padding: "16px 18px", borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.green, marginBottom: 4 }}>{selected?.id}</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{selected?.name}</div>
-            <div style={{ fontSize: 12, color: T.textMid }}>{selected?.model} · {selected?.serial}</div>
-          </div>
-          <div style={{ padding: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-              <Badge label={selected?.status} color={statusColor(selected?.status)} bg={statusBg(selected?.status)} dot />
-              <Badge label={selected?.dept} color={T.blue} bg={T.blueSoft} />
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.textMid, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Service Hours</div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                <span style={{ color: T.textMid }}>Used</span>
-                <span style={{ fontWeight: 700 }}>{selected?.hours} / {selected?.maxHours}h</span>
-              </div>
-              <ProgressBar pct={selected ? Math.round(selected.hours / selected.maxHours * 100) : 0} />
-            </div>
-
-            {[["Operator", selected?.operator], ["Department", selected?.dept], ["Last Service", selected?.lastMaint], ["Next Service", selected?.nextMaint]].map(([l, v]) => (
-              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
-                <span style={{ color: T.textMid }}>{l}</span>
-                <span style={{ fontWeight: 600 }}>{v}</span>
-              </div>
-            ))}
-
-            <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-              <Btn variant="secondary" size="sm" style={{ flex: 1 }}>📋 Log Issue</Btn>
-              <Btn variant="primary" size="sm" style={{ flex: 1 }}>🔧 Schedule</Btn>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 7 — SCHEDULE (Gantt-first view with team workload)
-// ═══════════════════════════════════════════════════════════════════════════════
-function SchedulePage() {
-  const ganttDays = Array.from({ length: 21 }, (_, i) => i + 10);
-  const today = 23;
-
-  return (
-    <div>
-      <SectionHeader
-        title="Schedule"
-        sub="Production timeline and team workload — June 2026"
-        actions={<><Btn variant="secondary">📤 Export</Btn><Btn>＋ Schedule Run</Btn></>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="📅" label="Active This Month" value={WO_SEED.filter(o => o.status !== "completed").length} bg={T.blueSoft} color={T.blue} />
-        <KPI icon="⚡" label="On Hold / At Risk" value={WO_SEED.filter(o => o.status === "on_hold").length} bg={T.redSoft} color={T.red} />
-        <KPI icon="🎯" label="On Track" value={WO_SEED.filter(o => o.status === "in_progress").length} bg={T.greenLight} color={T.green} sub="In progress" />
-        <KPI icon="📦" label="Queued" value={WO_SEED.filter(o => o.status === "planned").length} bg={T.amberSoft} color={T.amber} sub="Not started" />
-      </div>
-
-      {/* Gantt */}
-      <Card style={{ marginBottom: 20 }}>
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Production Timeline — June 2026</div>
-            <div style={{ fontSize: 12, color: T.textMid, marginTop: 2 }}>Today: Jun 23 (shown in green)</div>
-          </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            {Object.entries(STATUS_CFG).map(([k, v]) => (
-              <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: T.textMid }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: v.color }} />
-                {v.label}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ padding: "20px 24px", overflowX: "auto" }}>
-          <div style={{ minWidth: 700 }}>
-            {/* Day header */}
-            <div style={{ display: "flex", marginBottom: 12, paddingLeft: 210 }}>
-              {ganttDays.map(d => (
-                <div key={d} style={{ flex: 1, textAlign: "center", fontSize: 10, fontWeight: d === today ? 800 : 400, color: d === today ? T.green : T.textLight }}>
-                  {d % 5 === 0 || d === today ? d : ""}
-                </div>
-              ))}
-            </div>
-            {WO_SEED.map(o => {
-              const s = +o.start.split("-")[2];
-              const e = +o.end.split("-")[2];
-              const leftPct = Math.max(0, (s - 10) / 21 * 100);
-              const widthPct = Math.min(100 - leftPct, (e - Math.max(s, 10) + 1) / 21 * 100);
-              const cfg = STATUS_CFG[o.status];
-              const todayPct = (today - 10) / 21 * 100;
-              return (
-                <div key={o.id} style={{ display: "flex", alignItems: "center", marginBottom: 10, position: "relative" }}>
-                  <div style={{ width: 210, flexShrink: 0, paddingRight: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{o.id}</div>
-                    <div style={{ fontSize: 11, color: T.textMid, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 190 }}>{o.product}</div>
-                  </div>
-                  <div style={{ flex: 1, position: "relative", height: 32, background: T.bg, borderRadius: 4 }}>
-                    {/* today line */}
-                    <div style={{ position: "absolute", left: `${todayPct}%`, top: -4, bottom: -4, width: 2, background: T.green, borderRadius: 1, zIndex: 2 }} />
-                    <div style={{ position: "absolute", height: "100%", left: `${leftPct}%`, width: `${widthPct}%`, background: cfg.color, borderRadius: 6, display: "flex", alignItems: "center", paddingLeft: 8, overflow: "hidden" }}>
-                      <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${o.pct}%`, background: "rgba(0,0,0,0.18)", borderRadius: 6 }} />
-                      <span style={{ fontSize: 10, color: "#fff", fontWeight: 700, position: "relative", zIndex: 1, whiteSpace: "nowrap" }}>{o.pct}% · {o.team}</span>
-                    </div>
-                  </div>
-                  <div style={{ width: 60, textAlign: "right", fontSize: 11, color: T.textMid, paddingLeft: 10, flexShrink: 0 }}>{o.end.slice(5)}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </Card>
-
-      {/* Team Workload */}
-      <Card>
-        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 14 }}>👥 Team Workload</div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Team</Th><Th>Orders</Th><Th>Total Qty</Th><Th>Avg Progress</Th><Th>Breakdown</Th></tr></thead>
-          <tbody>
-            {["Team Alpha", "Team Beta", "Team Gamma"].map((team, ti) => {
-              const teamOrders = WO_SEED.filter(o => o.team === team);
-              const avg = teamOrders.length ? Math.round(teamOrders.reduce((a, o) => a + o.pct, 0) / teamOrders.length) : 0;
-              const totalQty = teamOrders.reduce((a, o) => a + o.qty, 0);
-              return (
-                <tr key={team} style={{ background: ti % 2 === 0 ? "#fff" : T.bg }}>
-                  <Td><span style={{ fontWeight: 700 }}>{team}</span></Td>
-                  <Td>{teamOrders.length} orders</Td>
-                  <Td>{totalQty.toLocaleString()} units</Td>
-                  <Td style={{ minWidth: 160 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ width: 100 }}><ProgressBar pct={avg} /></div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{avg}%</span>
-                    </div>
-                  </Td>
-                  <Td>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {Object.entries(teamOrders.reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc; }, {})).map(([s, n]) => (
-                        <Badge key={s} label={`${STATUS_CFG[s]?.label} ×${n}`} color={STATUS_CFG[s]?.color} bg={STATUS_CFG[s]?.bg} />
-                      ))}
-                    </div>
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 8 — QUALITY CONTROL (inspection checklists)
-// ═══════════════════════════════════════════════════════════════════════════════
-const QC_SEED = [
-  { id: "QC-001", ref: "PRD-0001", product: "Industrial Valve A3", inspector: "Meena S.", date: "2026-06-09", result: "passed", defects: 0, batch: 50, sampled: 10 },
-  { id: "QC-002", ref: "PRD-0003", product: "Tomato Ketchup", inspector: "Arjun R.", date: "2026-06-08", result: "failed", defects: 3, batch: 100, sampled: 15 },
-  { id: "QC-003", ref: "PRD-0004", product: "Mango Pickle", inspector: "Priya K.", date: "2026-06-07", result: "passed", defects: 1, batch: 75, sampled: 10 },
-  { id: "QC-004", ref: "PRD-0002", product: "Whole Wheat Bread", inspector: "Meena S.", date: "2026-06-06", result: "pending", defects: 0, batch: 30, sampled: 0 },
-  { id: "QC-005", ref: "PRD-0005", product: "Coconut Oil", inspector: "Arjun R.", date: "2026-06-05", result: "passed", defects: 0, batch: 60, sampled: 8 },
-];
-
-const CHECKLIST = [
-  { check: "Visual inspection — no visible defects", status: "passed" },
-  { check: "Dimensional tolerances ±0.1mm", status: "passed" },
-  { check: "Pressure test at 150 PSI", status: "passed" },
-  { check: "Surface finish Ra < 1.6μm", status: "failed" },
-  { check: "Weight within ±2% spec", status: "passed" },
-  { check: "Leak test — 30 min hold", status: "passed" },
-];
-
-function QualityControlPage() {
-  const [selected, setSelected] = useState(QC_SEED[0]);
-  const { show, Toast } = useToast();
-  const resultColor = r => r === "passed" ? T.green : r === "failed" ? T.red : T.amber;
-  const resultBg = r => r === "passed" ? T.greenLight : r === "failed" ? T.redSoft : T.amberSoft;
-
-  const passRate = Math.round(QC_SEED.filter(q => q.result === "passed").length / QC_SEED.filter(q => q.result !== "pending").length * 100);
-
-  return (
-    <div>
-      {Toast}
-      <SectionHeader
-        title="Quality Control"
-        sub="Inspection records, checklists, and defect tracking"
-        actions={<Btn>＋ New Inspection</Btn>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="🔍" label="Inspections" value={QC_SEED.length} bg={T.greenLight} />
-        <KPI icon="✅" label="Pass Rate" value={`${passRate}%`} bg={T.greenLight} color={T.green} sub="Last 30 days" trend="up" />
-        <KPI icon="❌" label="Failed" value={QC_SEED.filter(q => q.result === "failed").length} bg={T.redSoft} color={T.red} sub="Need rework" />
-        <KPI icon="⏳" label="Pending" value={QC_SEED.filter(q => q.result === "pending").length} bg={T.amberSoft} color={T.amber} sub="Awaiting check" />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20 }}>
-        <Card>
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, fontSize: 13 }}>Inspection Records</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>ID</Th><Th>Production Ref</Th><Th>Product</Th><Th>Inspector</Th><Th>Date</Th><Th>Batch</Th><Th>Defects</Th><Th>Result</Th></tr></thead>
-            <tbody>
-              {QC_SEED.map(q => (
-                <tr key={q.id} onClick={() => setSelected(q)} style={{ cursor: "pointer", background: selected?.id === q.id ? T.greenFaint : "" }}
-                  onMouseEnter={e => { if (selected?.id !== q.id) e.currentTarget.style.background = T.bg; }}
-                  onMouseLeave={e => { if (selected?.id !== q.id) e.currentTarget.style.background = ""; }}>
-                  <Td><span style={{ fontWeight: 700, color: T.green, fontSize: 12 }}>{q.id}</span></Td>
-                  <Td style={{ fontSize: 12 }}>{q.ref}</Td>
-                  <Td><span style={{ fontWeight: 600 }}>{q.product}</span></Td>
-                  <Td style={{ fontSize: 12, color: T.textMid }}>{q.inspector}</Td>
-                  <Td style={{ fontSize: 12, color: T.textMid }}>{q.date}</Td>
-                  <Td>{q.batch} units</Td>
-                  <Td>
-                    {q.defects > 0
-                      ? <span style={{ fontWeight: 700, color: T.red }}>{q.defects} found</span>
-                      : <span style={{ color: T.textLight }}>—</span>}
-                  </Td>
-                  <Td><Badge label={q.result.charAt(0).toUpperCase() + q.result.slice(1)} color={resultColor(q.result)} bg={resultBg(q.result)} dot /></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        {/* QC Detail + Checklist */}
-        <Card style={{ alignSelf: "flex-start" }}>
-          <div style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.green }}>{selected?.id}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 2 }}>{selected?.product}</div>
-            <div style={{ fontSize: 12, color: T.textMid, marginTop: 2 }}>{selected?.ref} · {selected?.date}</div>
-          </div>
-          <div style={{ padding: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-              {[["Inspector", selected?.inspector], ["Batch Size", `${selected?.batch} u`], ["Sampled", `${selected?.sampled} u`], ["Defects Found", selected?.defects || "0"]].map(([l, v]) => (
-                <div key={l} style={{ background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
-                  <div style={{ fontSize: 10, color: T.textLight, fontWeight: 600 }}>{l}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginTop: 2 }}>{v}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 12, color: T.textMid, textTransform: "uppercase", letterSpacing: 0.5 }}>Inspection Checklist</div>
-            {CHECKLIST.map((c, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${T.border}` }}>
-                <span style={{ fontSize: 14 }}>{c.status === "passed" ? "✅" : "❌"}</span>
-                <span style={{ fontSize: 12, color: T.text, flex: 1 }}>{c.check}</span>
-              </div>
-            ))}
-
-            <Btn variant="primary" style={{ width: "100%", marginTop: 16, justifyContent: "center" }} onClick={() => show("Report downloaded", "info")}>
-              📄 Download Report
-            </Btn>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 9 — MAINTENANCE (timeline + upcoming tasks)
-// ═══════════════════════════════════════════════════════════════════════════════
-const MAINT_SEED = [
-  { id: "MNT-001", machine: "CNC Machine #1", type: "Preventive", scheduled: "2026-06-20", engineer: "Rajan K.", duration: "4h", status: "scheduled", priority: "medium" },
-  { id: "MNT-002", machine: "Paint Booth", type: "Corrective", scheduled: "2026-06-25", engineer: "Vendor Team", duration: "8h", status: "in_progress", priority: "high" },
-  { id: "MNT-003", machine: "Lathe Machine #1", type: "Predictive", scheduled: "2026-06-20", engineer: "Suresh M.", duration: "2h", status: "overdue", priority: "high" },
-  { id: "MNT-004", machine: "Assembly Line B", type: "Preventive", scheduled: "2026-07-05", engineer: "Team Beta", duration: "6h", status: "scheduled", priority: "low" },
-  { id: "MNT-005", machine: "Hydraulic Press", type: "Predictive", scheduled: "2026-07-10", engineer: "Arun S.", duration: "3h", status: "scheduled", priority: "medium" },
-];
-
-function MaintenancePage() {
-  const { show, Toast } = useToast();
-  const [tasks, setTasks] = useState(MAINT_SEED);
-  const [showModal, setShowModal] = useState(false);
-
-  const statusColor = s => s === "completed" ? T.green : s === "in_progress" ? T.amber : s === "overdue" ? T.red : T.blue;
-  const statusBg = s => s === "completed" ? T.greenLight : s === "in_progress" ? T.amberSoft : s === "overdue" ? T.redSoft : T.blueSoft;
-  const typeColor = t => t === "Corrective" ? T.red : t === "Preventive" ? T.green : T.purple;
-
-  return (
-    <div>
-      {Toast}
-      <SectionHeader
-        title="Maintenance"
-        sub="Schedule and track preventive and corrective maintenance tasks"
-        actions={<><Btn variant="secondary">📋 Maintenance Log</Btn><Btn onClick={() => setShowModal(true)}>＋ Schedule Task</Btn></>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="🔧" label="Total Tasks" value={tasks.length} bg={T.greenLight} />
-        <KPI icon="📅" label="Scheduled" value={tasks.filter(t => t.status === "scheduled").length} bg={T.blueSoft} color={T.blue} />
-        <KPI icon="⚠️" label="Overdue" value={tasks.filter(t => t.status === "overdue").length} bg={T.redSoft} color={T.red} sub="Needs attention" />
-        <KPI icon="⚙️" label="In Progress" value={tasks.filter(t => t.status === "in_progress").length} bg={T.amberSoft} color={T.amber} />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 20 }}>
-        <Card>
-          <div style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Maintenance Schedule</div>
-          </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Task ID</Th><Th>Machine</Th><Th>Type</Th><Th>Scheduled</Th><Th>Engineer</Th><Th>Duration</Th><Th>Priority</Th><Th>Status</Th><Th>Action</Th></tr></thead>
-            <tbody>
-              {tasks.map(t => (
-                <tr key={t.id}
-                  onMouseEnter={e => e.currentTarget.style.background = T.bg}
-                  onMouseLeave={e => e.currentTarget.style.background = ""}>
-                  <Td><span style={{ fontWeight: 700, color: T.green, fontSize: 12 }}>{t.id}</span></Td>
-                  <Td><span style={{ fontWeight: 600 }}>{t.machine}</span></Td>
-                  <Td><span style={{ fontSize: 12, fontWeight: 700, color: typeColor(t.type) }}>{t.type}</span></Td>
-                  <Td style={{ color: t.status === "overdue" ? T.red : T.textMid, fontWeight: t.status === "overdue" ? 700 : 400 }}>{t.scheduled}</Td>
-                  <Td style={{ fontSize: 12 }}>{t.engineer}</Td>
-                  <Td style={{ color: T.textMid }}>{t.duration}</Td>
-                  <Td><Badge label={PRIORITY_CFG[t.priority].label} color={PRIORITY_CFG[t.priority].color} bg={PRIORITY_CFG[t.priority].bg} /></Td>
-                  <Td><Badge label={t.status.charAt(0).toUpperCase() + t.status.replace("_", " ").slice(1)} color={statusColor(t.status)} bg={statusBg(t.status)} dot /></Td>
-                  <Td>
-                    <Btn size="sm" variant="secondary" onClick={() => { setTasks(tasks.map(x => x.id === t.id ? { ...x, status: "completed" } : x)); show("Marked complete"); }}>
-                      ✅ Complete
-                    </Btn>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-
-        {/* Sidebar: Type breakdown + upcoming */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Card style={{ padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: T.text }}>By Type</div>
-            {[["Preventive", T.green], ["Corrective", T.red], ["Predictive", T.purple]].map(([type, color]) => {
-              const count = tasks.filter(t => t.type === type).length;
-              const pct = Math.round(count / tasks.length * 100);
-              return (
-                <div key={type} style={{ marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600, color }}>{type}</span>
-                    <span style={{ color: T.textMid }}>{count} tasks · {pct}%</span>
-                  </div>
-                  <ProgressBar pct={pct} color={color} />
-                </div>
-              );
-            })}
-          </Card>
-
-          <Card style={{ padding: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14, color: T.text }}>⚠️ Overdue / Urgent</div>
-            {tasks.filter(t => t.status === "overdue" || t.priority === "high").slice(0, 3).map(t => (
-              <div key={t.id} style={{ padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.red }}>{t.machine}</div>
-                <div style={{ fontSize: 11, color: T.textMid, marginTop: 2 }}>{t.type} · {t.scheduled}</div>
-                <div style={{ fontSize: 11, color: T.textMid }}>{t.engineer}</div>
-              </div>
-            ))}
-          </Card>
-        </div>
-      </div>
-
-      {showModal && (
-        <Modal title="Schedule Maintenance Task" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div style={{ gridColumn: "1/-1" }}><Select label="Machine *"><option>Select machine...</option>{MACHINE_SEED.map(m => <option key={m.id}>{m.name}</option>)}</Select></div>
-            <Select label="Type"><option>Preventive</option><option>Corrective</option><option>Predictive</option></Select>
-            <Select label="Priority"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></Select>
-            <Input label="Scheduled Date *" type="date" />
-            <Input label="Estimated Duration" placeholder="e.g. 4h" />
-            <div style={{ gridColumn: "1/-1" }}><Input label="Assigned Engineer / Team" placeholder="e.g. Rajan K." /></div>
-            <div style={{ gridColumn: "1/-1" }}><Input label="Notes" placeholder="Maintenance details..." /></div>
-          </div>
-          <ModalFooter onClose={() => setShowModal(false)} onSave={() => { show("Task scheduled"); setShowModal(false); }} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGE 10 — PRODUCTION REPORTS (analytics + charts)
-// ═══════════════════════════════════════════════════════════════════════════════
-const MONTHLY = [
-  { month: "Jan", produced: 320, target: 350, cost: 142000 },
-  { month: "Feb", produced: 290, target: 300, cost: 128000 },
-  { month: "Mar", produced: 410, target: 380, cost: 178000 },
-  { month: "Apr", produced: 380, target: 400, cost: 165000 },
-  { month: "May", produced: 450, target: 420, cost: 195000 },
-  { month: "Jun", produced: 315, target: 430, cost: 138000 },
-];
-
-const BarChart = ({ data }) => {
-  const maxVal = Math.max(...data.map(d => Math.max(d.produced, d.target)));
-  const h = 180;
-  return (
-    <div style={{ padding: "0 4px" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: h, position: "relative" }}>
-        {/* horizontal guides */}
-        {[0.25, 0.5, 0.75, 1].map(f => (
-          <div key={f} style={{ position: "absolute", left: 0, right: 0, bottom: `${f * 100}%`, borderTop: `1px dashed ${T.border}`, fontSize: 10, color: T.textLight }}>
-            <span style={{ position: "absolute", left: -30, top: -6 }}>{Math.round(maxVal * f)}</span>
-          </div>
-        ))}
-        {data.map(d => (
-          <div key={d.month} style={{ flex: 1, display: "flex", gap: 2, alignItems: "flex-end", position: "relative", zIndex: 1 }}>
-            <div title={`Produced: ${d.produced}`} style={{ flex: 1, height: `${d.produced / maxVal * h}px`, background: T.green, borderRadius: "3px 3px 0 0", transition: "height .3s" }} />
-            <div title={`Target: ${d.target}`} style={{ flex: 1, height: `${d.target / maxVal * h}px`, background: T.greenLight, border: `1px solid ${T.green}`, borderRadius: "3px 3px 0 0", transition: "height .3s" }} />
-          </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 8, paddingLeft: 30 }}>
-        {data.map(d => (
-          <div key={d.month} style={{ flex: 1, textAlign: "center", fontSize: 11, color: T.textMid, paddingTop: 6 }}>{d.month}</div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMid }}>
-          <div style={{ width: 12, height: 12, background: T.green, borderRadius: 2 }} />Produced
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.textMid }}>
-          <div style={{ width: 12, height: 12, background: T.greenLight, border: `1px solid ${T.green}`, borderRadius: 2 }} />Target
-        </div>
-      </div>
-    </div>
-  );
-};
-
-function ReportsPage() {
-  const [period, setPeriod] = useState("6M");
-  const totalProduced = MONTHLY.reduce((a, m) => a + m.produced, 0);
-  const totalTarget = MONTHLY.reduce((a, m) => a + m.target, 0);
-  const efficiency = Math.round(totalProduced / totalTarget * 100);
-
-  return (
-    <div>
-      <SectionHeader
-        title="Production Reports"
-        sub="Analytics, trends, and performance metrics"
-        actions={<>
-          <div style={{ display: "flex", background: T.bg, borderRadius: 8, border: `1px solid ${T.border}`, overflow: "hidden" }}>
-            {["1M", "3M", "6M", "YTD"].map(p => (
-              <button key={p} onClick={() => setPeriod(p)} style={{
-                padding: "6px 14px", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                background: period === p ? T.green : "transparent", color: period === p ? "#fff" : T.textMid,
-              }}>{p}</button>
-            ))}
-          </div>
-          <Btn variant="secondary">📤 Export</Btn>
-        </>}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>
-        <KPI icon="📦" label="Total Produced" value={totalProduced.toLocaleString()} bg={T.greenLight} sub={`${efficiency}% of target`} trend="up" />
-        <KPI icon="🎯" label="Efficiency" value={`${efficiency}%`} bg={efficiency >= 90 ? T.greenLight : T.amberSoft} color={efficiency >= 90 ? T.green : T.amber} sub="vs plan" />
-        <KPI icon="💰" label="Total Cost" value={`₹${(MONTHLY.reduce((a, m) => a + m.cost, 0) / 1000).toFixed(0)}K`} bg={T.blueSoft} color={T.blue} sub="Manufacturing cost" />
-        <KPI icon="📉" label="Defect Rate" value="2.4%" bg={T.redSoft} color={T.red} sub="Below 5% target" trend="dn" />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, marginBottom: 20 }}>
-        <Card style={{ padding: 20 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 20 }}>Production vs Target — 2026</div>
-          <div style={{ paddingLeft: 30 }}>
-            <BarChart data={MONTHLY} />
-          </div>
-        </Card>
-
-        <Card style={{ padding: 20 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 16 }}>Monthly Summary</div>
-          {MONTHLY.map(m => {
-            const pct = Math.round(m.produced / m.target * 100);
-            return (
-              <div key={m.month} style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, color: T.text }}>{m.month}</span>
-                  <span style={{ color: pct >= 100 ? T.green : pct >= 85 ? T.amber : T.red, fontWeight: 700 }}>{pct}%</span>
-                </div>
-                <ProgressBar pct={pct} color={pct >= 100 ? T.green : pct >= 85 ? T.amber : T.red} />
-                <div style={{ fontSize: 10, color: T.textLight, marginTop: 2 }}>{m.produced} / {m.target} units</div>
-              </div>
-            );
-          })}
-        </Card>
-      </div>
-
-      {/* Product-level breakdown */}
-      <Card>
-        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Product Performance</div>
-          <Btn variant="ghost" size="sm">View All →</Btn>
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Product</Th><Th>Runs</Th><Th>Qty Produced</Th><Th>Total Cost</Th><Th>Defects</Th><Th>Efficiency</Th><Th>Status</Th></tr></thead>
-          <tbody>
-            {[
-              { product: "Industrial Valve A3", runs: 3, qty: 600, cost: "₹12,750", defects: 2, eff: 95 },
-              { product: "Masala Chai Blend", runs: 5, qty: 250, cost: "₹6,250", defects: 0, eff: 100 },
-              { product: "Tomato Ketchup", runs: 4, qty: 400, cost: "₹18,000", defects: 12, eff: 78 },
-              { product: "Coconut Oil", runs: 2, qty: 120, cost: "₹14,400", defects: 1, eff: 91 },
-              { product: "Mango Pickle", runs: 3, qty: 225, cost: "₹10,125", defects: 3, eff: 86 },
-            ].map((r, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : T.bg }}
-                onMouseEnter={e => e.currentTarget.style.background = T.greenFaint}
-                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "#fff" : T.bg}>
-                <Td><span style={{ fontWeight: 600 }}>{r.product}</span></Td>
-                <Td style={{ color: T.textMid }}>{r.runs}</Td>
-                <Td><span style={{ fontWeight: 700 }}>{r.qty}</span></Td>
-                <Td><span style={{ fontWeight: 700, color: T.green }}>{r.cost}</span></Td>
-                <Td><span style={{ color: r.defects > 5 ? T.red : r.defects > 0 ? T.amber : T.textLight, fontWeight: 700 }}>{r.defects}</span></Td>
-                <Td style={{ minWidth: 120 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 80 }}><ProgressBar pct={r.eff} /></div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: r.eff >= 90 ? T.green : r.eff >= 80 ? T.amber : T.red }}>{r.eff}%</span>
-                  </div>
-                </Td>
-                <Td><Badge label={r.eff >= 90 ? "Good" : r.eff >= 80 ? "Fair" : "Needs Review"} color={r.eff >= 90 ? T.green : r.eff >= 80 ? T.amber : T.red} bg={r.eff >= 90 ? T.greenLight : r.eff >= 80 ? T.amberSoft : T.redSoft} /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN SHELL — Sidebar nav + page router
-// ═══════════════════════════════════════════════════════════════════════════════
-const NAV = [
-  { key: "planning", label: "Production Planning", icon: "📋" },
-  { key: "bom", label: "Bill of Materials", icon: "🔩" },
-  { key: "workorders", label: "Work Orders", icon: "📑" },
-  { key: "production", label: "Production", icon: "🏭" },
-  { key: "resources", label: "Resources", icon: "⚙️" },
-  { key: "machines", label: "Machines", icon: "🔧" },
-  { key: "schedule", label: "Schedule", icon: "📅" },
-  { key: "quality", label: "Quality Control", icon: "🔍" },
-  { key: "maintenance", label: "Maintenance", icon: "🛠️" },
-  { key: "reports", label: "Production Reports", icon: "📊" },
-];
-
-export default function ManufacturingERP() {
-  const [page, setPage] = useState("planning");
-
-  const pageMap = {
-    planning: <ProductionPlanningPage />,
-    bom: <BOMPage />,
-    workorders: <WorkOrdersPage />,
-    production: <ProductionPage />,
-    resources: <ResourcesPage />,
-    machines: <MachinesPage />,
-    schedule: <SchedulePage />,
-    quality: <QualityControlPage />,
-    maintenance: <MaintenancePage />,
-    reports: <ReportsPage />,
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ wo_number: r.wo_number, product_name: r.product_name, quantity: r.quantity, unit: r.unit, start_date: r.start_date || "", end_date: r.end_date || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.product_name || !form.quantity) { show("Product and quantity required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/work-orders/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setOrders(p => p.map(x => x.id === edit.id ? d : x)); show("Work order updated."); }
+      else       { const d = await api("/work-orders", { method: "POST", body: JSON.stringify(form) }); setOrders(p => [d, ...p]); show("Work order created."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
   };
 
-  const current = NAV.find(n => n.key === page);
+  const del = async r => {
+    if (!confirm(`Delete work order "${r.wo_number}"?`)) return;
+    try { await api(`/work-orders/${r.id}`, { method: "DELETE" }); setOrders(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const quickStatus = async (r, status) => {
+    try { const d = await api(`/work-orders/${r.id}`, { method: "PUT", body: JSON.stringify({ ...r, status }) }); setOrders(p => p.map(x => x.id === r.id ? d : x)); show("Status updated."); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "wo_number",     label: "WO #",    r: v => <span style={{ fontFamily: "monospace", fontWeight: 700, color: G.green, fontSize: 12 }}>{v}</span> },
+    { k: "product_name",  label: "Product", r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "quantity",      label: "Qty",     r: (v, r) => `${v} ${r.unit}` },
+    { k: "assigned_team", label: "Team" },
+    { k: "start_date",    label: "Start" },
+    { k: "end_date",      label: "End" },
+    { k: "progress",      label: "Progress", r: v => <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 110 }}><Bar pct={v || 0} /><span style={{ fontSize: 11, color: G.n500, whiteSpace: "nowrap" }}>{v || 0}%</span></div> },
+    { k: "priority",      label: "Priority", r: v => <Chip status={v} /> },
+    { k: "status",        label: "Status",   r: (v, r) => (
+      <select value={v} onClick={e => e.stopPropagation()} onChange={e => quickStatus(r, e.target.value)} style={{ ...sel, width: 130, fontSize: 11, padding: "4px 8px" }}>
+        {["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+      </select>
+    )},
+  ];
 
   return (
-    <div style={{ display: "flex", fontFamily: "'Segoe UI', -apple-system, sans-serif", minHeight: "100vh", background: T.bg, color: T.text }}>
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="📋" label="Total"       value={orders.length} />
+        <KCard icon="🕒" label="Planned"     value={orders.filter(o => o.status === "planned").length}     accent={G.blue} />
+        <KCard icon="⚙️" label="In Progress" value={orders.filter(o => o.status === "in_progress").length} accent={G.amber} />
+        <KCard icon="✅" label="Completed"   value={orders.filter(o => o.status === "completed").length}   accent={G.green} />
+        <KCard icon="⏸️" label="On Hold"     value={orders.filter(o => o.status === "on_hold").length}     accent={G.red} />
+      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <select value={fStatus} onChange={e => { setFS(e.target.value); setPage(1); }} style={{ ...sel, width: 150 }}>
+            <option value="">All Status</option>
+            {["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+          </select>
+          <button style={btnPri} onClick={openAdd}>+ New Work Order</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
 
-      {/* Sidebar */}
-      <div style={{
-        width: 230, flexShrink: 0, background: T.greenDark, display: "flex",
-        flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto",
-      }}>
-        {/* Logo */}
-        <div style={{ padding: "20px 18px 16px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: T.green, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏭</div>
-            <div>
-              <div style={{ color: "#fff", fontWeight: 800, fontSize: 14, letterSpacing: 0.3 }}>Manufacturing</div>
-              <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Manod ERP</div>
-            </div>
-          </div>
-        </div>
+      {modal && (
+        <Mdl title={edit ? `Edit ${edit.wo_number}` : "New Work Order"} onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="WO Number"><input style={inp} value={form.wo_number} onChange={e => sf("wo_number", e.target.value)} placeholder="Auto-generated if blank" /></Fld>
+            <Fld label="Product Name" req><input style={inp} value={form.product_name} onChange={e => sf("product_name", e.target.value)} /></Fld>
+            <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Unit"><select style={sel} value={form.unit} onChange={e => sf("unit", e.target.value)}>{["pcs","kg","mtrs","ltrs","boxes"].map(u => <option key={u}>{u}</option>)}</select></Fld>
+            <Fld label="Start Date"><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
+            <Fld label="End Date"><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} /></Fld>
+            <Fld label="Priority"><select style={sel} value={form.priority} onChange={e => sf("priority", e.target.value)}>{["low","medium","high"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["planned","in_progress","completed","on_hold"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
+            <Fld label="Progress (%)"><input type="number" style={inp} value={form.progress} onChange={e => sf("progress", Math.min(100, Math.max(0, +e.target.value)))} min={0} max={100} /></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Create Work Order"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
 
-        {/* Nav items */}
-        <nav style={{ padding: "12px 10px", flex: 1 }}>
-          {NAV.map(n => {
-            const active = page === n.key;
-            return (
-              <button key={n.key} onClick={() => setPage(n.key)} style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 10,
-                padding: "9px 10px", borderRadius: 8, border: "none", cursor: "pointer",
-                marginBottom: 2, textAlign: "left",
-                background: active ? T.green : "transparent",
-                color: active ? "#fff" : "rgba(255,255,255,0.65)",
-                fontWeight: active ? 700 : 400, fontSize: 13,
-                transition: "all .15s",
-              }}
-                onMouseEnter={e => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}>
-                <span style={{ fontSize: 15, width: 20, textAlign: "center", flexShrink: 0 }}>{n.icon}</span>
-                <span style={{ lineHeight: 1.3 }}>{n.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+// ══════════════════════════════════════════════════════════════════
+// TAB 4 — PRODUCTION
+// ══════════════════════════════════════════════════════════════════
+function ProductionTab({ show }) {
+  const [recs, setRecs] = useState([]);
+  const [load, setLoad] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
 
-        {/* Footer */}
-        <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-          Manufacturing Module v4.0
-        </div>
+  const today = new Date().toISOString().split("T")[0];
+  const blank = { ref_no: "", location: "", product: "", quantity: "", total_cost: "", date: today, recipe_used: "", notes: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setRecs(await api("/production")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = recs.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product: r.product, quantity: r.quantity, total_cost: r.total_cost || "", date: r.date || today, recipe_used: r.recipe_used || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.product || !form.quantity) { show("Product and quantity required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/production/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRecs(p => p.map(x => x.id === edit.id ? d : x)); show("Production record updated."); }
+      else       { const d = await api("/production", { method: "POST", body: JSON.stringify(form) }); setRecs(p => [d, ...p]); show("Production record saved."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm(`Delete "${r.ref_no}"?`)) return;
+    try { await api(`/production/${r.id}`, { method: "DELETE" }); setRecs(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "date",        label: "Date",     r: v => <span style={{ fontSize: 12, color: G.n500 }}>{v}</span> },
+    { k: "ref_no",      label: "Ref No",   r: v => <span style={{ fontFamily: "monospace", fontWeight: 700, color: G.green, fontSize: 12 }}>{v}</span> },
+    { k: "location",    label: "Location", r: v => <span style={{ fontSize: 12 }}>{v || "—"}</span> },
+    { k: "product",     label: "Product",  r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "quantity",    label: "Qty",      r: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+    { k: "total_cost",  label: "Cost",     r: v => v ? <span style={{ fontWeight: 600, color: G.green }}>₹{Number(v).toLocaleString()}</span> : "—" },
+    { k: "recipe_used", label: "Recipe",   r: v => <span style={{ fontSize: 12, color: G.n500 }}>{v || "—"}</span> },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="🏭" label="Total Productions" value={recs.length} />
+        <KCard icon="📦" label="Total Qty Produced" value={recs.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0)} accent={G.blue} />
+        <KCard icon="💰" label="Total Production Cost" value={recs.reduce((s, r) => s + (parseFloat(r.total_cost) || 0), 0) > 0 ? `₹${recs.reduce((s, r) => s + (parseFloat(r.total_cost) || 0), 0).toLocaleString("en-IN")}` : "₹0"} accent={G.amber} />
+      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <button style={btnPri} onClick={openAdd}>+ Add Production</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
+
+      {modal && (
+        <Mdl title={edit ? "Edit Production" : "Add Production Record"} onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Reference No"><input style={inp} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
+            <Fld label="Date"><input type="date" style={inp} value={form.date} onChange={e => sf("date", e.target.value)} /></Fld>
+            <Fld label="Product" req><input style={inp} value={form.product} onChange={e => sf("product", e.target.value)} /></Fld>
+            <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Unit A - Chennai" /></Fld>
+            <Fld label="Total Cost (₹)"><input type="number" style={inp} value={form.total_cost} onChange={e => sf("total_cost", e.target.value)} min={0} /></Fld>
+            <Fld label="Recipe / BOM Used"><input style={inp} value={form.recipe_used} onChange={e => sf("recipe_used", e.target.value)} placeholder="IVA3-001" /></Fld>
+            <Fld label="Notes"><textarea style={{ ...ta, minHeight: 50 }} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Save Production"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 5 — RESOURCES
+// ══════════════════════════════════════════════════════════════════
+function ResourcesTab({ show }) {
+  const [res, setRes] = useState([]);
+  const [load, setLoad] = useState(true);
+  const [search, setSearch] = useState("");
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const blank = { name: "", type: "Machine", capacity: "", shift: "Morning", operator: "", status: "idle", notes: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setRes(await api("/resources")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = res.filter(r => `${r.name} ${r.type} ${r.operator}`.toLowerCase().includes(search.toLowerCase()));
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ name: r.name, type: r.type, capacity: r.capacity || "", shift: r.shift, operator: r.operator || "", status: r.status, notes: r.notes || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.name) { show("Resource name required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/resources/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRes(p => p.map(x => x.id === edit.id ? d : x)); show("Resource updated."); }
+      else       { const d = await api("/resources", { method: "POST", body: JSON.stringify(form) }); setRes(p => [...p, d]); show("Resource added."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm(`Delete "${r.name}"?`)) return;
+    try { await api(`/resources/${r.id}`, { method: "DELETE" }); setRes(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const quickStatus = async (r, status) => {
+    try { const d = await api(`/resources/${r.id}`, { method: "PUT", body: JSON.stringify({ ...r, status }) }); setRes(p => p.map(x => x.id === r.id ? d : x)); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const stc = { running: G.green, idle: G.amber, maintenance: G.red };
+
+  if (load) return <div style={{ textAlign: "center", padding: 40, color: G.n400 }}>⏳ Loading…</div>;
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="🏗️" label="Total"       value={res.length} />
+        <KCard icon="▶️" label="Running"     value={res.filter(r => r.status === "running").length}     accent={G.green} />
+        <KCard icon="⏸️" label="Idle"        value={res.filter(r => r.status === "idle").length}        accent={G.amber} />
+        <KCard icon="🔧" label="Maintenance" value={res.filter(r => r.status === "maintenance").length} accent={G.red} />
       </div>
 
-      {/* Main content */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        {/* Top bar */}
-        <div style={{
-          background: T.card, borderBottom: `1px solid ${T.border}`,
-          padding: "12px 28px", display: "flex", alignItems: "center",
-          justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, color: T.textLight }}>Manufacturing</span>
-            <span style={{ color: T.border }}>›</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{current?.label}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ position: "relative" }}>
+          <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: G.n400 }}>🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search resources…" style={{ ...inp, paddingLeft: 28, width: 220 }} />
+        </div>
+        <button style={btnPri} onClick={openAdd}>+ Add Resource</button>
+      </div>
+
+      {filtered.length === 0
+        ? <Card><div style={{ textAlign: "center", padding: "40px 0", color: G.n400 }}>📭 No resources found.</div></Card>
+        : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
+            {filtered.map(r => (
+              <div key={r.id} style={{ background: G.white, borderRadius: 12, border: `1px solid ${G.n200}`, boxShadow: G.sh, overflow: "hidden" }}>
+                <div style={{ height: 4, background: stc[r.status] || G.n300 }} />
+                <div style={{ padding: "16px 18px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: G.n900 }}>{r.name}</div>
+                      <div style={{ fontSize: 12, color: G.n500, marginTop: 2 }}>{r.type}</div>
+                    </div>
+                    <Chip status={r.status} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+                    {[["Capacity", `${r.capacity || "—"} u/day`], ["Shift", r.shift || "—"], ["Operator", r.operator || "Unassigned"]].map(([l, v]) => (
+                      <div key={l} style={{ background: G.n50, borderRadius: 6, padding: "6px 10px" }}>
+                        <div style={{ fontSize: 10, color: G.n400, fontWeight: 600, marginBottom: 2 }}>{l}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: G.n700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button style={{ ...btnEdit, flex: 1, justifyContent: "center" }} onClick={() => openEdit(r)}>✏️ Edit</button>
+                    <select value={r.status} onChange={e => quickStatus(r, e.target.value)} style={{ ...sel, flex: 1, fontSize: 11, padding: "4px 8px" }}>
+                      {["running", "idle", "maintenance"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                    </select>
+                    <button style={btnDel} onClick={() => del(r)}>🗑</button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 11, color: T.textLight, background: T.bg, padding: "4px 12px", borderRadius: 20, border: `1px solid ${T.border}` }}>
-              June 2026
+        )
+      }
+
+      {modal && (
+        <Mdl title={edit ? "Edit Resource" : "Add Resource"} onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Resource Name" req span><input style={inp} value={form.name} onChange={e => sf("name", e.target.value)} placeholder="CNC Machine #1" /></Fld>
+            <Fld label="Type"><select style={sel} value={form.type} onChange={e => sf("type", e.target.value)}>{["Machine","Line","Station","Vehicle","Tool"].map(t => <option key={t}>{t}</option>)}</select></Fld>
+            <Fld label="Capacity (u/day)"><input type="number" style={inp} value={form.capacity} onChange={e => sf("capacity", e.target.value)} min={0} /></Fld>
+            <Fld label="Shift"><select style={sel} value={form.shift} onChange={e => sf("shift", e.target.value)}>{["Morning","Evening","Night","Full Day"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Operator / Team"><input style={inp} value={form.operator} onChange={e => sf("operator", e.target.value)} placeholder="Rajan Kumar" /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["running","idle","maintenance"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Add Resource"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 6 — MACHINES
+// ══════════════════════════════════════════════════════════════════
+function MachinesTab({ show }) {
+  const [machines, setMachines] = useState([]);
+  const [load, setLoad] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
+
+  const blank = { name: "", machine_code: "", type: "", location: "", manufacturer: "", model: "", purchase_date: "", status: "active", last_maintenance: "", next_maintenance: "", notes: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setMachines(await api("/machines")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = machines.filter(m => `${m.name} ${m.machine_code} ${m.type} ${m.location}`.toLowerCase().includes(search.toLowerCase()));
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ name: r.name, machine_code: r.machine_code || "", type: r.type || "", location: r.location || "", manufacturer: r.manufacturer || "", model: r.model || "", purchase_date: r.purchase_date || "", status: r.status, last_maintenance: r.last_maintenance || "", next_maintenance: r.next_maintenance || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.name) { show("Machine name required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/machines/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setMachines(p => p.map(x => x.id === edit.id ? d : x)); show("Machine updated."); }
+      else       { const d = await api("/machines", { method: "POST", body: JSON.stringify(form) }); setMachines(p => [d, ...p]); show("Machine added."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm(`Delete "${r.name}"?`)) return;
+    try { await api(`/machines/${r.id}`, { method: "DELETE" }); setMachines(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "machine_code",     label: "Code",         r: v => <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: G.green, background: G.g50, padding: "2px 6px", borderRadius: 4 }}>{v || "—"}</span> },
+    { k: "name",             label: "Machine",      r: (v, r) => <div><div style={{ fontWeight: 700 }}>{v}</div><div style={{ fontSize: 11, color: G.n400 }}>{r.manufacturer} {r.model}</div></div> },
+    { k: "type",             label: "Type" },
+    { k: "location",         label: "Location",     r: v => <span style={{ fontSize: 12 }}>{v || "—"}</span> },
+    { k: "last_maintenance", label: "Last Maint.",  r: v => <span style={{ fontSize: 12, color: G.n500 }}>{v || "—"}</span> },
+    { k: "next_maintenance", label: "Next Maint.",  r: v => <span style={{ fontSize: 12, fontWeight: 600, color: G.n700 }}>{v || "—"}</span> },
+    { k: "status",           label: "Status",       r: v => <Chip status={v} /> },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="🔩" label="Total Machines"   value={machines.length} />
+        <KCard icon="✅" label="Active"            value={machines.filter(m => m.status === "active").length}      accent={G.green} />
+        <KCard icon="🔧" label="In Maintenance"   value={machines.filter(m => m.status === "maintenance").length} accent={G.red} />
+      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <button style={btnPri} onClick={openAdd}>+ Add Machine</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
+
+      {modal && (
+        <Mdl title={edit ? "Edit Machine" : "Add Machine"} onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Machine Name" req><input style={inp} value={form.name} onChange={e => sf("name", e.target.value)} /></Fld>
+            <Fld label="Machine Code"><input style={inp} value={form.machine_code} onChange={e => sf("machine_code", e.target.value)} placeholder="MCH-001" /></Fld>
+            <Fld label="Type"><input style={inp} value={form.type} onChange={e => sf("type", e.target.value)} placeholder="CNC, Lathe, Press…" /></Fld>
+            <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Bay A" /></Fld>
+            <Fld label="Manufacturer"><input style={inp} value={form.manufacturer} onChange={e => sf("manufacturer", e.target.value)} /></Fld>
+            <Fld label="Model"><input style={inp} value={form.model} onChange={e => sf("model", e.target.value)} /></Fld>
+            <Fld label="Purchase Date"><input type="date" style={inp} value={form.purchase_date} onChange={e => sf("purchase_date", e.target.value)} /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["active","inactive","maintenance"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Last Maintenance"><input type="date" style={inp} value={form.last_maintenance} onChange={e => sf("last_maintenance", e.target.value)} /></Fld>
+            <Fld label="Next Maintenance"><input type="date" style={inp} value={form.next_maintenance} onChange={e => sf("next_maintenance", e.target.value)} /></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Add Machine"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 7 — SCHEDULE (Gantt from work orders)
+// ══════════════════════════════════════════════════════════════════
+function ScheduleTab({ show }) {
+  const [orders, setOrders] = useState([]);
+  const [load, setLoad]     = useState(true);
+  const [month, setMonth]   = useState(() => new Date().toISOString().slice(0, 7));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setOrders(await api("/work-orders")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const [yr, mo] = month.split("-").map(Number);
+  const daysInMonth = new Date(yr, mo, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const todayDay = new Date().getDate();
+  const isCurMo  = month === new Date().toISOString().slice(0, 7);
+
+  const inMonth = orders.filter(o => o.start_date && o.end_date && o.start_date.slice(0, 7) <= month && o.end_date.slice(0, 7) >= month);
+
+  if (load) return <div style={{ textAlign: "center", padding: 40, color: G.n400 }}>⏳ Loading schedule…</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: G.n900 }}>📅 Production Schedule — Gantt View</div>
+          <div style={{ fontSize: 12, color: G.n500, marginTop: 2 }}>Derived from active work orders</div>
+        </div>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inp, width: 180 }} />
+      </div>
+
+      {inMonth.length === 0
+        ? <Card><div style={{ textAlign: "center", padding: "40px 0", color: G.n400 }}>📭 No work orders in this period.</div></Card>
+        : (
+          <Card>
+            <div style={{ padding: "16px 20px", overflowX: "auto" }}>
+              {/* Legend */}
+              <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+                {[["planned", "Planned"], ["in_progress", "In Progress"], ["completed", "Completed"], ["on_hold", "On Hold"]].map(([s, l]) => {
+                  const c = SC[s];
+                  return <div key={s} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: G.n600 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: 2, background: c?.txt }} />{l}
+                  </div>;
+                })}
+                {isCurMo && <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: G.green }}><div style={{ width: 2, height: 12, background: G.green }} />Today</div>}
+              </div>
+
+              <div style={{ minWidth: 760 }}>
+                {/* Day header */}
+                <div style={{ display: "flex", marginBottom: 8 }}>
+                  <div style={{ width: 200, flexShrink: 0, fontSize: 11, fontWeight: 700, color: G.n400, textTransform: "uppercase", letterSpacing: .5 }}>Work Order</div>
+                  <div style={{ flex: 1, display: "flex" }}>
+                    {days.map(d => (
+                      <div key={d} style={{ flex: 1, textAlign: "center", fontSize: isCurMo && d === todayDay ? 11 : 0, fontWeight: 800, color: G.green }}>
+                        {(isCurMo && d === todayDay) || d % 5 === 0 || d === 1 ? d : ""}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Rows */}
+                {inMonth.map(o => {
+                  const cfg = SC[o.status] || {};
+                  const sD  = Math.max(1, parseInt(o.start_date?.slice(-2)));
+                  const eD  = Math.min(daysInMonth, parseInt(o.end_date?.slice(-2)));
+                  const left  = `${(sD - 1) / daysInMonth * 100}%`;
+                  const width = `${Math.max((eD - sD + 1) / daysInMonth * 100, 1.5)}%`;
+                  return (
+                    <div key={o.id} style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ width: 200, flexShrink: 0, paddingRight: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: G.green }}>{o.wo_number}</div>
+                        <div style={{ fontSize: 11, color: G.n500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 186 }}>{o.product_name}</div>
+                      </div>
+                      <div style={{ flex: 1, position: "relative", height: 28, background: G.n100, borderRadius: 5 }}>
+                        {isCurMo && <div style={{ position: "absolute", left: `${(todayDay - 1) / daysInMonth * 100}%`, top: -2, bottom: -2, width: 2, background: G.green, zIndex: 2, borderRadius: 1 }} />}
+                        <div style={{ position: "absolute", height: "100%", left, width, background: cfg.txt || G.green, borderRadius: 5, opacity: .85, display: "flex", alignItems: "center", overflow: "hidden" }}>
+                          <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${o.progress || 0}%`, background: "rgba(0,0,0,.18)", borderRadius: 5 }} />
+                          <span style={{ fontSize: 10, color: G.white, fontWeight: 700, position: "relative", zIndex: 1, paddingLeft: 6, whiteSpace: "nowrap" }}>{o.progress || 0}%</span>
+                        </div>
+                      </div>
+                      <div style={{ width: 80, textAlign: "right", paddingLeft: 10, flexShrink: 0 }}>
+                        <Chip status={o.status} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: T.green }}>M</div>
-          </div>
+          </Card>
+        )
+      }
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 8 — QUALITY CONTROL
+// ══════════════════════════════════════════════════════════════════
+function QCTab({ show }) {
+  const [checks, setChecks] = useState([]);
+  const [load, setLoad]     = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage]     = useState(1);
+  const [fStatus, setFS]    = useState("");
+  const [modal, setModal]   = useState(false);
+  const [edit, setEdit]     = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
+
+  const today = new Date().toISOString().split("T")[0];
+  const blank = { ref_no: "", product: "", batch_no: "", inspected_by: "", inspection_date: today, quantity_checked: "", quantity_passed: "", quantity_failed: "", status: "pending", remarks: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setChecks(await api("/quality-checks")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = checks.filter(c =>
+    (!fStatus || c.status === fStatus) &&
+    `${c.ref_no} ${c.product} ${c.batch_no}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, product: r.product, batch_no: r.batch_no || "", inspected_by: r.inspected_by || "", inspection_date: r.inspection_date, quantity_checked: r.quantity_checked, quantity_passed: r.quantity_passed, quantity_failed: r.quantity_failed, status: r.status, remarks: r.remarks || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.product || !form.quantity_checked) { show("Product and quantity required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/quality-checks/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setChecks(p => p.map(x => x.id === edit.id ? d : x)); show("QC record updated."); }
+      else       { const d = await api("/quality-checks", { method: "POST", body: JSON.stringify(form) }); setChecks(p => [d, ...p]); show("QC record saved."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm("Delete this QC record?")) return;
+    try { await api(`/quality-checks/${r.id}`, { method: "DELETE" }); setChecks(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const passRate = checks.length
+    ? Math.round(checks.reduce((s, c) => s + (parseInt(c.quantity_passed) || 0), 0) / Math.max(checks.reduce((s, c) => s + (parseInt(c.quantity_checked) || 0), 0), 1) * 100)
+    : 0;
+
+  const COLS = [
+    { k: "inspection_date", label: "Date",     r: v => <span style={{ fontSize: 12, color: G.n500 }}>{v}</span> },
+    { k: "ref_no",          label: "Ref No",   r: v => <span style={{ fontFamily: "monospace", fontWeight: 700, color: G.green, fontSize: 12 }}>{v}</span> },
+    { k: "product",         label: "Product",  r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "batch_no",        label: "Batch",    r: v => <span style={{ fontSize: 12 }}>{v || "—"}</span> },
+    { k: "quantity_checked",label: "Checked",  r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "quantity_passed", label: "Passed",   r: v => <span style={{ color: G.green, fontWeight: 700 }}>{v}</span> },
+    { k: "quantity_failed", label: "Failed",   r: v => <span style={{ color: v > 0 ? G.red : G.n400, fontWeight: 700 }}>{v}</span> },
+    { k: "inspected_by",    label: "Inspector",r: v => <span style={{ fontSize: 12 }}>{v || "—"}</span> },
+    { k: "status",          label: "Status",   r: v => <Chip status={v} /> },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="🔬" label="Total Checks" value={checks.length} />
+        <KCard icon="✅" label="Passed"        value={checks.filter(c => c.status === "passed").length}  accent={G.green} sub={`${passRate}% pass rate`} />
+        <KCard icon="❌" label="Failed"         value={checks.filter(c => c.status === "failed").length}  accent={G.red} />
+        <KCard icon="⏳" label="Pending"       value={checks.filter(c => c.status === "pending").length} accent={G.amber} />
+      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <select value={fStatus} onChange={e => { setFS(e.target.value); setPage(1); }} style={{ ...sel, width: 150 }}>
+            <option value="">All Status</option>
+            {["pending", "passed", "failed"].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button style={btnPri} onClick={openAdd}>+ Add QC Check</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
+
+      {modal && (
+        <Mdl title={edit ? "Edit QC Record" : "New Quality Check"} subtitle="Record inspection results" onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Reference No"><input style={inp} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
+            <Fld label="Inspection Date"><input type="date" style={inp} value={form.inspection_date} onChange={e => sf("inspection_date", e.target.value)} /></Fld>
+            <Fld label="Product" req span><input style={inp} value={form.product} onChange={e => sf("product", e.target.value)} /></Fld>
+            <Fld label="Batch No"><input style={inp} value={form.batch_no} onChange={e => sf("batch_no", e.target.value)} placeholder="BATCH-A3-001" /></Fld>
+            <Fld label="Inspector"><input style={inp} value={form.inspected_by} onChange={e => sf("inspected_by", e.target.value)} placeholder="Dinesh Pillai" /></Fld>
+            <Fld label="Qty Checked" req><input type="number" style={inp} value={form.quantity_checked} onChange={e => sf("quantity_checked", e.target.value)} min={0} /></Fld>
+            <Fld label="Qty Passed"><input type="number" style={inp} value={form.quantity_passed} onChange={e => sf("quantity_passed", e.target.value)} min={0} /></Fld>
+            <Fld label="Qty Failed"><input type="number" style={inp} value={form.quantity_failed} onChange={e => sf("quantity_failed", e.target.value)} min={0} /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["pending","passed","failed"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Remarks" span><textarea style={ta} value={form.remarks} onChange={e => sf("remarks", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Save QC Record"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 9 — MAINTENANCE
+// ══════════════════════════════════════════════════════════════════
+function MaintenanceTab({ show }) {
+  const [recs, setRecs]   = useState([]);
+  const [load, setLoad]   = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage]   = useState(1);
+  const [fType, setFT]    = useState("");
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit]   = useState(null);
+  const [saving, setSaving] = useState(false);
+  const PER = 10;
+
+  const blank = { ref_no: "", machine_name: "", maintenance_type: "Preventive", technician: "", scheduled_date: "", completed_date: "", status: "scheduled", cost: "", description: "", notes: "" };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const fetch = useCallback(async () => { setLoad(true); try { setRecs(await api("/maintenance")); } catch (e) { show(e.message, "error"); } finally { setLoad(false); } }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const filtered = recs.filter(r =>
+    (!fType || r.maintenance_type === fType) &&
+    `${r.ref_no} ${r.machine_name} ${r.technician}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const paged = filtered.slice((page - 1) * PER, page * PER);
+
+  const openAdd  = () => { setForm(blank); setEdit(null); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, machine_name: r.machine_name, maintenance_type: r.maintenance_type, technician: r.technician || "", scheduled_date: r.scheduled_date || "", completed_date: r.completed_date || "", status: r.status, cost: r.cost || "", description: r.description || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+
+  const save = async () => {
+    if (!form.machine_name || !form.scheduled_date) { show("Machine name and scheduled date required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/maintenance/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRecs(p => p.map(x => x.id === edit.id ? d : x)); show("Maintenance record updated."); }
+      else       { const d = await api("/maintenance", { method: "POST", body: JSON.stringify(form) }); setRecs(p => [d, ...p]); show("Maintenance scheduled."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const del = async r => {
+    if (!confirm("Delete this maintenance record?")) return;
+    try { await api(`/maintenance/${r.id}`, { method: "DELETE" }); setRecs(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  const COLS = [
+    { k: "ref_no",           label: "Ref No",   r: v => <span style={{ fontFamily: "monospace", fontWeight: 700, color: G.green, fontSize: 12 }}>{v}</span> },
+    { k: "machine_name",     label: "Machine",  r: v => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { k: "maintenance_type", label: "Type",     r: v => <span style={{ fontSize: 12, color: G.n600 }}>{v}</span> },
+    { k: "technician",       label: "Technician", r: v => <span style={{ fontSize: 12 }}>{v || "—"}</span> },
+    { k: "scheduled_date",   label: "Scheduled",  r: v => <span style={{ fontSize: 12, color: G.n600 }}>{v || "—"}</span> },
+    { k: "completed_date",   label: "Completed",  r: v => <span style={{ fontSize: 12, color: G.n500 }}>{v || "—"}</span> },
+    { k: "cost",             label: "Cost",       r: v => v ? <span style={{ fontWeight: 600, color: G.amber }}>₹{Number(v).toLocaleString()}</span> : "—" },
+    { k: "status",           label: "Status",     r: v => <Chip status={v} /> },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+        <KCard icon="🔧" label="Total"     value={recs.length} />
+        <KCard icon="📅" label="Scheduled" value={recs.filter(r => r.status === "scheduled").length}     accent={G.blue} />
+        <KCard icon="✅" label="Completed" value={recs.filter(r => r.status === "completed").length}     accent={G.green} />
+        <KCard icon="⚠️" label="Overdue"  value={recs.filter(r => r.status === "overdue").length}       accent={G.red} />
+      </div>
+      <Card>
+        <SBar search={search} setSearch={setSearch}>
+          <select value={fType} onChange={e => { setFT(e.target.value); setPage(1); }} style={{ ...sel, width: 160 }}>
+            <option value="">All Types</option>
+            {["Preventive", "Corrective", "Predictive", "Emergency"].map(t => <option key={t}>{t}</option>)}
+          </select>
+          <button style={btnPri} onClick={openAdd}>+ Schedule Maintenance</button>
+        </SBar>
+        <Tbl cols={COLS} rows={paged} loading={load} onEdit={openEdit} onDelete={del} />
+        <PgBar total={filtered.length} page={page} perPage={PER} onPage={setPage} />
+      </Card>
+
+      {modal && (
+        <Mdl title={edit ? "Edit Maintenance" : "Schedule Maintenance"} onClose={() => setModal(false)}>
+          <FGrid cols={2}>
+            <Fld label="Ref No"><input style={inp} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
+            <Fld label="Machine Name" req><input style={inp} value={form.machine_name} onChange={e => sf("machine_name", e.target.value)} /></Fld>
+            <Fld label="Type"><select style={sel} value={form.maintenance_type} onChange={e => sf("maintenance_type", e.target.value)}>{["Preventive","Corrective","Predictive","Emergency"].map(t => <option key={t}>{t}</option>)}</select></Fld>
+            <Fld label="Technician"><input style={inp} value={form.technician} onChange={e => sf("technician", e.target.value)} placeholder="Arun Selvam" /></Fld>
+            <Fld label="Scheduled Date" req><input type="date" style={inp} value={form.scheduled_date} onChange={e => sf("scheduled_date", e.target.value)} /></Fld>
+            <Fld label="Completed Date"><input type="date" style={inp} value={form.completed_date} onChange={e => sf("completed_date", e.target.value)} /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["scheduled","in_progress","completed","overdue"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Cost (₹)"><input type="number" style={inp} value={form.cost} onChange={e => sf("cost", e.target.value)} min={0} /></Fld>
+            <Fld label="Description" span><textarea style={ta} value={form.description} onChange={e => sf("description", e.target.value)} placeholder="Describe the maintenance work…" /></Fld>
+            <Fld label="Notes" span><textarea style={{ ...ta, minHeight: 48 }} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </FGrid>
+          <MdlFoot onClose={() => setModal(false)} onSave={save} saving={saving} saveLabel={edit ? "Save Changes" : "Schedule"} />
+        </Mdl>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAB 10 — PRODUCTION REPORTS
+// ══════════════════════════════════════════════════════════════════
+function ReportsTab({ show }) {
+  const [data, setData]   = useState(null);
+  const [load, setLoad]   = useState(true);
+  const [from, setFrom]   = useState(() => new Date(new Date().setDate(1)).toISOString().split("T")[0]);
+  const [to, setTo]       = useState(() => new Date().toISOString().split("T")[0]);
+
+  const fetch = useCallback(async () => {
+    setLoad(true);
+    try { setData(await api(`/reports/summary?from=${from}&to=${to}`)); }
+    catch (e) { show(e.message, "error"); }
+    finally { setLoad(false); }
+  }, [from, to]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  return (
+    <div>
+      {/* Date filter */}
+      <div style={{ background: G.white, borderRadius: 12, border: `1px solid ${G.n200}`, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", boxShadow: G.sh }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: G.n600 }}>📅 Date Range</span>
+        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inp, width: 160 }} />
+        <span style={{ fontSize: 12, color: G.n400 }}>to</span>
+        <input type="date" value={to}   onChange={e => setTo(e.target.value)}   style={{ ...inp, width: 160 }} />
+        <button style={btnPri} onClick={fetch}>Apply</button>
+      </div>
+
+      {load
+        ? <div style={{ textAlign: "center", padding: 48, color: G.n400 }}>⏳ Loading report…</div>
+        : !data
+        ? <div style={{ textAlign: "center", padding: 48, color: G.n400 }}>No data available.</div>
+        : (
+          <>
+            {/* Summary KPIs */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 22 }}>
+              <KCard icon="🏭" label="Total Productions"  value={data.total_productions} />
+              <KCard icon="📦" label="Total Qty Produced"  value={data.total_quantity}    accent={G.blue} />
+              <KCard icon="💰" label="Total Cost"          value={data.total_cost != null ? `₹${Number(data.total_cost).toLocaleString("en-IN")}` : "₹0"} accent={G.amber} />
+              <KCard icon="✅" label="Work Orders Completed" value={data.completed_orders} accent={G.green} />
+            </div>
+
+            {/* Top products */}
+            {data.top_products?.length > 0 && (
+              <Card style={{ marginBottom: 20 }}>
+                <div style={{ padding: "14px 18px", borderBottom: `1px solid ${G.n100}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: G.n900 }}>🏆 Top Products by Production Qty</div>
+                  <span style={{ fontSize: 12, color: G.n500 }}>{from} → {to}</span>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead><tr style={{ background: G.n50, borderBottom: `1px solid ${G.n200}` }}>
+                    {["#","Product","Total Qty","Total Cost","Runs"].map(h => <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: G.n500, textTransform: "uppercase", letterSpacing: .5 }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {data.top_products.map((p, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${G.n100}` }}
+                        onMouseEnter={e => e.currentTarget.style.background = G.g50}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding: "11px 16px", fontWeight: 700, color: G.green }}>#{i + 1}</td>
+                        <td style={{ padding: "11px 16px", fontWeight: 600 }}>{p.product}</td>
+                        <td style={{ padding: "11px 16px", fontWeight: 700 }}>{p.total_qty}</td>
+                        <td style={{ padding: "11px 16px", color: G.amber, fontWeight: 600 }}>{p.total_cost != null ? `₹${Number(p.total_cost).toLocaleString("en-IN")}` : "—"}</td>
+                        <td style={{ padding: "11px 16px" }}>{p.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+
+            {/* QC Summary */}
+            {data.qc_summary && (
+              <Card>
+                <div style={{ padding: "14px 18px", borderBottom: `1px solid ${G.n100}` }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: G.n900 }}>🔬 Quality Control Summary</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, padding: 18 }}>
+                  <KCard icon="🔬" label="Total Inspected" value={data.qc_summary.total_checked} />
+                  <KCard icon="✅" label="Passed"           value={data.qc_summary.total_passed}  accent={G.green}
+                    sub={data.qc_summary.total_checked > 0 ? `${Math.round(data.qc_summary.total_passed / data.qc_summary.total_checked * 100)}% pass rate` : ""} />
+                  <KCard icon="❌" label="Failed"            value={data.qc_summary.total_failed}  accent={G.red} />
+                </div>
+              </Card>
+            )}
+          </>
+        )
+      }
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MAIN Manufacturing Component
+// ══════════════════════════════════════════════════════════════════
+const TABS = [
+  { key: "planning",    label: "Production Planning", icon: "📋" },
+  { key: "bom",         label: "BOM",                 icon: "📐" },
+  { key: "workorders",  label: "Work Orders",          icon: "⚙️" },
+  { key: "production",  label: "Production",           icon: "🏭" },
+  { key: "resources",   label: "Resources",            icon: "🏗️" },
+  { key: "machines",    label: "Machines",             icon: "🔩" },
+  { key: "schedule",    label: "Schedule",             icon: "📅" },
+  { key: "qc",          label: "Quality Control",      icon: "🔬" },
+  { key: "maintenance", label: "Maintenance",          icon: "🔧" },
+  { key: "reports",     label: "Production Reports",   icon: "📊" },
+];
+
+export default function Manufacturing() {
+  const [tab, setTab] = useState("planning");
+  const { show, el }  = useToast();
+
+  return (
+    <div style={{ fontFamily: "'Inter', 'Segoe UI', sans-serif", color: G.n800 }}>
+      {el}
+
+      {/* ── Tab bar ───────────────────────────────────────────── */}
+      <div style={{
+        background: G.white,
+        borderRadius: "12px 12px 0 0",
+        boxShadow: G.sh,
+        border: `1px solid ${G.n200}`,
+        borderBottom: "none",
+        overflowX: "auto",
+        display: "flex",
+        alignItems: "stretch",
+      }}>
+        {/* Module label */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "0 20px", borderRight: `1px solid ${G.n200}`,
+          flexShrink: 0, minWidth: 170,
+        }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: G.green, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>🏭</div>
+          <span style={{ fontSize: 14, fontWeight: 800, color: G.green, letterSpacing: -.3 }}>Manufacturing</span>
         </div>
 
-        {/* Page content */}
-        <div style={{ flex: 1, padding: "28px 28px 40px" }}>
-          {pageMap[page]}
-        </div>
+        {/* Tabs */}
+        {TABS.map(t => {
+          const active = tab === t.key;
+          return (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              padding: "14px 16px",
+              border: "none",
+              borderBottom: active ? `3px solid ${G.green}` : "3px solid transparent",
+              borderTop: "none",
+              background: "transparent",
+              color: active ? G.green : G.n500,
+              fontWeight: active ? 700 : 400,
+              cursor: "pointer",
+              fontSize: 12,
+              marginBottom: -1,
+              transition: "all .15s",
+              display: "flex", alignItems: "center", gap: 5,
+              flexShrink: 0, whiteSpace: "nowrap",
+            }}
+              onMouseEnter={e => { if (!active) { e.currentTarget.style.color = G.greenMid; e.currentTarget.style.background = G.g50; } }}
+              onMouseLeave={e => { if (!active) { e.currentTarget.style.color = G.n500; e.currentTarget.style.background = "transparent"; } }}>
+              <span style={{ fontSize: 14 }}>{t.icon}</span>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Tab content ───────────────────────────────────────── */}
+      <div style={{
+        background: "#f4f7f5",
+        borderRadius: "0 0 12px 12px",
+        border: `1px solid ${G.n200}`,
+        borderTop: "none",
+        padding: "24px 24px",
+        minHeight: 500,
+      }}>
+        {tab === "planning"    && <PlanningTab    show={show} />}
+        {tab === "bom"         && <BOMTab         show={show} />}
+        {tab === "workorders"  && <WorkOrdersTab  show={show} />}
+        {tab === "production"  && <ProductionTab  show={show} />}
+        {tab === "resources"   && <ResourcesTab   show={show} />}
+        {tab === "machines"    && <MachinesTab    show={show} />}
+        {tab === "schedule"    && <ScheduleTab    show={show} />}
+        {tab === "qc"          && <QCTab          show={show} />}
+        {tab === "maintenance" && <MaintenanceTab show={show} />}
+        {tab === "reports"     && <ReportsTab     show={show} />}
       </div>
     </div>
   );

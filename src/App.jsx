@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./pages/ThemeContext";
 import { PermissionsProvider, usePermissions } from "./context/PermissionsContext";
 import { FEATURE_PERM_MAP } from "./featurePermissionMap";
@@ -22,15 +22,12 @@ import Warranties from "./pages/Warranties";
 import Manufacturing from "./pages/Manufacturing";
 import Purchases, { AddPurchasePage } from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
-
-// ── FIXED: Import all named exports from Contacts ──────────────────────────
 import Contacts, {
   SuppliersPage,
   CustomersPage,
   CustomerGroupsPage,
   ImportContactsPage,
 } from "./pages/Contacts";
-
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
 import { ListStockTransfers, AddStockTransfer, EditStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
@@ -49,17 +46,16 @@ import {
 import MyProfile      from "./pages/MyProfile";
 import ChangePassword from "./pages/ChangePassword";
 import Login          from "./pages/Login";
-import ProductionPlanning from "./pages/ProductionPlanning";
 import Subscription, { isSubscriptionActive } from "./pages/Subscription";
 import { hasFeature, FEATURES } from "./planAccess";
 import "./App.css";
 
-// ─── Auth helpers ──────────────────────────────────────────────────────────
+// ─── Auth helpers ──────────────────────────────────────────────────
 function isAuthenticated() {
   return !!localStorage.getItem("manod_token");
 }
 
-// ─── "Access Denied" page shown when permission check fails ───────────────
+// ─── Access Denied ─────────────────────────────────────────────────
 function AccessDenied() {
   return (
     <div style={{
@@ -90,8 +86,7 @@ function AccessDenied() {
   );
 }
 
-// ─── Route guards ──────────────────────────────────────────────────────────
-
+// ─── Route guards ──────────────────────────────────────────────────
 function PrivateRoute({ children }) {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
   if (!isSubscriptionActive()) return <Navigate to="/subscribe" replace />;
@@ -112,19 +107,16 @@ function SubscriptionGate({ children }) {
 
 function FeatureRoute({ feature, children }) {
   const { hasPermission, loaded, isAdmin } = usePermissions();
-
   if (!hasFeature(feature)) return <Navigate to="/subscribe" replace />;
   if (!loaded) return null;
   if (isAdmin) return children;
-
   const checker = FEATURE_PERM_MAP[feature];
   if (!checker) return <AccessDenied />;
   if (!checker(hasPermission)) return <AccessDenied />;
-
   return children;
 }
 
-// ─── App Layout ───────────────────────────────────────────────────────────
+// ─── App Layout ────────────────────────────────────────────────────
 function AppLayout() {
   return (
     <div style={{ display: "flex" }}>
@@ -140,13 +132,9 @@ function AppLayout() {
         transition: "background 0.3s ease",
       }}>
         <Routes>
-          <Route path="/" element={
-            <FeatureRoute feature={FEATURES.DASHBOARD}>
-              <Dashboard />
-            </FeatureRoute>
-          } />
+          <Route path="/" element={<FeatureRoute feature={FEATURES.DASHBOARD}><Dashboard /></FeatureRoute>} />
 
-          {/* Profile — always accessible */}
+          {/* Profile */}
           <Route path="/profile"         element={<MyProfile />} />
           <Route path="/change-password" element={<ChangePassword />} />
 
@@ -155,7 +143,7 @@ function AppLayout() {
           <Route path="/roles"                   element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><Roles /></FeatureRoute>} />
           <Route path="/sales-commission-agents" element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><SalesCommissionAgents /></FeatureRoute>} />
 
-          {/* ── Contacts ──────────────────────────────────────────────────── */}
+          {/* Contacts */}
           <Route path="/contacts"            element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
           <Route path="/contacts/suppliers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><SuppliersPage /></FeatureRoute>} />
           <Route path="/contacts/customers"  element={<FeatureRoute feature={FEATURES.CONTACTS}><CustomersPage /></FeatureRoute>} />
@@ -176,14 +164,13 @@ function AppLayout() {
           <Route path="/brands"                 element={<FeatureRoute feature={FEATURES.PRODUCTS}><Brands /></FeatureRoute>} />
           <Route path="/warranties"             element={<FeatureRoute feature={FEATURES.PRODUCTS}><Warranties /></FeatureRoute>} />
 
-          {/* ── Manufacturing (includes all sub-pages) ──────────────────── */}
-          <Route path="/manufacturing"   element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
-          <Route path="/manufacturing/*" element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
-
-          {/* ── Production Planning (now nested under Manufacturing in the  */}
-          {/*    sidebar, but URL paths are kept identical for zero breakage) */}
-          <Route path="/production-planning"   element={<FeatureRoute feature={FEATURES.MANUFACTURING}><ProductionPlanning /></FeatureRoute>} />
-          <Route path="/production-planning/*" element={<FeatureRoute feature={FEATURES.MANUFACTURING}><ProductionPlanning /></FeatureRoute>} />
+          {/* ── Manufacturing — ALL sub-routes render Manufacturing.jsx ── */}
+          {/* The tab is controlled via the component's own state, not the URL. */}
+          <Route path="/manufacturing"             element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
+          <Route path="/manufacturing/*"           element={<FeatureRoute feature={FEATURES.MANUFACTURING}><Manufacturing /></FeatureRoute>} />
+          {/* Redirect old /production-planning/* URLs into /manufacturing so no links break */}
+          <Route path="/production-planning"       element={<Navigate to="/manufacturing" replace />} />
+          <Route path="/production-planning/*"     element={<Navigate to="/manufacturing" replace />} />
 
           {/* Purchases */}
           <Route path="/purchases"              element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
@@ -192,25 +179,26 @@ function AppLayout() {
           <Route path="/purchase-return/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
 
           {/* Sell */}
-          <Route path="/sells"            element={<FeatureRoute feature={FEATURES.SELL}><AllSales /></FeatureRoute>} />
-          <Route path="/sells/create"     element={<FeatureRoute feature={FEATURES.SELL}><AddSale /></FeatureRoute>} />
-          <Route path="/sells/drafts"     element={<FeatureRoute feature={FEATURES.SELL}><ListDrafts /></FeatureRoute>} />
-          <Route path="/sells/add-draft"  element={<FeatureRoute feature={FEATURES.SELL}><AddDraft /></FeatureRoute>} />
-          <Route path="/sells/quotations" element={<FeatureRoute feature={FEATURES.SELL}><ListQuotations /></FeatureRoute>} />
+          <Route path="/sells"               element={<FeatureRoute feature={FEATURES.SELL}><AllSales /></FeatureRoute>} />
+          <Route path="/sells/create"        element={<FeatureRoute feature={FEATURES.SELL}><AddSale /></FeatureRoute>} />
+          <Route path="/sells/drafts"        element={<FeatureRoute feature={FEATURES.SELL}><ListDrafts /></FeatureRoute>} />
+          <Route path="/sells/add-draft"     element={<FeatureRoute feature={FEATURES.SELL}><AddDraft /></FeatureRoute>} />
+          <Route path="/sells/quotations"    element={<FeatureRoute feature={FEATURES.SELL}><ListQuotations /></FeatureRoute>} />
           <Route path="/sells/add-quotation" element={<FeatureRoute feature={FEATURES.SELL}><AddQuotation /></FeatureRoute>} />
-          <Route path="/sell-return"      element={<FeatureRoute feature={FEATURES.SELL}><SellReturn /></FeatureRoute>} />
-          <Route path="/shipments"        element={<FeatureRoute feature={FEATURES.SELL}><Shipments /></FeatureRoute>} />
-          <Route path="/discount"         element={<FeatureRoute feature={FEATURES.SELL}><Discounts /></FeatureRoute>} />
-          <Route path="/import-sales"     element={<FeatureRoute feature={FEATURES.SELL}><ImportSales /></FeatureRoute>} />
+          <Route path="/sell-return"         element={<FeatureRoute feature={FEATURES.SELL}><SellReturn /></FeatureRoute>} />
+          <Route path="/shipments"           element={<FeatureRoute feature={FEATURES.SELL}><Shipments /></FeatureRoute>} />
+          <Route path="/discount"            element={<FeatureRoute feature={FEATURES.SELL}><Discounts /></FeatureRoute>} />
+          <Route path="/import-sales"        element={<FeatureRoute feature={FEATURES.SELL}><ImportSales /></FeatureRoute>} />
 
           {/* POS */}
           <Route path="/pos"        element={<FeatureRoute feature={FEATURES.POS}><ListPOS /></FeatureRoute>} />
           <Route path="/pos/create" element={<FeatureRoute feature={FEATURES.POS}><POSCreate /></FeatureRoute>} />
 
           {/* Stock Transfers */}
-          <Route path="/stock-transfers"        element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><ListStockTransfers /></FeatureRoute>} />
-          <Route path="/stock-transfers/create" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><AddStockTransfer /></FeatureRoute>} />
-<Route path="/stock-transfers/:id/edit" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><EditStockTransfer /></FeatureRoute>} />
+          <Route path="/stock-transfers"          element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><ListStockTransfers /></FeatureRoute>} />
+          <Route path="/stock-transfers/create"   element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><AddStockTransfer /></FeatureRoute>} />
+          <Route path="/stock-transfers/:id/edit" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><EditStockTransfer /></FeatureRoute>} />
+
           {/* Stock Adjustment */}
           <Route path="/stock-adjustments"        element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><ListStockAdjustments /></FeatureRoute>} />
           <Route path="/stock-adjustments/create" element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><AddStockAdjustment /></FeatureRoute>} />
@@ -230,41 +218,40 @@ function AppLayout() {
           <Route path="/essentials/*" element={<FeatureRoute feature={FEATURES.ESSENTIALS}><EssentialsRoutes /></FeatureRoute>} />
 
           {/* Settings */}
-          <Route path="/settings"                  element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
-          <Route path="/settings/business"         element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
-          <Route path="/settings/tax-rates"        element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="taxrates" /></FeatureRoute>} />
-          <Route path="/settings/payment-methods"  element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="locations" /></FeatureRoute>} />
-          <Route path="/settings/account"          element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
-          <Route path="/settings/barcode"          element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="barcode" /></FeatureRoute>} />
-          <Route path="/settings/receipt-printer"  element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="printers" /></FeatureRoute>} />
+          <Route path="/settings"                 element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
+          <Route path="/settings/business"        element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
+          <Route path="/settings/tax-rates"       element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="taxrates" /></FeatureRoute>} />
+          <Route path="/settings/payment-methods" element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="locations" /></FeatureRoute>} />
+          <Route path="/settings/account"         element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />
+          <Route path="/settings/barcode"         element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="barcode" /></FeatureRoute>} />
+          <Route path="/settings/receipt-printer" element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="printers" /></FeatureRoute>} />
 
           {/* Reports */}
-          <Route path="/reports"                       element={<FeatureRoute feature={FEATURES.REPORTS}><ProfitLossReport /></FeatureRoute>} />
-          <Route path="/reports/profit-loss"           element={<FeatureRoute feature={FEATURES.REPORTS}><ProfitLossReport /></FeatureRoute>} />
-          <Route path="/reports/purchase-sale"         element={<FeatureRoute feature={FEATURES.REPORTS}><PurchaseSaleReport /></FeatureRoute>} />
-          <Route path="/reports/tax"                   element={<FeatureRoute feature={FEATURES.REPORTS}><TaxReport /></FeatureRoute>} />
-          <Route path="/reports/supplier-customer"     element={<FeatureRoute feature={FEATURES.REPORTS}><SupplierCustomerReport /></FeatureRoute>} />
-          <Route path="/reports/customer-groups"       element={<FeatureRoute feature={FEATURES.REPORTS}><CustomerGroupsReport /></FeatureRoute>} />
-          <Route path="/reports/stock"                 element={<FeatureRoute feature={FEATURES.REPORTS}><StockReport /></FeatureRoute>} />
-          <Route path="/reports/stock-adjustment"      element={<FeatureRoute feature={FEATURES.REPORTS}><StockAdjustmentReport /></FeatureRoute>} />
-          <Route path="/reports/trending-products"     element={<FeatureRoute feature={FEATURES.REPORTS}><TrendingProductsReport /></FeatureRoute>} />
-          <Route path="/reports/items"                 element={<FeatureRoute feature={FEATURES.REPORTS}><ItemsReport /></FeatureRoute>} />
-          <Route path="/reports/product-purchase"      element={<FeatureRoute feature={FEATURES.REPORTS}><ProductPurchaseReport /></FeatureRoute>} />
-          <Route path="/reports/product-sell"          element={<FeatureRoute feature={FEATURES.REPORTS}><ProductSellReport /></FeatureRoute>} />
-          <Route path="/reports/purchase-payment"      element={<FeatureRoute feature={FEATURES.REPORTS}><PurchasePaymentReport /></FeatureRoute>} />
-          <Route path="/reports/sell-payment"          element={<FeatureRoute feature={FEATURES.REPORTS}><SellPaymentReport /></FeatureRoute>} />
-          <Route path="/reports/expense"               element={<FeatureRoute feature={FEATURES.REPORTS}><ExpenseReport /></FeatureRoute>} />
-          <Route path="/reports/register"              element={<FeatureRoute feature={FEATURES.REPORTS}><RegisterReport /></FeatureRoute>} />
-          <Route path="/reports/sales-representative"  element={<FeatureRoute feature={FEATURES.REPORTS}><SalesRepresentativeReport /></FeatureRoute>} />
-          <Route path="/reports/activity-log"          element={<FeatureRoute feature={FEATURES.REPORTS}><ActivityLogReport /></FeatureRoute>} />
-
+          <Route path="/reports"                      element={<FeatureRoute feature={FEATURES.REPORTS}><ProfitLossReport /></FeatureRoute>} />
+          <Route path="/reports/profit-loss"          element={<FeatureRoute feature={FEATURES.REPORTS}><ProfitLossReport /></FeatureRoute>} />
+          <Route path="/reports/purchase-sale"        element={<FeatureRoute feature={FEATURES.REPORTS}><PurchaseSaleReport /></FeatureRoute>} />
+          <Route path="/reports/tax"                  element={<FeatureRoute feature={FEATURES.REPORTS}><TaxReport /></FeatureRoute>} />
+          <Route path="/reports/supplier-customer"    element={<FeatureRoute feature={FEATURES.REPORTS}><SupplierCustomerReport /></FeatureRoute>} />
+          <Route path="/reports/customer-groups"      element={<FeatureRoute feature={FEATURES.REPORTS}><CustomerGroupsReport /></FeatureRoute>} />
+          <Route path="/reports/stock"                element={<FeatureRoute feature={FEATURES.REPORTS}><StockReport /></FeatureRoute>} />
+          <Route path="/reports/stock-adjustment"     element={<FeatureRoute feature={FEATURES.REPORTS}><StockAdjustmentReport /></FeatureRoute>} />
+          <Route path="/reports/trending-products"    element={<FeatureRoute feature={FEATURES.REPORTS}><TrendingProductsReport /></FeatureRoute>} />
+          <Route path="/reports/items"                element={<FeatureRoute feature={FEATURES.REPORTS}><ItemsReport /></FeatureRoute>} />
+          <Route path="/reports/product-purchase"     element={<FeatureRoute feature={FEATURES.REPORTS}><ProductPurchaseReport /></FeatureRoute>} />
+          <Route path="/reports/product-sell"         element={<FeatureRoute feature={FEATURES.REPORTS}><ProductSellReport /></FeatureRoute>} />
+          <Route path="/reports/purchase-payment"     element={<FeatureRoute feature={FEATURES.REPORTS}><PurchasePaymentReport /></FeatureRoute>} />
+          <Route path="/reports/sell-payment"         element={<FeatureRoute feature={FEATURES.REPORTS}><SellPaymentReport /></FeatureRoute>} />
+          <Route path="/reports/expense"              element={<FeatureRoute feature={FEATURES.REPORTS}><ExpenseReport /></FeatureRoute>} />
+          <Route path="/reports/register"             element={<FeatureRoute feature={FEATURES.REPORTS}><RegisterReport /></FeatureRoute>} />
+          <Route path="/reports/sales-representative" element={<FeatureRoute feature={FEATURES.REPORTS}><SalesRepresentativeReport /></FeatureRoute>} />
+          <Route path="/reports/activity-log"         element={<FeatureRoute feature={FEATURES.REPORTS}><ActivityLogReport /></FeatureRoute>} />
         </Routes>
       </main>
     </div>
   );
 }
 
-// ─── Root App ─────────────────────────────────────────────────────────────
+// ─── Root App ──────────────────────────────────────────────────────
 function App() {
   return (
     <PermissionsProvider>

@@ -3,26 +3,24 @@ import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { productsAPI, brandsAPI, unitsAPI, categoriesAPI } from "../api/productAPI";
 
-// ── Static options ────────────────────────────────────────────
-const TAXES         = ["None","GST 5%","GST 12%","GST 18%","GST 28%"];
-const TAX_TYPES     = ["Exclusive","Inclusive"];
-const PRODUCT_TYPES = ["Single","Variable"];
-const BARCODE_TYPES = ["Code 128 (C128)","EAN-13","EAN-8","QR Code","UPC-A"];
+// ── Constants ──────────────────────────────────────────────
+const TAXES        = ["None","GST 5%","GST 12%","GST 18%","GST 28%"];
+const TAX_TYPES    = ["Exclusive","Inclusive"];
+const PRODUCT_TYPES= ["Single","Variable"];
+const BARCODE_TYPES= ["Code 128 (C128)","EAN-13","EAN-8","QR Code","UPC-A"];
+const LOCATIONS    = ["Manodtechnologies (BL0001)"];
 
-// ── SKU Auto-generator ────────────────────────────────────────
-const generateSKU = (name = "") => {
-  const prefix = name.trim().slice(0,3).toUpperCase().replace(/[^A-Z0-9]/g,"") || "PRD";
+// ── Auto-generate SKU ──────────────────────────────────────
+const genSKU = (name = "") => {
+  const prefix = name.trim().split(/\s+/).map(w => w[0]?.toUpperCase()||"").join("").slice(0,3) || "PRD";
   const rand   = Math.random().toString(36).substring(2,6).toUpperCase();
-  const ts     = Date.now().toString().slice(-4);
-  return `${prefix}-${rand}${ts}`;
+  const num    = Date.now().toString().slice(-4);
+  return `${prefix}-${rand}${num}`;
 };
 
 const EMPTY_FORM = {
   name:"", sku:"", barcodeType:"Code 128 (C128)",
-  unit:"", unitId:null,
-  brand:"", brandId:null,
-  category:"", categoryId:null,
-  subCategory:"", subCategoryId:null,
+  unit:"", brand:"", category:"", subCategory:"",
   businessLocation:"Manodtechnologies (BL0001)",
   alertQty:"", manageStock:true,
   description:"", weight:"", prepTime:"",
@@ -32,69 +30,116 @@ const EMPTY_FORM = {
   image:null, imagePreview:null,
 };
 
-// ── Searchable Typeahead Dropdown ─────────────────────────────
-function TypeaheadSelect({ label, required, placeholder, items, value, onChange, onSelect }) {
+// ── Searchable Select Component ────────────────────────────
+function SearchableSelect({ options, value, onChange, placeholder = "Search or select...", disabled }) {
   const [open, setOpen]   = useState(false);
-  const [query, setQuery] = useState(value || "");
-  const ref               = useRef();
+  const [query, setQuery] = useState("");
+  const ref = useRef();
 
-  useEffect(() => { setQuery(value || ""); }, [value]);
-
+  // Close on outside click
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filtered = items.filter(i =>
-    i.name.toLowerCase().includes(query.toLowerCase())
+  const filtered = options.filter(o =>
+    (o.label || o).toLowerCase().includes(query.toLowerCase())
   );
+  const selected = options.find(o => (o.value || o) === value);
+  const displayLabel = selected ? (selected.label || selected) : "";
 
-  const handleInput = (e) => {
-    setQuery(e.target.value);
-    onChange(e.target.value);
-    setOpen(true);
-  };
-
-  const handlePick = (item) => {
-    setQuery(item.name);
-    onSelect(item);
-    setOpen(false);
-  };
-
-  const handleClear = () => {
+  const handleSelect = (opt) => {
+    onChange(opt.value || opt);
     setQuery("");
-    onChange("");
-    onSelect(null);
     setOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onChange("");
+    setQuery("");
   };
 
   return (
-    <div ref={ref} style={{ position:"relative" }}>
-      <div style={{ position:"relative" }}>
-        <input
-          value={query}
-          onChange={handleInput}
-          onFocus={() => setOpen(true)}
-          placeholder={placeholder || `Search or type ${label}...`}
-          autoComplete="off"
-          style={{ ...s.input, paddingRight:28 }}
-        />
-        {query && (
-          <button onClick={handleClear}
-            style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#9ca3af", fontSize:16, lineHeight:1 }}>
-            ×
-          </button>
+    <div ref={ref} style={{ position:"relative", width:"100%" }}>
+      <div
+        onClick={() => !disabled && setOpen(v => !v)}
+        style={{
+          ...ss.box,
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+          background: "#fff",
+        }}
+      >
+        {open ? (
+          <input
+            autoFocus
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={placeholder}
+            style={{ border:"none", outline:"none", width:"100%", fontSize:14, background:"transparent" }}
+            onClick={e => e.stopPropagation()}
+          />
+        ) : (
+          <span style={{ color: displayLabel ? "#222" : "#9ca3af", fontSize:14, flex:1 }}>
+            {displayLabel || placeholder}
+          </span>
         )}
+        {displayLabel && !open && (
+          <span onClick={handleClear} style={{ color:"#9ca3af", fontSize:16, cursor:"pointer", padding:"0 4px" }}>×</span>
+        )}
+        <span style={{ color:"#9ca3af", fontSize:11, marginLeft:4 }}>▾</span>
       </div>
-      {open && filtered.length > 0 && (
-        <div style={s.dropdown}>
-          {filtered.slice(0,10).map(item => (
-            <div key={item.id} onMouseDown={() => handlePick(item)} style={s.dropdownItem}
-              onMouseEnter={e => e.currentTarget.style.background="#f0fdf4"}
-              onMouseLeave={e => e.currentTarget.style.background="#fff"}>
-              {item.name}
-            </div>
+      {open && (
+        <div style={ss.dropdown}>
+          {filtered.length === 0 ? (
+            <div style={ss.noOpt}>No options found</div>
+          ) : (
+            filtered.map((opt, i) => {
+              const val = opt.value || opt;
+              const lbl = opt.label || opt;
+              return (
+                <div key={i} onClick={() => handleSelect(opt)}
+                  style={{ ...ss.opt, background: val === value ? "#f0fdf4" : "transparent" }}>
+                  {lbl}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ss = {
+  box:      { display:"flex", alignItems:"center", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 10px", minHeight:38, boxSizing:"border-box" },
+  dropdown: { position:"absolute", top:"110%", left:0, right:0, background:"#fff", border:"1px solid #d1d5db", borderRadius:6, boxShadow:"0 4px 12px rgba(0,0,0,0.12)", zIndex:300, maxHeight:220, overflowY:"auto" },
+  noOpt:    { padding:"10px 14px", color:"#9ca3af", fontSize:13 },
+  opt:      { padding:"9px 14px", cursor:"pointer", fontSize:14, color:"#222", borderBottom:"1px solid #f3f4f6" },
+};
+
+// ── Column Visibility Menu ─────────────────────────────────
+function ColVisMenu({ cols, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const labels = { image:"Product Image", action:"Action", product:"Product", location:"Business Location", purchase:"Unit Purchase Price", selling:"Selling Price", stock:"Current Stock", type:"Product Type", category:"Category", brand:"Brand", tax:"Tax", sku:"SKU", status:"Status" };
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button onClick={() => setOpen(v => !v)} style={tb.btn}>Column visibility</button>
+      {open && (
+        <div style={{ position:"absolute", right:0, top:"110%", background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, padding:"10px 14px", zIndex:400, minWidth:180, boxShadow:"0 6px 20px rgba(0,0,0,0.12)" }}>
+          {Object.keys(cols).map(k => (
+            <label key={k} style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 0", fontSize:13, cursor:"pointer" }}>
+              <input type="checkbox" checked={cols[k]} onChange={e => onChange(k, e.target.checked)} style={{ accentColor:"#2d7a3a" }}/>
+              {labels[k] || k}
+            </label>
           ))}
         </div>
       )}
@@ -102,63 +147,57 @@ function TypeaheadSelect({ label, required, placeholder, items, value, onChange,
   );
 }
 
-// ── Export helpers ────────────────────────────────────────────
+// ── Export helpers ─────────────────────────────────────────
 const exportCSV = (products) => {
   if (!products.length) { alert("No products to export"); return; }
-  const headers = ["Product","SKU","Unit","Brand","Category","Selling Price","Stock","Type","Tax","Status"];
-  const rows = products.map(p => [p.name,p.sku||"",p.unit||"",p.brand||"",p.category||"",
-    p.exc_tax_sell||"",p.current_stock??0,p.product_type,p.tax,p.status||"Active"]);
-  const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c||"").replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href=url; a.download="products.csv"; a.click();
-  URL.revokeObjectURL(url);
+  const headers = ["Product Name","SKU","Unit","Brand","Category","Sub Category","Purchase Price","Selling Price","Current Stock","Product Type","Tax","Status"];
+  const rows = products.map(p => [p.name,p.sku||"",p.unit||"",p.brand||"",p.category||"",p.sub_category||"",p.exc_tax||0,p.exc_tax_sell||0,p.current_stock??0,p.product_type,p.tax,p.status]);
+  const csv = [headers,...rows].map(r => r.map(c => `"${String(c??'').replace(/"/g,'""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download = "products.csv"; a.click();
 };
-
 const exportExcel = (products) => {
   if (!products.length) { alert("No products to export"); return; }
-  const data = products.map(p => ({"Product":p.name,"SKU":p.sku||"","Unit":p.unit||"","Brand":p.brand||"","Category":p.category||"","Selling Price":p.exc_tax_sell||"","Stock":p.current_stock??0,"Status":p.status||"Active"}));
+  const data = products.map(p => ({"Name":p.name,"SKU":p.sku||"","Unit":p.unit||"","Brand":p.brand||"","Category":p.category||"","Selling Price":p.exc_tax_sell||0,"Stock":p.current_stock??0,"Status":p.status||"Active"}));
   const ws = XLSX.utils.json_to_sheet(data);
-  ws["!cols"] = Object.keys(data[0]).map(()=>({wch:20}));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Products");
+  ws["!cols"] = Object.keys(data[0]).map(k=>({wch:Math.max(k.length+2,16)}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Products");
   XLSX.writeFile(wb,"products.xlsx");
 };
+const exportPDF = (products) => {
+  if (!products.length) { alert("No products to export"); return; }
+  const rows = products.map(p=>`<tr><td>${p.name}</td><td>${p.sku||""}</td><td>${p.unit||""}</td><td>${p.brand||""}</td><td>${p.category||""}</td><td>₹${p.exc_tax_sell||0}</td><td>${p.current_stock??0}</td><td>${p.status}</td></tr>`).join("");
+  const win = window.open("","_blank");
+  win.document.write(`<html><head><title>Products</title><style>body{font-family:sans-serif;font-size:11px;padding:16px}table{width:100%;border-collapse:collapse}th{background:#2d7a3a;color:#fff;padding:7px}td{padding:6px;border-bottom:1px solid #eee}tr:nth-child(even){background:#f9f9f9}</style></head><body>
+    <h2>Products Report</h2><p>Generated: ${new Date().toLocaleString()}</p>
+    <table><thead><tr><th>Product</th><th>SKU</th><th>Unit</th><th>Brand</th><th>Category</th><th>Selling Price</th><th>Stock</th><th>Status</th></tr></thead>
+    <tbody>${rows}</tbody></table></body></html>`);
+  win.document.close(); win.print();
+};
 
-// ── Field wrapper ─────────────────────────────────────────────
-function Field({ label, required, tooltip, children, style }) {
-  return (
-    <div style={{ marginBottom:16, ...style }}>
-      {label && (
-        <label style={s.label}>
-          {label}{required && <span style={{ color:"#dc2626" }}> *</span>}
-          {tooltip && (
-            <span title={tooltip}
-              style={{ display:"inline-flex",alignItems:"center",justifyContent:"center",
-                width:16,height:16,borderRadius:"50%",background:"#17a2b8",color:"#fff",
-                fontSize:10,marginLeft:6,cursor:"pointer",fontWeight:700 }}>i</span>
-          )}
-        </label>
-      )}
-      {children}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// ADD/EDIT PRODUCT FORM
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// ADD / EDIT PRODUCT FORM
+// ═══════════════════════════════════════════════════════════
 export function AddProductForm({ onSaved, editProduct }) {
-  const navigate = useNavigate();
+  const navigate   = useNavigate();
+  const fileRef    = useRef();
 
-  const initForm = () => editProduct ? {
+  const [units,       setUnits]       = useState([]);
+  const [brands,      setBrands]      = useState([]);
+  const [categories,  setCategories]  = useState([]);
+  const [subCats,     setSubCats]     = useState([]);
+  const [allCats,     setAllCats]     = useState([]);
+  const [saving,      setSaving]      = useState(false);
+
+  const initForm = editProduct ? {
     name:                editProduct.name || "",
     sku:                 editProduct.sku  || "",
     barcodeType:         editProduct.barcode_type || "Code 128 (C128)",
-    unit:                editProduct.unit  || "", unitId: editProduct.unit_id || null,
-    brand:               editProduct.brand || "", brandId: editProduct.brand_id || null,
-    category:            editProduct.category || "", categoryId: editProduct.category_id || null,
-    subCategory:         editProduct.sub_category || "", subCategoryId: editProduct.sub_category_id || null,
+    unit:                editProduct.unit  || "",
+    brand:               editProduct.brand || "",
+    category:            editProduct.category || "",
+    subCategory:         editProduct.sub_category || "",
     businessLocation:    editProduct.business_location || "Manodtechnologies (BL0001)",
     alertQty:            editProduct.alert_qty ?? "",
     manageStock:         editProduct.manage_stock ?? true,
@@ -175,89 +214,76 @@ export function AddProductForm({ onSaved, editProduct }) {
     image:null, imagePreview:null,
   } : EMPTY_FORM;
 
-  const [form, setForm]       = useState(initForm);
-  const [saving, setSaving]   = useState(false);
-  const [units, setUnits]     = useState([]);
-  const [brands, setBrands]   = useState([]);
-  const [allCats, setAllCats] = useState([]);
-  const fileRef               = useRef();
+  const [form, setForm] = useState(initForm);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Load dropdowns
+  // Auto-generate SKU when name changes (only for new products)
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [u, b, c] = await Promise.all([
-          unitsAPI.getAll({ limit: 200 }),
-          brandsAPI.getAll({ limit: 200 }),
-          categoriesAPI.getAll({ limit: 200 }),
-        ]);
-        setUnits(u.units || []);
-        setBrands(b.brands || []);
-        setAllCats(c.categories || []);
-      } catch (err) { console.error("Failed to load dropdowns:", err.message); }
-    };
-    load();
-  }, []);
-
-  // Auto-generate SKU when name changes (only if SKU is empty)
-  useEffect(() => {
-    if (!editProduct && form.name && !form.sku) {
-      // Debounce SKU generation
-      const t = setTimeout(() => {
-        set("sku", generateSKU(form.name));
-      }, 600);
-      return () => clearTimeout(t);
+    if (!editProduct && form.name && !form._skuManual) {
+      set("sku", genSKU(form.name));
     }
   }, [form.name]);
 
-  // Auto-calculate Inc Tax from Exc Tax + margin/tax
+  // Auto-calculate selling price from purchase + margin
   useEffect(() => {
-    if (form.excTax) {
-      const exc    = parseFloat(form.excTax) || 0;
-      const taxPct = form.tax === "None" ? 0 : parseFloat(form.tax.replace(/[^0-9.]/g,"")) || 0;
-      const inc    = exc * (1 + taxPct / 100);
-      set("incTax", inc.toFixed(2));
-      // Auto-calc selling price
-      const margin  = parseFloat(form.margin) || 0;
-      const sellExc = exc * (1 + margin / 100);
-      set("excTaxSell", sellExc.toFixed(2));
+    const exc = parseFloat(form.excTax);
+    const mar = parseFloat(form.margin);
+    if (!isNaN(exc) && !isNaN(mar) && exc > 0) {
+      const sell = (exc * (1 + mar / 100)).toFixed(2);
+      setForm(f => ({ ...f, excTaxSell: sell }));
     }
-  }, [form.excTax, form.tax, form.margin]);
+  }, [form.excTax, form.margin]);
 
-  // Parent categories only
-  const parentCats = allCats.filter(c => !c.parent_id);
-  // Sub-categories filtered by selected parent
-  const subCats    = allCats.filter(c => c.parent_id && (
-    !form.categoryId || c.parent_id === form.categoryId
-  ));
+  // Load dropdowns
+  useEffect(() => {
+    (async () => {
+      try {
+        const [u, b, c] = await Promise.all([
+          unitsAPI.getAll({ limit:200 }),
+          brandsAPI.getAll({ limit:200 }),
+          categoriesAPI.getAll({ limit:500 }),
+        ]);
+        const unitOpts = (u.units||[]).map(x => ({ value: x.name, label: x.name }));
+        const brandOpts= (b.brands||[]).map(x => ({ value: x.name, label: x.name }));
+        const allC     = c.categories||[];
+        setAllCats(allC);
+        setUnits(unitOpts);
+        setBrands(brandOpts);
+        setCategories(allC.filter(x => !x.parent_id).map(x => ({ value: x.name, label: x.name })));
+        setSubCats(allC.filter(x => !!x.parent_id).map(x => ({ value: x.name, label: x.name })));
+      } catch (e) { console.error("Dropdown load error:", e.message); }
+    })();
+  }, []);
+
+  // Filter sub-cats when category changes
+  const filteredSubCats = form.category
+    ? (() => {
+        const parent = allCats.find(c => c.name === form.category && !c.parent_id);
+        return parent
+          ? allCats.filter(c => c.parent_id === parent.id).map(c => ({ value:c.name, label:c.name }))
+          : subCats;
+      })()
+    : subCats;
 
   const handleImage = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     set("image", file);
-    const reader = new FileReader();
-    reader.onload = (ev) => set("imagePreview", ev.target.result);
-    reader.readAsDataURL(file);
+    const r = new FileReader(); r.onload = ev => set("imagePreview", ev.target.result); r.readAsDataURL(file);
   };
 
   const save = async (andNew = false) => {
-    if (!form.name.trim())        { alert("Product Name is required"); return; }
-    if (!form.unit && !form.unitId) { alert("Unit is required"); return; }
+    if (!form.name.trim()) { alert("Product Name is required"); return; }
+    if (!form.unit)        { alert("Unit is required"); return; }
     setSaving(true);
     try {
       const payload = {
         name:                   form.name,
-        sku:                    form.sku || generateSKU(form.name),
+        sku:                    form.sku || genSKU(form.name),
         barcode_type:           form.barcodeType,
-        unit_id:                form.unitId || undefined,
-        unit:                   form.unitId ? undefined : form.unit,
-        brand_id:               form.brandId || undefined,
-        brand:                  form.brandId ? undefined : (form.brand || null),
-        category_id:            form.categoryId || undefined,
-        category:               form.categoryId ? undefined : (form.category || null),
-        sub_category_id:        form.subCategoryId || undefined,
-        sub_category:           form.subCategoryId ? undefined : (form.subCategory || null),
+        unit:                   form.unit,
+        brand:                  form.brand || null,
+        category:               form.category || null,
+        sub_category:           form.subCategory || null,
         business_location:      form.businessLocation,
         alert_qty:              form.alertQty || 0,
         manage_stock:           form.manageStock,
@@ -267,456 +293,503 @@ export function AddProductForm({ onSaved, editProduct }) {
         tax:                    form.tax,
         selling_price_tax_type: form.sellingPriceTaxType,
         product_type:           form.productType,
-        exc_tax:                parseFloat(form.excTax) || 0,
-        inc_tax:                parseFloat(form.incTax) || 0,
-        margin:                 parseFloat(form.margin) || 0,
-        exc_tax_sell:           parseFloat(form.excTaxSell) || 0,
+        exc_tax:                form.excTax || 0,
+        inc_tax:                form.incTax || 0,
+        margin:                 form.margin || 0,
+        exc_tax_sell:           form.excTaxSell || 0,
         status:                 "Active",
       };
-
-      if (editProduct) {
-        await productsAPI.update(editProduct.id, payload);
-      } else {
-        await productsAPI.create(payload);
-      }
-
+      if (editProduct) await productsAPI.update(editProduct.id, payload);
+      else             await productsAPI.create(payload);
       if (onSaved) { onSaved(); return; }
-      if (andNew)  { setForm(EMPTY_FORM); }
-      else          { navigate("/products/"); }
-    } catch (err) {
-      alert(err.message || "Failed to save product");
-    } finally {
-      setSaving(false);
-    }
+      if (andNew)  setForm({ ...EMPTY_FORM, sku: "" });
+      else         navigate("/products/");
+    } catch (err) { alert(err.message || "Failed to save product"); }
+    finally { setSaving(false); }
   };
 
   return (
-    <div style={s.formPage}>
-      {/* ── Card 1: Product Info ── */}
-      <div style={s.card}>
-        <div style={s.row3}>
-          <Field label="Product Name" required>
-            <input style={s.input} placeholder="e.g. Samsung Galaxy S24"
-              value={form.name}
-              onChange={e => { set("name", e.target.value); if (!editProduct && !form.sku) {} }}/>
-          </Field>
-          <Field label="SKU"
-            tooltip="Stock Keeping Unit. Auto-generated from product name. You can edit it.">
+    <div style={f.page}>
+      <div style={f.card}>
+        <h3 style={f.sec}>Product Details</h3>
+
+        <div style={f.row3}>
+          {/* Product Name */}
+          <div style={f.field}>
+            <label style={f.lbl}>Product Name *</label>
+            <input style={f.inp} placeholder="e.g. Dell Laptop" value={form.name}
+              onChange={e => set("name", e.target.value)}/>
+          </div>
+
+          {/* SKU - auto-generated with refresh button */}
+          <div style={f.field}>
+            <label style={f.lbl}>
+              SKU
+              <span style={f.hint} title="Auto-generated from product name. Click ↻ to regenerate.">ⓘ</span>
+            </label>
             <div style={{ display:"flex", gap:6 }}>
-              <input style={{ ...s.input, flex:1, fontFamily:"monospace" }}
-                placeholder="Auto-generated"
-                value={form.sku}
-                onChange={e => set("sku", e.target.value)}/>
-              <button type="button" onClick={() => set("sku", generateSKU(form.name))}
+              <input style={{ ...f.inp, flex:1 }} value={form.sku}
+                onChange={e => { set("sku", e.target.value); set("_skuManual", true); }}
+                placeholder="Auto-generated"/>
+              <button onClick={() => { set("sku", genSKU(form.name)); set("_skuManual", false); }}
                 title="Regenerate SKU"
-                style={{ padding:"8px 10px", border:"1px solid #d1d5db", borderRadius:6, background:"#f9fafb", cursor:"pointer", fontSize:14 }}>
-                ↺
-              </button>
+                style={{ padding:"8px 12px", border:"1px solid #d1d5db", borderRadius:6, cursor:"pointer", background:"#f9fafb", fontSize:16 }}>↻</button>
             </div>
-          </Field>
-          <Field label="Barcode Type" required>
-            <select style={s.input} value={form.barcodeType} onChange={e=>set("barcodeType",e.target.value)}>
-              {BARCODE_TYPES.map(b=><option key={b}>{b}</option>)}
+          </div>
+
+          {/* Barcode Type */}
+          <div style={f.field}>
+            <label style={f.lbl}>Barcode Type *</label>
+            <select style={f.inp} value={form.barcodeType} onChange={e => set("barcodeType", e.target.value)}>
+              {BARCODE_TYPES.map(b => <option key={b}>{b}</option>)}
             </select>
-          </Field>
+          </div>
         </div>
 
-        <div style={s.row3}>
-          <Field label="Unit" required>
-            <TypeaheadSelect
-              label="Unit" items={units}
-              value={form.unit}
-              onChange={v => set("unit", v)}
-              onSelect={item => { set("unit", item ? item.name : ""); set("unitId", item ? item.id : null); }}
-              placeholder="Type to search units..."
-            />
-          </Field>
-          <Field label="Brand">
-            <TypeaheadSelect
-              label="Brand" items={brands}
-              value={form.brand}
-              onChange={v => set("brand", v)}
-              onSelect={item => { set("brand", item ? item.name : ""); set("brandId", item ? item.id : null); }}
-              placeholder="Type to search brands..."
-            />
-          </Field>
-          <Field label="Category">
-            <TypeaheadSelect
-              label="Category" items={parentCats}
-              value={form.category}
-              onChange={v => set("category", v)}
-              onSelect={item => {
-                set("category", item ? item.name : "");
-                set("categoryId", item ? item.id : null);
-                // Reset sub-category when parent changes
-                set("subCategory", ""); set("subCategoryId", null);
-              }}
-              placeholder="Type to search categories..."
-            />
-          </Field>
+        <div style={f.row3}>
+          {/* Unit - searchable */}
+          <div style={f.field}>
+            <label style={f.lbl}>Unit *</label>
+            <SearchableSelect options={units} value={form.unit} onChange={v => set("unit", v)} placeholder="Search unit..."/>
+          </div>
+
+          {/* Brand - searchable */}
+          <div style={f.field}>
+            <label style={f.lbl}>Brand</label>
+            <SearchableSelect options={brands} value={form.brand} onChange={v => set("brand", v)} placeholder="Search brand..."/>
+          </div>
+
+          {/* Category - searchable */}
+          <div style={f.field}>
+            <label style={f.lbl}>Category</label>
+            <SearchableSelect options={categories} value={form.category}
+              onChange={v => { set("category", v); set("subCategory", ""); }}
+              placeholder="Search category..."/>
+          </div>
         </div>
 
-        <div style={s.row3}>
-          <Field label="Sub Category"
-            tooltip={form.categoryId ? `Showing sub-categories under "${form.category}"` : "Select a Category first to filter sub-categories"}>
-            <TypeaheadSelect
-              label="Sub Category" items={subCats}
-              value={form.subCategory}
-              onChange={v => set("subCategory", v)}
-              onSelect={item => { set("subCategory", item ? item.name : ""); set("subCategoryId", item ? item.id : null); }}
-              placeholder={form.categoryId ? "Type to search sub-categories..." : "Select Category first..."}
-            />
-          </Field>
-          <Field label="Business Locations">
-            <div style={s.locationBox}>
-              <span style={s.locationBadge}>✕ {form.businessLocation}</span>
+        <div style={f.row3}>
+          {/* Sub Category - filtered by selected category */}
+          <div style={f.field}>
+            <label style={f.lbl}>
+              Sub Category
+              <span style={f.hint} title="Select a category first to filter sub-categories">ⓘ</span>
+            </label>
+            <SearchableSelect options={filteredSubCats} value={form.subCategory}
+              onChange={v => set("subCategory", v)} placeholder="Search sub-category..."/>
+          </div>
+
+          {/* Business Location - dropdown */}
+          <div style={f.field}>
+            <label style={f.lbl}>Business Locations</label>
+            <div style={f.locBox}>
+              <select value={form.businessLocation} onChange={e => set("businessLocation", e.target.value)}
+                style={{ border:"none", background:"transparent", outline:"none", fontSize:14, width:"100%", cursor:"pointer" }}>
+                {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
             </div>
-          </Field>
-          <Field label="Alert Quantity">
-            <input style={s.input} placeholder="e.g. 10" type="number" min="0"
-              value={form.alertQty} onChange={e=>set("alertQty",e.target.value)}/>
-          </Field>
+          </div>
+
+          {/* Alert Quantity */}
+          <div style={f.field}>
+            <label style={f.lbl}>Alert Quantity</label>
+            <input style={f.inp} placeholder="e.g. 10" type="number" min="0"
+              value={form.alertQty} onChange={e => set("alertQty", e.target.value)}/>
+          </div>
         </div>
 
-        <div style={{ marginBottom:16 }}>
-          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" }}>
-            <input type="checkbox" checked={form.manageStock}
-              onChange={e=>set("manageStock",e.target.checked)}
+        <div style={f.row1}>
+          <label style={f.checkRow}>
+            <input type="checkbox" checked={form.manageStock} onChange={e => set("manageStock", e.target.checked)}
               style={{ accentColor:"#2d7a3a", width:16, height:16 }}/>
             <span style={{ fontWeight:600, color:"#374151" }}>Manage Stock?</span>
-            <span style={{ color:"#9ca3af", fontSize:12, fontStyle:"italic" }}>
-              Enable stock management at product level
-            </span>
+            <span style={{ color:"#9ca3af", fontSize:12, marginLeft:6 }}>Enable stock management at product level</span>
           </label>
         </div>
 
-        <div style={s.row2}>
-          <Field label="Product Description">
-            <textarea style={{ ...s.input, height:100, resize:"vertical" }}
-              placeholder="Enter product description..."
-              value={form.description} onChange={e=>set("description",e.target.value)}/>
-          </Field>
-          <Field label="Product Image">
-            <div style={s.imgArea}>
+        <div style={f.row2}>
+          <div style={f.field}>
+            <label style={f.lbl}>Product Description</label>
+            <textarea style={{ ...f.inp, height:100, resize:"vertical" }}
+              placeholder="Enter product description..." value={form.description}
+              onChange={e => set("description", e.target.value)}/>
+          </div>
+          <div style={f.field}>
+            <label style={f.lbl}>Product Image</label>
+            <div style={f.imgBox}>
               {form.imagePreview
-                ? <img src={form.imagePreview} alt="preview" style={s.imgPreview}/>
-                : <div style={s.imgEmpty}>No image</div>}
-              <button type="button" style={s.browseBtn} onClick={()=>fileRef.current.click()}>
-                Browse...
-              </button>
-              <input ref={fileRef} type="file" accept="image/*"
-                style={{ display:"none" }} onChange={handleImage}/>
-              <span style={s.imgNote}>Max File size: 5MB · Aspect ratio 1:1</span>
+                ? <img src={form.imagePreview} alt="preview" style={{ width:80, height:80, objectFit:"cover", borderRadius:8, border:"1px solid #e5e7eb" }}/>
+                : <div style={f.imgEmpty}>No image</div>}
+              <button onClick={() => fileRef.current.click()} style={f.browseBtn}>Browse...</button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleImage}/>
+              <span style={{ fontSize:11, color:"#9ca3af" }}>Max 5MB · 1:1 ratio</span>
             </div>
-          </Field>
+          </div>
         </div>
 
-        <div style={s.row2}>
-          <Field label="Weight (kg)">
-            <input style={s.input} placeholder="e.g. 0.5" type="number" step="0.001"
-              value={form.weight} onChange={e=>set("weight",e.target.value)}/>
-          </Field>
-          <Field label="Preparation Time (minutes)">
-            <input style={s.input} placeholder="e.g. 15" type="number"
-              value={form.prepTime} onChange={e=>set("prepTime",e.target.value)}/>
-          </Field>
+        <div style={f.row2}>
+          <div style={f.field}>
+            <label style={f.lbl}>Weight (kg)</label>
+            <input style={f.inp} placeholder="e.g. 0.5" type="number" value={form.weight} onChange={e => set("weight", e.target.value)}/>
+          </div>
+          <div style={f.field}>
+            <label style={f.lbl}>Preparation Time (minutes)</label>
+            <input style={f.inp} placeholder="e.g. 15" type="number" value={form.prepTime} onChange={e => set("prepTime", e.target.value)}/>
+          </div>
         </div>
       </div>
 
-      {/* ── Card 2: Pricing ── */}
-      <div style={s.card}>
-        <div style={s.row2}>
-          <Field label="Applicable Tax">
-            <select style={s.input} value={form.tax} onChange={e=>set("tax",e.target.value)}>
-              {TAXES.map(t=><option key={t}>{t}</option>)}
+      {/* Pricing Card */}
+      <div style={f.card}>
+        <h3 style={f.sec}>Pricing & Tax</h3>
+        <div style={f.row2}>
+          <div style={f.field}>
+            <label style={f.lbl}>Applicable Tax</label>
+            <select style={f.inp} value={form.tax} onChange={e => set("tax", e.target.value)}>
+              {TAXES.map(t => <option key={t}>{t}</option>)}
             </select>
-          </Field>
-          <Field label="Selling Price Tax Type" required>
-            <select style={s.input} value={form.sellingPriceTaxType}
-              onChange={e=>set("sellingPriceTaxType",e.target.value)}>
-              {TAX_TYPES.map(t=><option key={t}>{t}</option>)}
+          </div>
+          <div style={f.field}>
+            <label style={f.lbl}>Selling Price Tax Type *</label>
+            <select style={f.inp} value={form.sellingPriceTaxType} onChange={e => set("sellingPriceTaxType", e.target.value)}>
+              {TAX_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
-          </Field>
+          </div>
+        </div>
+        <div style={{ maxWidth:320, marginBottom:20 }}>
+          <div style={f.field}>
+            <label style={f.lbl}>Product Type *</label>
+            <select style={f.inp} value={form.productType} onChange={e => set("productType", e.target.value)}>
+              {PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
         </div>
 
-        <Field label="Product Type" required style={{ maxWidth:320 }}>
-          <select style={s.input} value={form.productType}
-            onChange={e=>set("productType",e.target.value)}>
-            {PRODUCT_TYPES.map(t=><option key={t}>{t}</option>)}
-          </select>
-        </Field>
-
         {/* Pricing table */}
-        <div style={s.pricingWrap}>
-          <div style={s.pricingHead}>
+        <div style={f.pricingWrap}>
+          <div style={f.pricingHead}>
             <div>Default Purchase Price</div>
             <div>× Margin (%)</div>
             <div>Default Selling Price</div>
             <div>Product Image</div>
           </div>
-          <div style={s.pricingBody}>
-            {/* Purchase price */}
-            <div style={s.pricingCell}>
-              <Field label="Exc. tax *"
-                tooltip="Exc. Tax = Purchase price EXCLUDING tax. This is what you pay the supplier before tax is added.">
-                <input style={s.input} placeholder="0.00" type="number" step="0.01"
-                  value={form.excTax} onChange={e=>set("excTax",e.target.value)}/>
-              </Field>
-              <Field label="Inc. tax *"
-                tooltip="Inc. Tax = Purchase price INCLUDING tax. Auto-calculated from Exc. Tax + applicable tax rate.">
-                <input style={s.input} placeholder="0.00" type="number" step="0.01"
-                  value={form.incTax} onChange={e=>set("incTax",e.target.value)}/>
-              </Field>
+          <div style={f.pricingBody}>
+            <div style={f.pricingCol}>
+              <label style={f.priceLbl}>
+                Exc. tax * 
+                <span style={f.hint} title="Purchase price excluding tax (what you pay to supplier)">ⓘ</span>
+              </label>
+              <input style={f.inp} placeholder="0.00" type="number" value={form.excTax}
+                onChange={e => set("excTax", e.target.value)}/>
+              <label style={{ ...f.priceLbl, marginTop:10 }}>
+                Inc. tax *
+                <span style={f.hint} title="Purchase price including tax">ⓘ</span>
+              </label>
+              <input style={f.inp} placeholder="0.00" type="number" value={form.incTax}
+                onChange={e => set("incTax", e.target.value)}/>
             </div>
-            {/* Margin */}
-            <div style={s.pricingCell}>
-              <Field label="Margin %" tooltip="Profit margin percentage. Selling price = Purchase price × (1 + margin/100)">
-                <input style={s.input} type="number" step="0.01"
-                  value={form.margin} onChange={e=>set("margin",e.target.value)}/>
-              </Field>
+            <div style={f.pricingCol}>
+              <label style={f.priceLbl}>Margin %</label>
+              <input style={f.inp} type="number" value={form.margin}
+                onChange={e => set("margin", e.target.value)} placeholder="25.00"/>
             </div>
-            {/* Selling price */}
-            <div style={s.pricingCell}>
-              <Field label="Exc. Tax" tooltip="Default selling price excluding tax. Auto-calculated from Purchase Price + Margin.">
-                <input style={s.input} placeholder="0.00" type="number" step="0.01"
-                  value={form.excTaxSell} onChange={e=>set("excTaxSell",e.target.value)}/>
-              </Field>
+            <div style={f.pricingCol}>
+              <label style={f.priceLbl}>
+                Exc. Tax (Selling)
+                <span style={f.hint} title="Selling price excluding tax (auto-calculated from purchase + margin)">ⓘ</span>
+              </label>
+              <input style={{ ...f.inp, background:"#f0fdf4" }} placeholder="0.00" type="number" value={form.excTaxSell}
+                onChange={e => set("excTaxSell", e.target.value)}/>
             </div>
-            {/* Image preview */}
-            <div style={{ ...s.pricingCell, alignItems:"center", justifyContent:"center" }}>
+            <div style={f.pricingCol}>
               {form.imagePreview
-                ? <img src={form.imagePreview} alt="product"
-                    style={{ width:64, height:64, objectFit:"cover", borderRadius:6 }}/>
-                : <span style={{ color:"#d1d5db", fontSize:12 }}>No file chosen</span>}
-              <div style={s.imgNote}>Max 5MB · 1:1</div>
+                ? <img src={form.imagePreview} alt="" style={{ width:70, height:70, objectFit:"cover", borderRadius:6 }}/>
+                : <span style={{ color:"#d1d5db", fontSize:12 }}>No image</span>}
+              <div style={{ fontSize:11, color:"#9ca3af", marginTop:4 }}>Max 5MB · 1:1</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Footer buttons ── */}
-      <div style={s.formFooter}>
-        <button style={{ ...s.btnSaveStock, opacity:saving?0.7:1 }}
-          onClick={()=>save(false)} disabled={saving}>
-          {saving?"Saving...":"Save & Add Opening Stock"}
+      {/* Footer buttons */}
+      <div style={f.footer}>
+        <button disabled={saving} onClick={() => save(false)}
+          style={{ ...f.btnDark, opacity: saving?0.7:1 }}>
+          {saving ? "Saving..." : "Save & Add Opening Stock"}
         </button>
-        <button style={{ ...s.btnSaveAnother, opacity:saving?0.7:1 }}
-          onClick={()=>save(true)} disabled={saving}>
-          {saving?"Saving...":"Save And Add Another"}
+        <button disabled={saving} onClick={() => save(true)}
+          style={{ ...f.btnGreen, opacity: saving?0.7:1 }}>
+          {saving ? "Saving..." : "Save And Add Another"}
         </button>
-        <button style={{ ...s.btnSave, opacity:saving?0.7:1 }}
-          onClick={()=>save(false)} disabled={saving}>
-          {saving?"Saving...":"Save"}
+        <button disabled={saving} onClick={() => save(false)}
+          style={{ ...f.btnGreenDark, opacity: saving?0.7:1 }}>
+          {saving ? "Saving..." : "Save"}
         </button>
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// ADD PRODUCT PAGE
-// ─────────────────────────────────────────────────────────────
 export function AddProductPage() {
   const navigate = useNavigate();
   return (
     <div>
-      <h1 style={{ margin:"0 0 20px", fontSize:26, fontWeight:700, color:"#1a1a2e" }}>
-        Add New Product
-      </h1>
-      <AddProductForm onSaved={()=>navigate("/products/")}/>
+      <h1 style={{ margin:"0 0 20px", fontSize:26, fontWeight:700, color:"#1a1a2e" }}>Add New Product</h1>
+      <AddProductForm onSaved={() => navigate("/products/")}/>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
 // LIST PRODUCTS
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
 export default function ListProducts() {
   const navigate = useNavigate();
-  const [products, setProducts]     = useState([]);
-  const [total, setTotal]           = useState(0);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState("");
+  const [products,    setProducts]    = useState([]);
+  const [total,       setTotal]       = useState(0);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch]         = useState("");
-  const [showEntries, setShowEntries] = useState(25);
-  const [activeTab, setActiveTab]   = useState("all");
-  const [selected, setSelected]     = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [search,      setSearch]      = useState("");
+  const [perPage,     setPerPage]     = useState(25);
+  const [page,        setPage]        = useState(1);
+  const [selected,    setSelected]    = useState([]);
+  const [activeTab,   setActiveTab]   = useState("all");
   const [editProduct, setEditProduct] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showEdit,    setShowEdit]    = useState(false);
+  const [cols, setCols] = useState({
+    image:true, action:true, product:true, location:true,
+    purchase:true, selling:true, stock:true, type:true,
+    category:true, brand:true, tax:true, sku:true, status:true
+  });
+  // Filters
+  const [filterStatus,   setFilterStatus]   = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterBrand,    setFilterBrand]    = useState("");
+  const [showFilters,    setShowFilters]    = useState(false);
+  const [categories,     setCategories]     = useState([]);
+  const [brands,         setBrands]         = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const data = await productsAPI.getAll({ page:currentPage, limit:showEntries, search });
+      const data = await productsAPI.getAll({
+        page, limit: perPage, search,
+        status: filterStatus,
+        category_id: filterCategory,
+        brand_id: filterBrand,
+      });
       setProducts(data.products || []);
       setTotal(data.total || 0);
     } catch (err) { setError(err.message || "Failed to load products"); }
     finally { setLoading(false); }
-  }, [currentPage, showEntries, search]);
+  }, [page, perPage, search, filterStatus, filterCategory, filterBrand]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load filter dropdowns
   useEffect(() => {
-    const t = setTimeout(() => { setSearch(searchInput); setCurrentPage(1); }, 400);
+    categoriesAPI.getAll({ limit:200 }).then(d => setCategories(d.categories||[])).catch(()=>{});
+    brandsAPI.getAll({ limit:200 }).then(d => setBrands(d.brands||[])).catch(()=>{});
+  }, []);
+
+  // Search debounce
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const totalPages  = Math.max(1, Math.ceil(total / showEntries));
-  const toggleAll   = () => setSelected(selected.length===products.length&&products.length>0 ? [] : products.map(p=>p.id));
-  const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev,id]);
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x=>x!==id) : [...p,id]);
+  const toggleAll    = ()   => setSelected(selected.length === products.length && products.length > 0 ? [] : products.map(p=>p.id));
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this product?")) return;
-    try { await productsAPI.delete(id); load(); }
-    catch (err) { alert(err.message || "Failed to delete"); }
+    try { await productsAPI.delete(id); await load(); }
+    catch (err) { alert(err.message || "Delete failed"); }
   };
 
   const handleDeleteSelected = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
     if (!window.confirm(`Delete ${selected.length} product(s)?`)) return;
-    try { await Promise.all(selected.map(id => productsAPI.delete(id))); setSelected([]); load(); }
-    catch (err) { alert(err.message); }
+    try { await Promise.all(selected.map(id => productsAPI.delete(id))); setSelected([]); await load(); }
+    catch (err) { alert(err.message || "Delete failed"); }
   };
 
   const handleDeactivate = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
-    try { await Promise.all(selected.map(id => productsAPI.updateStatus(id,"Inactive"))); setSelected([]); load(); }
-    catch (err) { alert(err.message); }
+    try { await Promise.all(selected.map(id => productsAPI.updateStatus(id, "Inactive"))); setSelected([]); await load(); }
+    catch (err) { alert(err.message || "Deactivate failed"); }
   };
 
-  const stockStyle = (qty) => {
-    if (!qty || qty === 0) return { bg:"#fee2e2", color:"#991b1b" };
-    if (qty < 10)          return { bg:"#fef3c7", color:"#92400e" };
-    return                        { bg:"#d1fae5", color:"#065f46" };
+  const stockColor = (qty) => {
+    if (qty <= 0) return { bg:"#fee2e2", color:"#991b1b" };
+    if (qty < 10) return { bg:"#fef3c7", color:"#92400e" };
+    return { bg:"#d1fae5", color:"#065f46" };
   };
+
+  const from = products.length === 0 ? 0 : (page-1)*perPage+1;
+  const to   = (page-1)*perPage+products.length;
 
   return (
-    <div style={s.page}>
-      <div style={s.titleRow}>
+    <div style={p.page}>
+      {/* Header */}
+      <div style={p.titleRow}>
         <div>
-          <h1 style={s.pageTitle}>Products</h1>
-          <span style={s.pageSubtitle}>Manage your products</span>
+          <h1 style={p.title}>Products</h1>
+          <p style={p.sub}>Manage your products</p>
         </div>
         <div style={{ display:"flex", gap:10 }}>
-          <button style={s.btnAdd}   onClick={()=>navigate("/products/create")}>+ Add</button>
-          <button style={s.btnExcel} onClick={()=>exportExcel(products)}>Download Excel</button>
+          <button onClick={() => navigate("/products/create")} style={p.btnAdd}>+ Add</button>
+          <button onClick={() => exportExcel(products)} style={p.btnXls}>Download Excel</button>
         </div>
       </div>
 
-      {error && (
-        <div style={{ background:"#fff3cd", border:"1px solid #ffc107", borderRadius:6, padding:"10px 16px", marginBottom:12, color:"#856404" }}>
-          ⚠ {error}
-        </div>
-      )}
+      {error && <div style={p.errBanner}>{error} <button onClick={load} style={p.retryBtn}>Retry</button></div>}
 
-      <div style={s.filtersBar}>
-        <span style={{ color:"#2d7a3a", fontWeight:600, fontSize:14 }}>Filters</span>
-        <span style={{ marginLeft:"auto", color:"#2d7a3a", fontSize:18 }}>v</span>
+      {/* Filters panel */}
+      <div style={p.filtersCard}>
+        <div style={p.filtersHeader} onClick={() => setShowFilters(v=>!v)}>
+          <span style={{ color:"#2d7a3a", fontWeight:600, fontSize:14 }}>⚙ Filters</span>
+          <span style={{ color:"#2d7a3a", fontSize:18 }}>{showFilters?"▲":"▼"}</span>
+        </div>
+        {showFilters && (
+          <div style={p.filtersBody}>
+            <div style={p.filterRow}>
+              <div style={p.filterField}>
+                <label style={p.filterLbl}>Status</label>
+                <select value={filterStatus} onChange={e=>{setFilterStatus(e.target.value);setPage(1);}} style={p.filterInp}>
+                  <option value="">All</option>
+                  <option>Active</option>
+                  <option>Inactive</option>
+                </select>
+              </div>
+              <div style={p.filterField}>
+                <label style={p.filterLbl}>Category</label>
+                <select value={filterCategory} onChange={e=>{setFilterCategory(e.target.value);setPage(1);}} style={p.filterInp}>
+                  <option value="">All Categories</option>
+                  {categories.filter(c=>!c.parent_id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div style={p.filterField}>
+                <label style={p.filterLbl}>Brand</label>
+                <select value={filterBrand} onChange={e=>{setFilterBrand(e.target.value);setPage(1);}} style={p.filterInp}>
+                  <option value="">All Brands</option>
+                  {brands.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div style={p.filterField}>
+                <button onClick={()=>{setFilterStatus("");setFilterCategory("");setFilterBrand("");setPage(1);}} style={p.clearBtn}>Clear Filters</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div style={s.tabRow}>
-        {[{key:"all",label:"All Products"},{key:"stock",label:"Stock Report"}].map(t=>(
-          <button key={t.key} onClick={()=>setActiveTab(t.key)}
-            style={{ ...s.tab, ...(activeTab===t.key?s.tabActive:{}) }}>{t.label}</button>
+      {/* Tabs */}
+      <div style={p.tabRow}>
+        {[{k:"all",l:"All Products"},{k:"stock",l:"Stock Report"}].map(t=>(
+          <button key={t.k} onClick={()=>setActiveTab(t.k)}
+            style={{...p.tab,...(activeTab===t.k?p.tabActive:{})}}>
+            {t.l}
+          </button>
         ))}
       </div>
 
-      <div style={s.toolbar}>
+      {/* Toolbar */}
+      <div style={p.toolbar}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:13 }}>Show</span>
-          <select style={{ border:"1px solid #d1d5db", borderRadius:4, padding:"5px 8px", fontSize:13 }}
-            value={showEntries} onChange={e=>{setShowEntries(+e.target.value);setCurrentPage(1);}}>
+          <span style={{ fontSize:13, color:"#555" }}>Show</span>
+          <select value={perPage} onChange={e=>{setPerPage(+e.target.value);setPage(1);}} style={tb.select}>
             {[10,25,50,100].map(n=><option key={n}>{n}</option>)}
           </select>
-          <span style={{ fontSize:13 }}>entries</span>
+          <span style={{ fontSize:13, color:"#555" }}>entries</span>
         </div>
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-          <button onClick={()=>exportCSV(products)} style={s.toolBtn}>
-            <span style={{ ...s.tbIcon, background:"#1d6f42" }}>CSV</span>Export CSV
-          </button>
-          <button onClick={()=>exportExcel(products)} style={s.toolBtn}>
-            <span style={{ ...s.tbIcon, background:"#217346" }}>XLS</span>Export Excel
-          </button>
-          <button style={s.toolBtn}>Print</button>
-          <button style={s.toolBtn}>Column visibility</button>
-          <button style={s.toolBtn}>
-            <span style={{ ...s.tbIcon, background:"#d32f2f" }}>PDF</span>Export PDF
-          </button>
-          <input style={{ border:"1px solid #d1d5db", borderRadius:4, padding:"6px 10px", fontSize:13, width:170 }}
-            placeholder="Search ..." value={searchInput}
-            onChange={e=>setSearchInput(e.target.value)}/>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <button onClick={()=>exportCSV(products)}   style={{...tb.btn,...tb.csvBtn}}><span style={tb.csvIco}>CSV</span>Export CSV</button>
+          <button onClick={()=>exportExcel(products)} style={{...tb.btn,...tb.xlsBtn}}><span style={tb.xlsIco}>XLS</span>Export Excel</button>
+          <button onClick={()=>exportPDF(products)}   style={tb.btn}>Print</button>
+          <ColVisMenu cols={cols} onChange={(k,v) => setCols(c=>({...c,[k]:v}))} />
+          <button onClick={()=>exportPDF(products)}   style={{...tb.btn,...tb.pdfBtn}}><span style={tb.pdfIco}>PDF</span>Export PDF</button>
+          <input value={searchInput} onChange={e=>setSearchInput(e.target.value)}
+            placeholder="Search ..." style={tb.search}/>
         </div>
       </div>
 
-      <div style={{ overflowX:"auto", border:"1px solid #e5e7eb", borderRadius:8, background:"#fff" }}>
-        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+      {/* Table */}
+      <div style={p.tableWrap}>
+        <table style={p.table}>
           <thead>
-            <tr style={{ background:"#f9fafb" }}>
-              <th style={s.th}><input type="checkbox" checked={selected.length===products.length&&products.length>0} onChange={toggleAll}/></th>
-              <th style={s.th}>Product Image</th>
-              <th style={s.th}>Action</th>
-              <th style={s.th}>Product</th>
-              <th style={s.th}>Business Location</th>
-              <th style={s.th}>Unit Purchase Price</th>
-              <th style={s.th}>Selling Price</th>
-              <th style={s.th}>Current Stock</th>
-              <th style={s.th}>Product Type</th>
-              <th style={s.th}>Category</th>
-              <th style={s.th}>Brand</th>
-              <th style={s.th}>Tax</th>
-              <th style={s.th}>SKU</th>
-              <th style={s.th}>Status</th>
+            <tr style={p.thead}>
+              <th style={p.th}><input type="checkbox" checked={selected.length===products.length&&products.length>0} onChange={toggleAll} style={{ accentColor:"#2d7a3a" }}/></th>
+              {cols.image    && <th style={p.th}>Product Image</th>}
+              {cols.action   && <th style={p.th}>Action</th>}
+              {cols.product  && <th style={p.th}>Product</th>}
+              {cols.location && <th style={p.th}>Business Location</th>}
+              {cols.purchase && <th style={p.th}>Unit Purchase Price</th>}
+              {cols.selling  && <th style={p.th}>Selling Price</th>}
+              {cols.stock    && <th style={p.th}>Current Stock</th>}
+              {cols.type     && <th style={p.th}>Product Type</th>}
+              {cols.category && <th style={p.th}>Category</th>}
+              {cols.brand    && <th style={p.th}>Brand</th>}
+              {cols.tax      && <th style={p.th}>Tax</th>}
+              {cols.sku      && <th style={p.th}>SKU</th>}
+              {cols.status   && <th style={p.th}>Status</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={14} style={{ textAlign:"center", padding:48, color:"#9ca3af" }}>Loading...</td></tr>
+              <tr><td colSpan={15} style={p.noData}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                  <div style={{ width:20, height:20, border:"3px solid #2d7a3a", borderTop:"3px solid transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
+                  Loading products...
+                </div>
+              </td></tr>
             ) : products.length === 0 ? (
-              <tr><td colSpan={14} style={{ textAlign:"center", padding:48, color:"#9ca3af" }}>No data available in table</td></tr>
+              <tr><td colSpan={15} style={p.noData}>No data available in table</td></tr>
             ) : (
-              products.map((p, i) => {
-                const sc = stockStyle(p.current_stock);
+              products.map((prod, i) => {
+                const sc = stockColor(prod.current_stock ?? 0);
+                const isSelected = selected.includes(prod.id);
                 return (
-                  <tr key={p.id}
-                    style={{ background:i%2===0?"#fff":"#fafafa", borderBottom:"1px solid #f0f0f0" }}
-                    onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"}
-                    onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#fafafa"}>
-                    <td style={s.td}><input type="checkbox" checked={selected.includes(p.id)} onChange={()=>toggleSelect(p.id)}/></td>
-                    <td style={s.td}>
-                      {p.image_url
-                        ? <img src={p.image_url} alt={p.name} style={{ width:40,height:40,objectFit:"cover",borderRadius:4,border:"1px solid #e5e7eb" }}/>
-                        : <div style={{ width:40,height:40,background:"#f3f4f6",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",color:"#d1d5db",fontSize:10 }}>IMG</div>}
-                    </td>
-                    <td style={s.td}>
-                      <button onClick={()=>{setEditProduct(p);setShowEditModal(true);}}
-                        style={{ background:"#f0fdf4",border:"none",borderRadius:4,cursor:"pointer",fontSize:12,padding:"4px 8px",marginRight:4,color:"#2d7a3a",fontWeight:500 }}>Edit</button>
-                      <button onClick={()=>handleDelete(p.id)}
-                        style={{ background:"#fee2e2",border:"none",borderRadius:4,cursor:"pointer",fontSize:12,padding:"4px 8px",color:"#ef4444",fontWeight:500 }}>Del</button>
-                    </td>
-                    <td style={{ ...s.td, fontWeight:500 }}>{p.name}</td>
-                    <td style={s.td}>{p.business_location}</td>
-                    <td style={s.td}>{p.exc_tax ? `₹${Number(p.exc_tax).toLocaleString("en-IN")}` : "--"}</td>
-                    <td style={{ ...s.td, fontWeight:600, color:"#065f46" }}>
-                      {p.exc_tax_sell ? `₹${Number(p.exc_tax_sell).toLocaleString("en-IN")}` : "--"}
-                    </td>
-                    <td style={s.td}>
-                      <span style={{ background:sc.bg,color:sc.color,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:600 }}>
-                        {p.current_stock ?? 0}
-                      </span>
-                    </td>
-                    <td style={s.td}>{p.product_type}</td>
-                    <td style={s.td}>{p.category || "--"}</td>
-                    <td style={s.td}>{p.brand || "--"}</td>
-                    <td style={s.td}>{p.tax}</td>
-                    <td style={{ ...s.td, fontFamily:"monospace", fontSize:11, color:"#6b7280" }}>{p.sku || "--"}</td>
-                    <td style={s.td}>
-                      <span style={{
-                        background:p.status==="Active"?"#d1fae5":"#fee2e2",
-                        color:p.status==="Active"?"#065f46":"#991b1b",
-                        borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:500
-                      }}>{p.status||"Active"}</span>
-                    </td>
+                  <tr key={prod.id}
+                    style={{ background: isSelected?"#f0fdf4": i%2===0?"#fff":"#fafafa", borderBottom:"1px solid #f0f0f0", transition:"background 0.15s" }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background="#f9fafb"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background=i%2===0?"#fff":"#fafafa"; }}>
+                    <td style={p.td}><input type="checkbox" checked={isSelected} onChange={()=>toggleSelect(prod.id)} style={{ accentColor:"#2d7a3a" }}/></td>
+                    {cols.image && (
+                      <td style={p.td}>
+                        {prod.image_url
+                          ? <img src={prod.image_url} alt={prod.name} style={{ width:44, height:44, objectFit:"cover", borderRadius:6, border:"1px solid #e5e7eb" }}/>
+                          : <div style={{ width:44, height:44, borderRadius:6, background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:11 }}>IMG</div>}
+                      </td>
+                    )}
+                    {cols.action && (
+                      <td style={p.td}>
+                        <div style={{ display:"flex", gap:5 }}>
+                          <button onClick={()=>{setEditProduct(prod);setShowEdit(true);}} style={p.editBtn}>✏ Edit</button>
+                          <button onClick={()=>handleDelete(prod.id)} style={p.delBtn}>🗑 Del</button>
+                        </div>
+                      </td>
+                    )}
+                    {cols.product  && <td style={{...p.td,fontWeight:600,maxWidth:200}}>{prod.name}</td>}
+                    {cols.location && <td style={{...p.td,color:"#6b7280",fontSize:12}}>{prod.business_location}</td>}
+                    {cols.purchase && <td style={p.td}>{prod.exc_tax>0?`₹${Number(prod.exc_tax).toLocaleString("en-IN")}`:"—"}</td>}
+                    {cols.selling  && <td style={{...p.td,fontWeight:700,color:"#2d7a3a"}}>{prod.exc_tax_sell>0?`₹${Number(prod.exc_tax_sell).toLocaleString("en-IN")}`:"—"}</td>}
+                    {cols.stock    && <td style={p.td}><span style={{background:sc.bg,color:sc.color,borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:600}}>{prod.current_stock??0}</span></td>}
+                    {cols.type     && <td style={p.td}><span style={{background:"#ede9fe",color:"#6d28d9",borderRadius:20,padding:"2px 10px",fontSize:12}}>{prod.product_type}</span></td>}
+                    {cols.category && <td style={p.td}>{prod.category||"—"}</td>}
+                    {cols.brand    && <td style={p.td}>{prod.brand||"—"}</td>}
+                    {cols.tax      && <td style={{...p.td,fontSize:12,color:"#6b7280"}}>{prod.tax}</td>}
+                    {cols.sku      && <td style={{...p.td,fontFamily:"monospace",fontSize:12,color:"#6b7280"}}>{prod.sku||"—"}</td>}
+                    {cols.status   && (
+                      <td style={p.td}>
+                        <span style={{background:prod.status==="Active"?"#d1fae5":"#fee2e2",color:prod.status==="Active"?"#065f46":"#991b1b",borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:500}}>
+                          {prod.status||"Active"}
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 );
               })
@@ -725,92 +798,124 @@ export default function ListProducts() {
         </table>
       </div>
 
-      <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap" }}>
-        <button onClick={handleDeleteSelected}  style={s.bulkDel}>Delete Selected</button>
-        <button style={s.bulkAdd}>Add to location</button>
-        <button style={s.bulkRem}>Remove from location</button>
-        <button onClick={handleDeactivate}      style={s.bulkDeact}>Deactivate Selected</button>
+      {/* Bulk actions */}
+      <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
+        <button onClick={handleDeleteSelected} style={p.bulkDel}>Delete Selected</button>
+        <button style={p.bulkOutline}>Add to location</button>
+        <button style={p.bulkOutline}>Remove from location</button>
+        <button onClick={handleDeactivate} style={p.bulkWarn}>Deactivate Selected</button>
       </div>
 
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:12, fontSize:13, color:"#6b7280" }}>
-        <span>
-          Showing {products.length===0?"0":`${(currentPage-1)*showEntries+1}`} to {Math.min(currentPage*showEntries,total)} of {total} entries
+      {/* Pagination */}
+      <div style={p.footRow}>
+        <span style={{ fontSize:13, color:"#6b7280" }}>
+          Showing {from} to {to} of {total} entries
         </span>
-        <div style={{ display:"flex", gap:6 }}>
-          <button style={{ ...s.pageBtn, opacity:currentPage===1?0.5:1 }}
-            onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1}>Previous</button>
-          {Array.from({length:Math.min(totalPages,5)},(_,i)=>i+1).map(pg=>(
-            <button key={pg} style={{ ...s.pageBtn, ...(currentPage===pg?s.pageBtnActive:{}) }}
-              onClick={()=>setCurrentPage(pg)}>{pg}</button>
-          ))}
-          {totalPages>5 && <span style={{ padding:"5px 8px",color:"#6b7280" }}>...</span>}
-          <button style={{ ...s.pageBtn, opacity:currentPage===totalPages?0.5:1 }}
-            onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages}>Next</button>
+        <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+          <button onClick={()=>setPage(1)} disabled={page<=1} style={{...p.pageBtn,opacity:page<=1?0.45:1}}>«</button>
+          <button onClick={()=>setPage(v=>Math.max(1,v-1))} disabled={page<=1} style={{...p.pageBtn,opacity:page<=1?0.45:1}}>Previous</button>
+          {Array.from({length:Math.min(totalPages,5)},(_, i)=>{
+            const pg = Math.max(1, Math.min(page-2,totalPages-4))+i;
+            return pg<=totalPages?(
+              <button key={pg} onClick={()=>setPage(pg)}
+                style={{...p.pageBtn,...(page===pg?p.pageActive:{})}}>{pg}</button>
+            ):null;
+          })}
+          <button onClick={()=>setPage(v=>Math.min(totalPages,v+1))} disabled={page>=totalPages} style={{...p.pageBtn,opacity:page>=totalPages?0.45:1}}>Next</button>
+          <button onClick={()=>setPage(totalPages)} disabled={page>=totalPages} style={{...p.pageBtn,opacity:page>=totalPages?0.45:1}}>»</button>
         </div>
       </div>
 
       {/* Edit Modal */}
-      {showEditModal && editProduct && (
-        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:1000,overflowY:"auto",display:"flex",justifyContent:"center",padding:"40px 16px" }}>
-          <div style={{ background:"#f9fafb",borderRadius:12,width:"100%",maxWidth:900,padding:28,maxHeight:"90vh",overflowY:"auto",position:"relative" }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20 }}>
-              <h2 style={{ margin:0,fontSize:22,fontWeight:700,color:"#1a1a2e" }}>Edit Product</h2>
-              <button onClick={()=>setShowEditModal(false)}
-                style={{ background:"none",border:"none",fontSize:24,cursor:"pointer",color:"#666" }}>×</button>
-            </div>
-            <AddProductForm editProduct={editProduct} onSaved={()=>{ setShowEditModal(false); load(); }}/>
+      {showEdit && editProduct && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:1000, overflowY:"auto", display:"flex", justifyContent:"center", padding:"32px 16px" }}>
+          <div style={{ background:"#f9fafb", borderRadius:12, width:"100%", maxWidth:920, padding:"28px 24px", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
+            <button onClick={()=>{setShowEdit(false);setEditProduct(null);}}
+              style={{ position:"absolute", right:20, top:20, background:"none", border:"none", fontSize:24, cursor:"pointer", color:"#666" }}>×</button>
+            <h2 style={{ margin:"0 0 20px", fontSize:22, fontWeight:700 }}>Edit Product</h2>
+            <AddProductForm editProduct={editProduct} onSaved={()=>{setShowEdit(false);setEditProduct(null);load();}}/>
           </div>
         </div>
       )}
+
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
-// ── Shared styles ─────────────────────────────────────────────
-const s = {
-  page:         { fontFamily:"'Segoe UI',sans-serif", color:"#222", fontSize:14 },
-  titleRow:     { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 },
-  pageTitle:    { margin:0, fontSize:26, fontWeight:700, color:"#1a1a2e" },
-  pageSubtitle: { fontSize:13, color:"#888" },
-  btnAdd:       { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
-  btnExcel:     { background:"#217346", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
-  filtersBar:   { display:"flex", alignItems:"center", padding:"12px 16px", border:"1px solid #e5e7eb", borderRadius:8, marginBottom:16, background:"#fff" },
-  tabRow:       { display:"flex", borderBottom:"2px solid #e5e7eb", marginBottom:16 },
-  tab:          { padding:"10px 22px", border:"none", background:"transparent", cursor:"pointer", fontSize:14, color:"#555", fontWeight:500 },
-  tabActive:    { color:"#2d7a3a", borderBottom:"2px solid #2d7a3a", marginBottom:-2, fontWeight:600 },
-  toolbar:      { display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:12 },
-  toolBtn:      { background:"#fff", border:"1px solid #d1d5db", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer", color:"#444", display:"flex", alignItems:"center", gap:5 },
-  tbIcon:       { color:"#fff", borderRadius:3, padding:"1px 5px", fontSize:10, fontWeight:700 },
-  th:           { padding:"12px 10px", textAlign:"left", fontWeight:600, borderBottom:"2px solid #e5e7eb", whiteSpace:"nowrap", color:"#374151" },
-  td:           { padding:"10px 10px", verticalAlign:"middle" },
-  bulkDel:      { background:"#fff", border:"1px solid #ef4444", color:"#ef4444", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:500 },
-  bulkAdd:      { background:"#fff", border:"1px solid #2d7a3a", color:"#2d7a3a", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:500 },
-  bulkRem:      { background:"#fff", border:"1px solid #6b7280", color:"#6b7280", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:500 },
-  bulkDeact:    { background:"#fff", border:"1px solid #f59e0b", color:"#d97706", borderRadius:4, padding:"6px 14px", cursor:"pointer", fontSize:12, fontWeight:500 },
-  pageBtn:      { background:"#fff", border:"1px solid #d1d5db", borderRadius:4, padding:"5px 14px", cursor:"pointer", fontSize:13, color:"#374151" },
-  pageBtnActive:{ background:"#2d7a3a", color:"#fff", border:"1px solid #2d7a3a" },
-  // Form styles
-  formPage:       { display:"flex", flexDirection:"column", gap:20 },
-  card:           { background:"#fff", borderRadius:10, padding:"24px 28px", border:"1px solid #e5e7eb", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
-  row3:           { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16, marginBottom:4 },
-  row2:           { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:4 },
-  label:          { display:"block", fontSize:13, fontWeight:600, color:"#374151", marginBottom:5 },
-  input:          { width:"100%", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 10px", fontSize:13, outline:"none", boxSizing:"border-box", fontFamily:"inherit" },
-  locationBox:    { padding:"7px 10px", border:"1px solid #2d7a3a", borderRadius:6, background:"#f0fdf4" },
-  locationBadge:  { background:"#2d7a3a", color:"#fff", borderRadius:4, padding:"3px 10px", fontSize:12, fontWeight:500 },
-  imgArea:        { display:"flex", flexDirection:"column", gap:8 },
-  imgPreview:     { width:80, height:80, objectFit:"cover", borderRadius:8, border:"1px solid #e5e7eb" },
-  imgEmpty:       { width:80, height:80, background:"#f9fafb", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:12, border:"1px dashed #d1d5db" },
-  browseBtn:      { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"8px 16px", cursor:"pointer", fontSize:13, width:"fit-content" },
-  imgNote:        { fontSize:11, color:"#9ca3af" },
-  pricingWrap:    { border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden", marginTop:16 },
-  pricingHead:    { display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"#2d7a3a", color:"#fff", padding:"12px 16px", fontWeight:600, fontSize:13 },
-  pricingBody:    { display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", padding:"16px", gap:16, background:"#fff" },
-  pricingCell:    { display:"flex", flexDirection:"column", gap:8 },
-  formFooter:     { display:"flex", justifyContent:"center", gap:12, padding:"20px 0 8px" },
-  btnSaveStock:   { background:"#374151", color:"#fff", border:"none", borderRadius:6, padding:"12px 22px", cursor:"pointer", fontSize:14, fontWeight:600 },
-  btnSaveAnother: { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"12px 22px", cursor:"pointer", fontSize:14, fontWeight:600 },
-  btnSave:        { background:"linear-gradient(135deg,#2d7a3a,#1a5c28)", color:"#fff", border:"none", borderRadius:6, padding:"12px 32px", cursor:"pointer", fontSize:14, fontWeight:600 },
-  dropdown:       { position:"absolute", top:"100%", left:0, right:0, background:"#fff", border:"1px solid #d1d5db", borderRadius:6, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", zIndex:100, maxHeight:200, overflowY:"auto", marginTop:2 },
-  dropdownItem:   { padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#374151", borderBottom:"1px solid #f0f0f0" },
+// ── Styles ──────────────────────────────────────────────────
+const f = {
+  page:       { display:"flex", flexDirection:"column", gap:20, fontFamily:"'Segoe UI',sans-serif" },
+  card:       { background:"#fff", borderRadius:10, padding:"24px 28px", border:"1px solid #e5e7eb", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
+  sec:        { fontSize:16, fontWeight:700, color:"#1a1a2e", marginBottom:20, marginTop:0 },
+  row3:       { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16, marginBottom:4 },
+  row2:       { display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:4 },
+  row1:       { marginBottom:16 },
+  field:      { marginBottom:16 },
+  lbl:        { display:"block", fontSize:13, fontWeight:600, color:"#374151", marginBottom:6 },
+  hint:       { cursor:"help", color:"#9ca3af", fontSize:13, marginLeft:5 },
+  inp:        { width:"100%", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 11px", fontSize:14, outline:"none", boxSizing:"border-box", fontFamily:"inherit" },
+  locBox:     { border:"1px solid #2d7a3a", borderRadius:6, padding:"8px 12px", background:"#f0fdf4", display:"flex", alignItems:"center" },
+  checkRow:   { display:"flex", alignItems:"center", gap:8, fontSize:14, cursor:"pointer" },
+  imgBox:     { display:"flex", flexDirection:"column", gap:8 },
+  imgEmpty:   { width:80, height:80, background:"#f9fafb", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:12, border:"1px dashed #d1d5db" },
+  browseBtn:  { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"8px 16px", cursor:"pointer", fontSize:13, width:"fit-content" },
+  pricingWrap:{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" },
+  pricingHead:{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"#2d7a3a", color:"#fff", padding:"12px 16px", fontWeight:600, fontSize:13, gap:12 },
+  pricingBody:{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", padding:"16px", gap:16 },
+  pricingCol: { display:"flex", flexDirection:"column", gap:6 },
+  priceLbl:   { fontSize:12, fontWeight:600, color:"#6b7280" },
+  footer:     { display:"flex", justifyContent:"center", gap:12, padding:"8px 0 20px" },
+  btnDark:    { background:"#374151", color:"#fff", border:"none", borderRadius:8, padding:"12px 22px", cursor:"pointer", fontSize:14, fontWeight:600 },
+  btnGreen:   { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:8, padding:"12px 22px", cursor:"pointer", fontSize:14, fontWeight:600 },
+  btnGreenDark:{ background:"linear-gradient(135deg,#2d7a3a,#1a5c28)", color:"#fff", border:"none", borderRadius:8, padding:"12px 32px", cursor:"pointer", fontSize:14, fontWeight:700 },
+};
+
+const p = {
+  page:       { fontFamily:"'Segoe UI',sans-serif", color:"#222", fontSize:14 },
+  titleRow:   { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 },
+  title:      { margin:0, fontSize:26, fontWeight:700, color:"#1a1a2e" },
+  sub:        { margin:"4px 0 0", color:"#9ca3af", fontSize:13 },
+  btnAdd:     { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
+  btnXls:     { background:"#217346", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
+  errBanner:  { background:"#fff3cd", border:"1px solid #ffc107", borderRadius:6, padding:"10px 16px", marginBottom:12, color:"#856404", display:"flex", alignItems:"center", gap:12 },
+  retryBtn:   { background:"#ffc107", border:"none", borderRadius:4, padding:"4px 12px", cursor:"pointer", fontSize:12, fontWeight:600 },
+  filtersCard:{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, marginBottom:14, overflow:"hidden" },
+  filtersHeader:{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 16px", cursor:"pointer" },
+  filtersBody:{ padding:"16px", borderTop:"1px solid #f0f0f0" },
+  filterRow:  { display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:16, alignItems:"end" },
+  filterField:{ display:"flex", flexDirection:"column", gap:5 },
+  filterLbl:  { fontSize:12, fontWeight:600, color:"#6b7280" },
+  filterInp:  { border:"1px solid #d1d5db", borderRadius:6, padding:"7px 10px", fontSize:13, outline:"none" },
+  clearBtn:   { background:"#f3f4f6", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 16px", cursor:"pointer", fontSize:13, fontWeight:500, whiteSpace:"nowrap" },
+  tabRow:     { display:"flex", borderBottom:"2px solid #e5e7eb", marginBottom:14 },
+  tab:        { padding:"10px 22px", border:"none", background:"transparent", cursor:"pointer", fontSize:14, color:"#6b7280", fontWeight:500 },
+  tabActive:  { color:"#2d7a3a", borderBottom:"3px solid #2d7a3a", marginBottom:-2, fontWeight:700 },
+  toolbar:    { display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:12 },
+  tableWrap:  { overflowX:"auto", border:"1px solid #e5e7eb", borderRadius:8, background:"#fff" },
+  table:      { width:"100%", borderCollapse:"collapse", fontSize:13 },
+  thead:      { background:"#f9fafb" },
+  th:         { padding:"12px 10px", textAlign:"left", fontWeight:600, borderBottom:"2px solid #e5e7eb", whiteSpace:"nowrap", color:"#374151" },
+  td:         { padding:"11px 10px", borderBottom:"1px solid #f5f5f5", verticalAlign:"middle" },
+  noData:     { textAlign:"center", padding:"52px 0", color:"#9ca3af", fontSize:14 },
+  editBtn:    { background:"#f0fdf4", color:"#2d7a3a", border:"1px solid #bbf7d0", borderRadius:5, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:500, whiteSpace:"nowrap" },
+  delBtn:     { background:"#fff0f0", color:"#dc2626", border:"1px solid #fecaca", borderRadius:5, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:500 },
+  bulkDel:    { background:"#fff", border:"1px solid #ef4444", color:"#ef4444", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },
+  bulkOutline:{ background:"#fff", border:"1px solid #d1d5db", color:"#374151", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13 },
+  bulkWarn:   { background:"#fff", border:"1px solid #f59e0b", color:"#d97706", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },
+  footRow:    { display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:12, flexWrap:"wrap", gap:8 },
+  pageBtn:    { background:"#fff", border:"1px solid #d1d5db", borderRadius:4, padding:"5px 12px", cursor:"pointer", fontSize:13, color:"#374151" },
+  pageActive: { background:"#2d7a3a", color:"#fff", border:"1px solid #2d7a3a" },
+};
+
+const tb = {
+  btn:    { background:"#fff", border:"1px solid #d1d5db", borderRadius:5, padding:"6px 11px", fontSize:12, cursor:"pointer", color:"#444", display:"flex", alignItems:"center", gap:5 },
+  csvBtn: { },
+  xlsBtn: { },
+  pdfBtn: { },
+  csvIco: { background:"#16a34a", color:"#fff", borderRadius:3, padding:"1px 5px", fontSize:10, fontWeight:700 },
+  xlsIco: { background:"#217346", color:"#fff", borderRadius:3, padding:"1px 5px", fontSize:10, fontWeight:700 },
+  pdfIco: { background:"#dc2626", color:"#fff", borderRadius:3, padding:"1px 5px", fontSize:10, fontWeight:700 },
+  select: { border:"1px solid #d1d5db", borderRadius:4, padding:"5px 8px", fontSize:13, outline:"none" },
+  search: { border:"1px solid #d1d5db", borderRadius:5, padding:"6px 10px", fontSize:13, width:170, outline:"none" },
 };
