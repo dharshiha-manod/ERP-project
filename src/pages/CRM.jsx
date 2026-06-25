@@ -1078,4 +1078,4 @@ export function CRMRoutes() {
       <Route path="/settings" element={<CRMSettings />} />
     </Routes>
   );
-}
+} 

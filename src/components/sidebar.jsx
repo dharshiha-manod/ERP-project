@@ -128,12 +128,18 @@ const navItems = [
   },
 
   // ── Expenses ────────────────────────────────────────────────────────────
+  // NOTE (scoped fix): "List Expenses" now carries `exact: true`.
+  // Without it, "/expenses/create" and "/expense-categories" both start
+  // with "/expenses"/"/expense-" and were lighting up "List Expenses" at
+  // the same time as "Add Expense" / "Expense Categories" — wrong flow.
+  // This flag only affects the Expenses menu; every other module's
+  // matching logic below is untouched.
   {
     label: "Expenses", icon: Wallet, path: "/expenses", feature: FEATURES.EXPENSES,
     children: [
-      { label: "List Expenses",      path: "/expenses" },
-      { label: "Add Expense",        path: "/expenses/create" },
       { label: "Expense Categories", path: "/expense-categories" },
+      { label: "Add Expense",        path: "/expenses/create" },
+      { label: "List Expenses",      path: "/expenses", exact: true },
     ],
   },
 
@@ -210,22 +216,29 @@ const navItems = [
 ];
 
 /* ── Active-route helper ──────────────────────────────────────────────────── */
+function childMatches(c, pathname, search) {
+  const [cPath, cQuery] = c.path.split("?");
+  if (cQuery) {
+    // Query-param based child: match both pathname and query
+    const params = new URLSearchParams(cQuery);
+    const currentParams = new URLSearchParams(search);
+    return pathname === cPath && params.get("tab") === currentParams.get("tab");
+  }
+  // Scoped fix: a child marked `exact` only matches its own exact pathname,
+  // so sibling routes that share the same prefix (e.g. "/expenses/create")
+  // don't also light it up. Every other child keeps its original
+  // startsWith-based matching — unchanged behavior for all other modules.
+  if (c.exact) return pathname === cPath;
+  return pathname === cPath || pathname.startsWith(cPath + "/");
+}
+
 function checkActive(item, pathname, search) {
   // For Manufacturing, check if we're on /manufacturing path
   if (item.path === "/manufacturing") {
     return pathname === "/manufacturing" || pathname.startsWith("/manufacturing");
   }
   if (item.children) {
-    return item.children.some((c) => {
-      const [cPath, cQuery] = c.path.split("?");
-      if (cQuery) {
-        // Query-param based child: match both pathname and query
-        const params = new URLSearchParams(cQuery);
-        const currentParams = new URLSearchParams(search);
-        return pathname === cPath && params.get("tab") === currentParams.get("tab");
-      }
-      return pathname === cPath || pathname.startsWith(cPath + "/");
-    });
+    return item.children.some((c) => childMatches(c, pathname, search));
   }
   if (item.path === "/") return pathname === "/";
   return pathname.startsWith(item.path);
@@ -270,13 +283,7 @@ export default function Sidebar() {
 
   // Helper: is a child link active?
   function isChildActive(child) {
-    const [cPath, cQuery] = child.path.split("?");
-    if (cQuery) {
-      const params = new URLSearchParams(cQuery);
-      const currentParams = new URLSearchParams(location.search);
-      return location.pathname === cPath && params.get("tab") === currentParams.get("tab");
-    }
-    return location.pathname === cPath || location.pathname.startsWith(cPath + "/");
+    return childMatches(child, location.pathname, location.search);
   }
 
   return (

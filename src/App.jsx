@@ -23,7 +23,8 @@ import Warranties from "./pages/Warranties";
 // ── Manufacturing — single component, all tabs inside ─────────────────────
 import Manufacturing from "./pages/Manufacturing";
 
-import Purchases, { AddPurchasePage } from "./pages/Purchases";
+// ── Purchases — default export only (AddPurchasePage is inline, not a separate export) ──
+import Purchases from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
 import Contacts, {
   SuppliersPage, CustomersPage, CustomerGroupsPage, ImportContactsPage,
@@ -157,11 +158,7 @@ function AppLayout() {
           <Route path="/brands"              element={<FeatureRoute feature={FEATURES.PRODUCTS}><Brands /></FeatureRoute>} />
           <Route path="/warranties"          element={<FeatureRoute feature={FEATURES.PRODUCTS}><Warranties /></FeatureRoute>} />
 
-          {/* ── MANUFACTURING ─────────────────────────────────────────────
-           *  Single route, single component.
-           *  The ?tab= query param switches the active tab inside Manufacturing.jsx.
-           *  Sidebar links use /manufacturing?tab=<key> — they all land here.
-           * ──────────────────────────────────────────────────────────── */}
+          {/* Manufacturing */}
           <Route
             path="/manufacturing"
             element={
@@ -171,9 +168,9 @@ function AppLayout() {
             }
           />
 
-          {/* Purchases */}
-          <Route path="/purchases"              element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
-          <Route path="/purchases/create"       element={<FeatureRoute feature={FEATURES.PURCHASES}><AddPurchasePage /></FeatureRoute>} />
+          {/* Purchases — /purchases/create uses the same Purchases component (Add view is internal state) */}
+          <Route path="/purchases"        element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
+          <Route path="/purchases/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
           <Route path="/purchase-return"        element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
           <Route path="/purchase-return/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
 
