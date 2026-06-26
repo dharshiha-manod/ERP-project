@@ -23,7 +23,6 @@ import Warranties from "./pages/Warranties";
 // ── Manufacturing — single component, all tabs inside ─────────────────────
 import Manufacturing from "./pages/Manufacturing";
 
-// ── Purchases — default export only (AddPurchasePage is inline, not a separate export) ──
 import Purchases from "./pages/Purchases";
 import PurchaseReturn from "./pages/PurchaseReturn";
 import Contacts, {
@@ -32,11 +31,12 @@ import Contacts, {
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
 import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
-import { ListExpenses, AddExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
+// ↓ CHANGED: added EditExpense, ViewExpense to the Expenses import
+import { ListExpenses, AddExpense, EditExpense, ViewExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 import NotificationTemplates from "./pages/NotificationTemplates";
 import { HRMRoutes, EssentialsRoutes } from "./pages/HRM";
 import { CRMRoutes } from "./pages/CRM";
-import Settings from "./pages/Settings";
+import Settings from "./pages/settings";
 import {
   ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport,
   CustomerGroupsReport, StockReport, StockAdjustmentReport, TrendingProductsReport,
@@ -158,7 +158,11 @@ function AppLayout() {
           <Route path="/brands"              element={<FeatureRoute feature={FEATURES.PRODUCTS}><Brands /></FeatureRoute>} />
           <Route path="/warranties"          element={<FeatureRoute feature={FEATURES.PRODUCTS}><Warranties /></FeatureRoute>} />
 
-          {/* Manufacturing */}
+          {/* ── MANUFACTURING ─────────────────────────────────────────────
+           *  Single route, single component.
+           *  The ?tab= query param switches the active tab inside Manufacturing.jsx.
+           *  Sidebar links use /manufacturing?tab=<key> — they all land here.
+           * ──────────────────────────────────────────────────────────── */}
           <Route
             path="/manufacturing"
             element={
@@ -168,9 +172,9 @@ function AppLayout() {
             }
           />
 
-          {/* Purchases — /purchases/create uses the same Purchases component (Add view is internal state) */}
-          <Route path="/purchases"        element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
-          <Route path="/purchases/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
+          {/* Purchases */}
+          <Route path="/purchases"              element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
+          <Route path="/purchases/create"       element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
           <Route path="/purchase-return"        element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
           <Route path="/purchase-return/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
 
@@ -199,6 +203,10 @@ function AppLayout() {
           {/* Expenses */}
           <Route path="/expenses"           element={<FeatureRoute feature={FEATURES.EXPENSES}><ListExpenses /></FeatureRoute>} />
           <Route path="/expenses/create"    element={<FeatureRoute feature={FEATURES.EXPENSES}><AddExpense /></FeatureRoute>} />
+          {/* ↓ NEW: view + edit routes — these were missing, which is why
+                 clicking the 👁 / ✏️ buttons on List Expenses showed a blank page */}
+          <Route path="/expenses/:id"       element={<FeatureRoute feature={FEATURES.EXPENSES}><ViewExpense /></FeatureRoute>} />
+          <Route path="/expenses/:id/edit"  element={<FeatureRoute feature={FEATURES.EXPENSES}><EditExpense /></FeatureRoute>} />
           <Route path="/import-expenses"    element={<FeatureRoute feature={FEATURES.EXPENSES}><ImportExpenses /></FeatureRoute>} />
           <Route path="/expense-categories" element={<FeatureRoute feature={FEATURES.EXPENSES}><ExpenseCategories /></FeatureRoute>} />
 

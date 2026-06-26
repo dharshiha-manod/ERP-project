@@ -84,7 +84,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
 
   useEffect(()=>{
     if(!editData)return;
-    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:editData.discount_type||"None",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:"Cash",payAmt:"0",payNote:""});
+    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:editData.discount_type||"None",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.payment_note||""});
     if(editData.supplier_name){setSupSearch(editData.supplier_name);setSelSup({id:editData.supplier_id,name:editData.supplier_name});}
     if(Array.isArray(editData.items)){setItems(editData.items.map(i=>({id:i.product_id||null,name:i.product_name||i.name||"",sku:i.product_sku||i.sku||"",qty:parseFloat(i.quantity)||1,unitCost:parseFloat(i.unit_cost)||0,discPct:parseFloat(i.discount_pct)||0,marginPct:parseFloat(i.margin_pct)||0,lineTotal:parseFloat(i.line_total)||0,sellingPrice:parseFloat(i.selling_price)||0})));}
   },[editData]);
@@ -114,7 +114,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
     setSaving(true);
     try{
       const paid=parseFloat(form.payAmt)||0;
-      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
+      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_amount:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
       if(isEdit){await apiFetch("PUT",`/purchases/${editData.id}`,body);showToast("Purchase updated!","success");}
       else{await apiFetch("POST","/purchases",body);showToast("Purchase created!","success");}
       setTimeout(()=>onSubmit(),1200);

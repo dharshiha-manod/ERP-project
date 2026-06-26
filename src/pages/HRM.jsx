@@ -670,20 +670,117 @@ function Leave() {
 }
 
 /* ══════════════════════════════════════════
-   ATTENDANCE
+   ATTENDANCE — date helpers
+══════════════════════════════════════════ */
+
+/* Format a Date → "DD/MM/YYYY" for consistent storage & comparison */
+function fmtDate(d) {
+  return d.toLocaleDateString("en-IN", { day:"2-digit", month:"2-digit", year:"numeric" });
+}
+
+/* Build date strings for filter options */
+function getDateRange(filter, customFrom, customTo) {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (filter === "Today") {
+    return { from: today, to: today };
+  }
+  if (filter === "Yesterday") {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    return { from: y, to: y };
+  }
+  if (filter === "This Week") {
+    const day = today.getDay(); // 0=Sun
+    const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+    return { from: mon, to: today };
+  }
+  if (filter === "Last Week") {
+    const day = today.getDay();
+    const mon = new Date(today); mon.setDate(today.getDate() - (day === 0 ? 6 : day - 1) - 7);
+    const sun = new Date(mon);  sun.setDate(mon.getDate() + 6);
+    return { from: mon, to: sun };
+  }
+  if (filter === "This Month") {
+    return { from: new Date(today.getFullYear(), today.getMonth(), 1), to: today };
+  }
+  if (filter === "Last Month") {
+    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const last  = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { from: first, to: last };
+  }
+  if (filter === "Custom" && customFrom && customTo) {
+    return { from: new Date(customFrom), to: new Date(customTo) };
+  }
+  return null; // "All" → no filter
+}
+
+/* Parse "DD/MM/YYYY" back to Date */
+function parseIndianDate(str) {
+  if (!str) return null;
+  const parts = str.split("/");
+  if (parts.length !== 3) return null;
+  return new Date(+parts[2], +parts[1] - 1, +parts[0]);
+}
+
+/* Build rich multi-day attendance data so Yesterday / Last Week etc. have real rows */
+function buildAttendanceData() {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const rows  = [];
+
+  // Generate 14 days of data
+  for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - dayOffset);
+    const dateStr = fmtDate(d);
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
+    ALL_EMPLOYEES.forEach(emp => {
+      if (isWeekend) return; // no attendance on weekends
+      // deterministic status based on name hash + day offset
+      const hash = (emp.name.charCodeAt(0) + dayOffset) % 10;
+      let status, clockIn, clockOut;
+      if (emp.status === "On Leave" && dayOffset < 3) {
+        status = "On Leave"; clockIn = "—"; clockOut = "—";
+      } else if (hash === 0) {
+        status = "Absent";  clockIn = "—"; clockOut = "—";
+      } else if (hash === 1) {
+        status = "Late";    clockIn = "10:15 AM"; clockOut = "06:30 PM";
+      } else {
+        status = "Present"; clockIn = emp.clockIn !== "—" ? emp.clockIn : "09:05 AM";
+        clockOut = emp.clockOut !== "—" ? emp.clockOut : "06:10 PM";
+      }
+      rows.push([emp.name, dateStr, clockIn, clockOut, status, emp.dept]);
+    });
+  }
+  return rows;
+}
+
+const ALL_ATTENDANCE_DATA = buildAttendanceData();
+
+/* ══════════════════════════════════════════
+   ATTENDANCE COMPONENT
 ══════════════════════════════════════════ */
 function Attendance() {
   const [tab, setTab] = useState("Shifts");
+
+  /* ── filter state ── */
+  const [dateFilter,  setDateFilter]  = useState("Today");
+  const [customFrom,  setCustomFrom]  = useState("");
+  const [customTo,    setCustomTo]    = useState("");
+  const [empFilter,   setEmpFilter]   = useState("All");
+  const [statusFilter,setStatusFilter]= useState("All");
+
   const [shifts, setShifts] = useState([
     ["SHF-001","Day Shift",  "Fixed shift",    "09:00","18:00","Sun"],
     ["SHF-002","Night Shift","Fixed shift",    "21:00","06:00","Sun"],
     ["SHF-003","Flex Shift", "Flexible shift", "08:00","20:00","—"],
   ]);
-  const [allAtt, setAllAtt] = useState(
-    ALL_EMPLOYEES.filter(e => e.status !== "On Leave").map(e => [
-      e.name, new Date().toLocaleDateString(), e.clockIn, e.clockOut, e.status
-    ])
-  );
+
+  /* base data — all 14 days */
+  const [allAtt, setAllAtt] = useState(ALL_ATTENDANCE_DATA);
+
   const [clockInModal,  setClockInModal]  = useState(false);
   const [addShiftModal, setAddShiftModal] = useState(false);
   const [clockNote, setClockNote] = useState("");
@@ -697,8 +794,50 @@ function Attendance() {
     setAddShiftModal(false); setShiftForm({ name:"", type:"Fixed shift", start:"", end:"", holiday:"" });
   };
 
-  const present = allAtt.filter(r => r[4]==="Present");
-  const late    = allAtt.filter(r => r[4]==="Late");
+  /* ── Apply all filters ── */
+  const filteredAtt = (() => {
+    let rows = allAtt;
+
+    // Date filter
+    const range = getDateRange(dateFilter, customFrom, customTo);
+    if (range) {
+      rows = rows.filter(r => {
+        const d = parseIndianDate(r[1]);
+        if (!d) return false;
+        return d >= range.from && d <= range.to;
+      });
+    }
+
+    // Employee filter
+    if (empFilter !== "All") {
+      rows = rows.filter(r => r[0] === empFilter);
+    }
+
+    // Status filter
+    if (statusFilter !== "All") {
+      rows = rows.filter(r => r[4] === statusFilter);
+    }
+
+    return rows;
+  })();
+
+  /* KPI counts from TODAY only (always) */
+  const todayStr  = fmtDate(new Date());
+  const todayRows = allAtt.filter(r => r[1] === todayStr);
+  const presentToday = todayRows.filter(r => r[4]==="Present");
+  const lateToday    = todayRows.filter(r => r[4]==="Late");
+  const absentToday  = todayRows.filter(r => r[4]==="Absent");
+
+  const uniqueEmps = [...new Set(allAtt.map(r => r[0]))].sort();
+
+  /* ── Filter bar label ── */
+  const filterLabel = (() => {
+    const range = getDateRange(dateFilter, customFrom, customTo);
+    if (!range) return "All Records";
+    const from = fmtDate(range.from);
+    const to   = fmtDate(range.to);
+    return from === to ? from : `${from} → ${to}`;
+  })();
 
   return (
     <div>
@@ -707,21 +846,27 @@ function Attendance() {
         <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Attendance</h2>
         <GreenBtn onClick={() => setClockInModal(true)}>⬇ Clock In</GreenBtn>
       </div>
+
+      {/* KPI cards — always Today's numbers */}
       <KpiRow cards={[
-        { label:"Present Today", value: present.length.toString(), accent:true,
-          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status"], rows:present } },
-        { label:"Late", value: late.length.toString(), color:G.amber,
-          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status"], rows:late } },
-        { label:"Absent",       value: allAtt.filter(r=>r[4]==="Absent").length.toString(), color:G.red,
-          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status"], rows:allAtt.filter(r=>r[4]==="Absent") } },
+        { label:"Present Today", value: presentToday.length.toString(), accent:true,
+          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:presentToday } },
+        { label:"Late Today", value: lateToday.length.toString(), color:G.amber,
+          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:lateToday } },
+        { label:"Absent Today", value: absentToday.length.toString(), color:G.red,
+          modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:absentToday } },
         { label:"Total Shifts", value: shifts.length.toString(), color:G.blue,
           modalData:{ columns:["ID","Name","Type","Start","End","Holiday"], rows:shifts } },
       ]} />
+
+      {/* Sub-tabs */}
       <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
         {["Shifts","All Attendance","By Shift","By Date"].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight: tab===t ? 700 : 500, color: tab===t ? G.green : G.muted, borderBottom: tab===t ? `3px solid ${G.green}` : "3px solid transparent", fontSize:13 }}>{t}</button>
         ))}
       </div>
+
+      {/* ── Shifts tab ── */}
       {tab === "Shifts" && (
         <Card>
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
@@ -732,26 +877,183 @@ function Attendance() {
           />
         </Card>
       )}
+
+      {/* ── All Attendance tab with date filter ── */}
       {tab === "All Attendance" && (
+        <div>
+          {/* ── Filter Bar ── */}
+          <Card style={{ marginBottom:16, padding:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:13, fontWeight:700, color:G.green }}>▼ Filter Attendance</span>
+              {dateFilter !== "All" && (
+                <span style={{ fontSize:11, background:G.greenBg, color:G.green, padding:"3px 10px", borderRadius:20, fontWeight:700 }}>
+                  📅 {filterLabel}
+                </span>
+              )}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))", gap:12 }}>
+              {/* Date range quick filter */}
+              <div>
+                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Date Range</label>
+                <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
+                  {["All","Today","Yesterday","This Week","Last Week","This Month","Last Month","Custom"].map(o => (
+                    <option key={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Employee filter */}
+              <div>
+                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Employee</label>
+                <select value={empFilter} onChange={e => setEmpFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
+                  <option>All</option>
+                  {uniqueEmps.map(n => <option key={n}>{n}</option>)}
+                </select>
+              </div>
+
+              {/* Status filter */}
+              <div>
+                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Status</label>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
+                  {["All","Present","Late","Absent","On Leave"].map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+
+              {/* Custom date inputs — only when Custom selected */}
+              {dateFilter === "Custom" && (
+                <>
+                  <div>
+                    <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>From Date</label>
+                    <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                      style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>To Date</label>
+                    <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                      style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} />
+                  </div>
+                </>
+              )}
+
+              {/* Reset button */}
+              <div style={{ display:"flex", alignItems:"flex-end" }}>
+                <button onClick={() => { setDateFilter("Today"); setEmpFilter("All"); setStatusFilter("All"); setCustomFrom(""); setCustomTo(""); }}
+                  style={{ padding:"8px 18px", background:G.redBg, color:G.red, border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700 }}>
+                  ✕ Reset
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Results summary bar ── */}
+          <div style={{ display:"flex", gap:12, marginBottom:12, flexWrap:"wrap" }}>
+            {[
+              { label:"Showing", value: filteredAtt.length + " records", color:G.text, bg:"#f5f5f5" },
+              { label:"Present", value: filteredAtt.filter(r=>r[4]==="Present").length, color:G.green, bg:G.greenBg },
+              { label:"Late",    value: filteredAtt.filter(r=>r[4]==="Late").length,    color:G.amber, bg:G.amberBg },
+              { label:"Absent",  value: filteredAtt.filter(r=>r[4]==="Absent").length,  color:G.red,   bg:G.redBg   },
+            ].map(s => (
+              <div key={s.label} style={{ background:s.bg, borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:700, color:s.color, display:"flex", alignItems:"center", gap:6 }}>
+                {s.label}: <span style={{ fontSize:14 }}>{s.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Table ── */}
+          <Card>
+            {filteredAtt.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"40px 0", color:G.muted }}>
+                <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
+                <div style={{ fontSize:15, fontWeight:600 }}>No attendance records found</div>
+                <div style={{ fontSize:13, marginTop:4 }}>Try changing the date filter or selecting "All"</div>
+              </div>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+                  {[["CSV",G.green],["Excel",G.blue],["Print",G.muted]].map(([t,col])=>(
+                    <button key={t} style={{ padding:"6px 14px", border:`1px solid ${G.border}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:col }}>{t}</button>
+                  ))}
+                </div>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+                  <thead>
+                    <tr style={{ background:G.greenBg }}>
+                      {["Employee","Date","Clock In","Clock Out","Status","Department"].map(c => (
+                        <th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", whiteSpace:"nowrap" }}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAtt.map((row, i) => {
+                      const statusColors = { Present:{bg:G.greenBg,color:G.green}, Late:{bg:G.amberBg,color:G.amber}, Absent:{bg:G.redBg,color:G.red}, "On Leave":{bg:G.blueBg,color:G.blue} };
+                      const sc = statusColors[row[4]] || {bg:"#f5f5f5",color:G.muted};
+                      return (
+                        <tr key={i} style={{ background: i%2===0 ? G.white : G.rowHov }}
+                          onMouseEnter={e=>e.currentTarget.style.background=G.greenBg}
+                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?G.white:G.rowHov}
+                        >
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text, fontWeight:600 }}>{row[0]}</td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[1]}</td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[2]}</td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[3]}</td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>
+                            <span style={{ background:sc.bg, color:sc.color, borderRadius:20, padding:"3px 12px", fontSize:12, fontWeight:700 }}>{row[4]}</span>
+                          </td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{row[5]}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div style={{ marginTop:10, fontSize:13, color:G.muted }}>Showing {filteredAtt.length} of {allAtt.length} total records</div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ── By Shift tab ── */}
+      {tab === "By Shift" && (
         <Card>
-          <HRMTable columns={["Employee","Date","Clock In","Clock Out","Status"]} rows={allAtt} setRows={setAllAtt} />
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontWeight:600, fontSize:13, color:G.text, marginRight:10 }}>Select Shift:</label>
+            <select style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }}>
+              {shifts.map(s => <option key={s[0]}>{s[1]}</option>)}
+            </select>
+          </div>
+          <NoData />
         </Card>
       )}
-      {["By Shift","By Date"].includes(tab) && <Card><NoData /></Card>}
 
+      {/* ── By Date tab ── */}
+      {tab === "By Date" && (
+        <Card>
+          <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+            <label style={{ fontWeight:600, fontSize:13, color:G.text }}>Select Date:</label>
+            <input type="date" defaultValue={new Date().toISOString().split("T")[0]}
+              style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }} />
+            <GreenBtn style={{ padding:"8px 18px", fontSize:12 }}>View</GreenBtn>
+          </div>
+          <NoData />
+        </Card>
+      )}
+
+      {/* ── Clock In Modal ── */}
       {clockInModal && (
         <Modal title="Clock In" onClose={() => setClockInModal(false)} width={420}>
           <p style={{ color:G.muted, fontSize:13, margin:"0 0 16px" }}>IP Address: 192.168.1.10 · {new Date().toLocaleTimeString()}</p>
           <Field label="Clock In Note"><FTextarea value={clockNote} onChange={e => setClockNote(e.target.value)} placeholder="Optional note..." /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={() => {
-              setAllAtt(a => [...a, ["Admin", new Date().toLocaleDateString(), new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), "—", "Present"]]);
+              const now = new Date();
+              setAllAtt(a => [...a, ["Admin", fmtDate(now), now.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}), "—", "Present", "Admin"]]);
               setClockInModal(false); setClockNote("");
             }}>Submit</GreenBtn>
             <DarkBtn onClick={() => setClockInModal(false)}>Close</DarkBtn>
           </div>
         </Modal>
       )}
+
+      {/* ── Add Shift Modal ── */}
       {addShiftModal && (
         <Modal title="Add Shift" onClose={() => setAddShiftModal(false)}>
           <AutoIdField label="Shift ID" value={newShiftId()} />

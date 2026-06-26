@@ -1,10 +1,10 @@
 // ════════════════════════════════════════════════════════════════════════════════
-// src/pages/Sell.jsx  —  Advanced Sell Module v3
+// src/pages/Sell.jsx  —  Advanced Sell Module v4
 // Exports: AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts,
 //          AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ const BG         = "#f8fafc";
 const RED        = "#dc2626";
 const AMBER      = "#f59e0b";
 
-// ── Page shell: full height, no scroll ────────────────────────────────────────
+// ── Page shell ────────────────────────────────────────────────────────────────
 const PAGE = {
   fontFamily: F, display: "flex", flexDirection: "column",
   height: "calc(100vh - 130px)", overflow: "hidden", background: BG,
@@ -67,6 +67,12 @@ const Badge = ({ status }) => {
     Expired:   { bg: "#f1f5f9", color: "#475569", border: "#cbd5e1" },
     Shipped:   { bg: "#dbeafe", color: "#1e40af", border: "#bfdbfe" },
     Delivered: { bg: "#d1fae5", color: "#065f46", border: "#a7f3d0" },
+    Active:    { bg: "#d1fae5", color: "#065f46", border: "#a7f3d0" },
+    Inactive:  { bg: "#f1f5f9", color: "#475569", border: "#e2e8f0" },
+    Pending:   { bg: "#fef9c3", color: "#854d0e", border: "#fde68a" },
+    "Walk-In": { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+    Retail:    { bg: "#dbeafe", color: "#1e40af", border: "#bfdbfe" },
+    Wholesale: { bg: "#fef9c3", color: "#854d0e", border: "#fde68a" },
   };
   const s = map[status] || { bg: "#f1f5f9", color: "#475569", border: "#e2e8f0" };
   return (
@@ -145,19 +151,22 @@ const IC = {
   plus:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   x:      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
   csv:    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+  tag:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+  truck:  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+  close:  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
 };
 
 // Form elements
-const Inp = ({ value, onChange, placeholder, type = "text", readOnly, min, max, style: s, onFocus, onBlur, ref: r }) => (
+const Inp = ({ value, onChange, placeholder, type = "text", readOnly, min, max, style: s }) => (
   <input type={type} value={value} onChange={onChange} placeholder={placeholder}
-    readOnly={readOnly} min={min} max={max} ref={r}
+    readOnly={readOnly} min={min} max={max}
     style={{
       width: "100%", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "7px 10px",
       fontSize: 13, fontFamily: F, background: readOnly ? "#f8fafc" : "#fff",
       color: TEXT_MAIN, outline: "none", boxSizing: "border-box", ...s,
     }}
-    onFocus={e => { if (!readOnly) e.target.style.borderColor = GREEN; onFocus && onFocus(e); }}
-    onBlur={e => { e.target.style.borderColor = BORDER; onBlur && onBlur(e); }}
+    onFocus={e => { if (!readOnly) e.target.style.borderColor = GREEN; }}
+    onBlur={e => { e.target.style.borderColor = BORDER; }}
   />
 );
 const Sel = ({ value, onChange, children, style: s }) => (
@@ -194,7 +203,7 @@ const CardTitle = ({ children }) => (
   <div style={{ fontSize: 13, fontWeight: 700, color: TEXT_MAIN, marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${BORDER}` }}>{children}</div>
 );
 
-// Full-page table (only tbody scrolls)
+// Full-page table
 const TablePage = ({ columns, rows, loading, emptyText, footer, topBar }) => (
   <div style={{
     background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10,
@@ -280,19 +289,124 @@ const SumRow = ({ label, value, bold, big, color, border }) => (
   </div>
 );
 
-// ── Customer dropdown with "+ Add New" ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// TYPEABLE CUSTOMER COMBOBOX
+// Fetches customers from API, allows typing to filter, shows dropdown
+// ══════════════════════════════════════════════════════════════
+function CustomerCombobox({ value, onChange, customers, placeholder = "Search customer..." }) {
+  const [q, setQ]         = useState(value || "");
+  const [open, setOpen]   = useState(false);
+  const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+
+  // Sync external value to input
+  useEffect(() => { setQ(value || ""); }, [value]);
+
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const allOptions = [
+    { id: "walkin", name: "Walk-In Customer", customer_type: "Walk-In" },
+    ...customers.map(c => ({ ...c, name: c.name || c.contact_name || "" })),
+  ];
+
+  const filtered = allOptions.filter(c =>
+    !q || c.name.toLowerCase().includes(q.toLowerCase()) ||
+    c.phone?.includes(q) || c.email?.toLowerCase().includes(q.toLowerCase())
+  );
+
+  const handleSelect = (c) => {
+    setQ(c.name);
+    onChange(c.name, c);
+    setOpen(false);
+  };
+
+  const handleInput = (e) => {
+    setQ(e.target.value);
+    onChange(e.target.value, null);
+    setOpen(true);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <span style={{ position: "absolute", left: 10, pointerEvents: "none", display: "flex", opacity: 0.5 }}>{IC.search}</span>
+        <input
+          value={q}
+          onChange={handleInput}
+          onFocus={() => { setOpen(true); setFocused(true); }}
+          onBlur={() => setFocused(false)}
+          placeholder={placeholder}
+          style={{
+            width: "100%", border: `1px solid ${focused ? GREEN : BORDER}`, borderRadius: 6,
+            padding: "7px 36px 7px 32px", fontSize: 13, fontFamily: F, background: "#fff",
+            color: TEXT_MAIN, outline: "none", boxSizing: "border-box",
+          }}
+        />
+        {q && (
+          <button onClick={() => { setQ(""); onChange("", null); setOpen(true); }}
+            style={{ position: "absolute", right: 8, background: "none", border: "none", cursor: "pointer", color: TEXT_MUTED, display: "flex", padding: 2 }}>
+            {IC.close}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 8,
+          maxHeight: 240, overflowY: "auto", zIndex: 100,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "12px 14px", fontSize: 13, color: TEXT_MUTED }}>
+              No customers found
+              <a href="/contacts/customers/create" target="_blank"
+                style={{ display: "block", marginTop: 6, fontSize: 12, color: GREEN, fontWeight: 600 }}>
+                + Add New Customer
+              </a>
+            </div>
+          ) : (
+            filtered.slice(0, 15).map(c => (
+              <div key={c.id || c.name}
+                onMouseDown={() => handleSelect(c)}
+                style={{
+                  padding: "10px 14px", cursor: "pointer", fontSize: 13,
+                  borderBottom: `1px solid ${BORDER}`,
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = LIGHT_GRN}
+                onMouseLeave={e => e.currentTarget.style.background = "#fff"}
+              >
+                <div>
+                  <span style={{ fontWeight: 600 }}>{c.name}</span>
+                  {c.phone && <span style={{ color: TEXT_MUTED, fontSize: 11, marginLeft: 8 }}>{c.phone}</span>}
+                  {c.email && <div style={{ fontSize: 11, color: TEXT_MUTED }}>{c.email}</div>}
+                </div>
+                {c.customer_type && <Badge status={c.customer_type} />}
+              </div>
+            ))
+          )}
+          <div style={{ padding: "8px 14px", borderTop: `1px solid ${BORDER}`, background: "#fafafa" }}>
+            <a href="/contacts/customers/create" target="_blank"
+              style={{ fontSize: 12, color: GREEN, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+              {IC.plus} Add New Customer
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Customer dropdown with "+ Add New" (legacy wrapper kept for POS) ──────────
 function CustomerSelect({ value, onChange, customers }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <div style={{ flex: 1 }}>
-        <Sel value={value} onChange={e => onChange(e.target.value)}>
-          <option value="">— Select customer —</option>
-          <option value="Walk-In Customer">Walk-In Customer</option>
-          {customers.map(c => {
-            const n = c.name || c.contact_name || c;
-            return <option key={c.id || n} value={n}>{n}{c.customer_type ? ` (${c.customer_type})` : ""}</option>;
-          })}
-        </Sel>
+        <CustomerCombobox value={value} onChange={(name) => onChange(name)} customers={customers} />
       </div>
       <button
         title="Add New Customer"
@@ -332,7 +446,7 @@ function ProductSearchDropdown({ products, onSelect, placeholder }) {
         <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex" }}>{IC.search}</span>
         <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          placeholder={placeholder || "Search product by name or SKU..."}
+          placeholder={placeholder || "Search product by name, SKU, or barcode..."}
           style={{ width: "100%", border: `1px solid ${q && open ? GREEN : BORDER}`, borderRadius: 6, padding: "8px 10px 8px 32px", fontSize: 13, fontFamily: F, background: "#fff", outline: "none", boxSizing: "border-box" }}
         />
       </div>
@@ -340,11 +454,13 @@ function ProductSearchDropdown({ products, onSelect, placeholder }) {
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
           background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 8,
-          maxHeight: 220, overflowY: "auto", zIndex: 50,
+          maxHeight: 260, overflowY: "auto", zIndex: 50,
           boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
         }}>
           {filtered.length === 0
-            ? <div style={{ padding: "12px 14px", fontSize: 13, color: TEXT_MUTED }}>No products found</div>
+            ? <div style={{ padding: "12px 14px", fontSize: 13, color: TEXT_MUTED }}>
+                {products.length === 0 ? "Loading products..." : "No products found"}
+              </div>
             : filtered.slice(0, 12).map(p => (
               <div key={p.id || p.name}
                 onClick={() => { onSelect(p); setQ(""); setOpen(false); }}
@@ -355,10 +471,11 @@ function ProductSearchDropdown({ products, onSelect, placeholder }) {
                 <div>
                   <span style={{ fontWeight: 600 }}>{p.name}</span>
                   {p.sku && <span style={{ color: TEXT_MUTED, fontSize: 11, marginLeft: 8 }}>SKU: {p.sku}</span>}
+                  {p.category && <span style={{ color: TEXT_MUTED, fontSize: 11, marginLeft: 6 }}>• {p.category}</span>}
                 </div>
                 <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
                   {p.stock !== undefined && (
-                    <span style={{ fontSize: 11, color: p.stock > 0 ? "#16a34a" : RED }}>
+                    <span style={{ fontSize: 11, color: p.stock > 0 ? "#16a34a" : RED, background: p.stock > 0 ? "#f0fdf4" : "#fef2f2", padding: "2px 6px", borderRadius: 4 }}>
                       Stock: {p.stock}
                     </span>
                   )}
@@ -382,9 +499,22 @@ const NInp = ({ value, onChange, width = 65, min = 0, max }) => (
   />
 );
 
-// ═══════════════════════════════════════════════════════════════
+// ── Hook to fetch products and customers ──────────────────────────────────────
+function useProductsAndCustomers() {
+  const [products, setProducts]   = useState([]);
+  const [customers, setCustomers] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try { const r = await fetch("http://localhost:5000/api/products"); if (r.ok) { const d = await r.json(); setProducts(d.data || []); } } catch {}
+      try { const r = await fetch("http://localhost:5000/api/contacts?type=customer"); if (r.ok) { const d = await r.json(); setCustomers(d.data || []); } } catch {}
+    })();
+  }, []);
+  return { products, customers };
+}
+
+// ══════════════════════════════════════════════════════════════
 // 1. ALL SALES
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function AllSales() {
   const navigate = useNavigate();
   const [sales, setSales]     = useState([]);
@@ -480,21 +610,18 @@ export function AllSales() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 2. ADD SALE — Full ERP Sales Invoice
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 2. ADD SALE
+// ══════════════════════════════════════════════════════════════
 export function AddSale() {
   const navigate = useNavigate();
+  const { products, customers } = useProductsAndCustomers();
 
-  // Header
   const [invoiceNo,   setInvoiceNo]   = useState(() => genNo("INV"));
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [warehouse,   setWarehouse]   = useState("Manod HQ");
-  // Customer
   const [customer,     setCustomer]     = useState("Walk-In Customer");
   const [customerType, setCustomerType] = useState("Walk-In");
-  const [customers,    setCustomers]    = useState([]);
-  // Payment
   const [salesperson, setSalesperson] = useState("");
   const [payTerm,     setPayTerm]     = useState("Immediate");
   const [payMethod,   setPayMethod]   = useState("Cash");
@@ -503,28 +630,12 @@ export function AddSale() {
   const [shipping,    setShipping]    = useState(0);
   const [notes,       setNotes]       = useState("");
   const [docStatus,   setDocStatus]   = useState("Submitted");
-  // Products
-  const [products, setProducts] = useState([]);
-  const [items,    setItems]    = useState([]);
-  const [saving,   setSaving]   = useState(false);
+  const [items,       setItems]       = useState([]);
+  const [saving,      setSaving]      = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("http://localhost:5000/api/products");
-        if (r.ok) { const d = await r.json(); setProducts(d.data || []); }
-      } catch {}
-      try {
-        const r = await fetch("http://localhost:5000/api/contacts?type=customer");
-        if (r.ok) { const d = await r.json(); setCustomers(d.data || []); }
-      } catch {}
-    })();
-  }, []);
-
-  const onSelectCustomer = (name) => {
+  const onSelectCustomer = (name, obj) => {
     setCustomer(name);
-    const found = customers.find(c => (c.name || c.contact_name) === name);
-    setCustomerType(found?.customer_type || found?.type || (name === "Walk-In Customer" ? "Walk-In" : "Retail"));
+    setCustomerType(obj?.customer_type || obj?.type || (name === "Walk-In Customer" ? "Walk-In" : "Retail"));
   };
 
   const addProduct = (p) => {
@@ -545,12 +656,11 @@ export function AddSale() {
   const lTax  = r => (lSub(r) - lDisc(r)) * (r.tax / 100);
   const lTot  = r => lSub(r) - lDisc(r) + lTax(r);
 
-  const subtotal    = items.reduce((s, r) => s + lSub(r), 0);
-  const itemDiscAmt = items.reduce((s, r) => s + lDisc(r), 0);
-  const taxable     = subtotal - itemDiscAmt;
-  const globalDiscAmt = taxable * (globalDisc / 100);
-  const taxAmt      = items.reduce((s, r) => s + lTax(r), 0);
-  const grandTotal  = subtotal - itemDiscAmt - globalDiscAmt + taxAmt + Number(shipping);
+  const subtotal      = items.reduce((s, r) => s + lSub(r), 0);
+  const itemDiscAmt   = items.reduce((s, r) => s + lDisc(r), 0);
+  const taxAmt        = items.reduce((s, r) => s + lTax(r), 0);
+  const globalDiscAmt = (subtotal - itemDiscAmt) * (globalDisc / 100);
+  const grandTotal    = subtotal - itemDiscAmt - globalDiscAmt + taxAmt + Number(shipping);
 
   const dueDate = () => {
     const map = { Immediate: 0, "Net 7": 7, "Net 15": 15, "Net 30": 30 };
@@ -583,7 +693,6 @@ export function AddSale() {
 
   return (
     <div style={PAGE}>
-      {/* Header */}
       <PageHeader title="New Sales Invoice"
         breadcrumb={`Home / Sell / New Invoice — ${invoiceNo}`}
         actions={<>
@@ -597,43 +706,30 @@ export function AddSale() {
         </>}
       />
 
-      {/* Two-column body — LEFT scrolls, RIGHT is sticky summary */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 0, overflow: "hidden" }}>
-
-        {/* LEFT — scrollable */}
+        {/* LEFT scrollable */}
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
 
-          {/* Invoice Details */}
           <Card>
             <CardTitle>Invoice Details</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-              <div>
-                <FL>Invoice Number</FL>
-                <Inp value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} />
-              </div>
-              <div>
-                <FL>Invoice Date</FL>
-                <Inp type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
-              </div>
+              <div><FL>Invoice Number</FL><Inp value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} /></div>
+              <div><FL>Invoice Date</FL><Inp type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
               <div>
                 <FL>Warehouse / Location</FL>
                 <Sel value={warehouse} onChange={e => setWarehouse(e.target.value)}>
-                  <option>Manod HQ</option>
-                  <option>Branch - Chennai</option>
-                  <option>Branch - Coimbatore</option>
+                  <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
                 </Sel>
               </div>
             </div>
           </Card>
 
-          {/* Customer & Payment */}
           <Card>
             <CardTitle>Customer &amp; Payment</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              {/* Customer — spans full width */}
               <div style={{ gridColumn: "span 2" }}>
                 <FL required>Customer</FL>
-                <CustomerSelect value={customer} onChange={onSelectCustomer} customers={customers} />
+                <CustomerCombobox value={customer} onChange={onSelectCustomer} customers={customers} />
                 {customerType && (
                   <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 11, color: TEXT_MUTED }}>Customer Type:</span>
@@ -641,14 +737,11 @@ export function AddSale() {
                   </div>
                 )}
               </div>
-
               <div>
                 <FL>Salesperson</FL>
                 <Sel value={salesperson} onChange={e => setSalesperson(e.target.value)}>
                   <option value="">— None —</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Sales Rep">Sales Rep</option>
-                  <option value="Cashier">Cashier</option>
+                  <option>Admin</option><option>Sales Rep</option><option>Cashier</option>
                 </Sel>
               </div>
               <div>
@@ -663,29 +756,20 @@ export function AddSale() {
                   {["Cash", "UPI", "Card", "Bank Transfer", "Cheque"].map(o => <option key={o}>{o}</option>)}
                 </Sel>
               </div>
-              <div>
-                <FL>Due Date</FL>
-                <Inp value={dueDate()} readOnly />
-              </div>
+              <div><FL>Due Date</FL><Inp value={dueDate()} readOnly /></div>
               <div>
                 <FL>Tax Rate (GST %)</FL>
                 <Sel value={taxRate} onChange={e => { const v = Number(e.target.value); setTaxRate(v); setItems(p => p.map(i => ({ ...i, tax: v }))); }}>
                   {[0, 5, 12, 18, 28].map(v => <option key={v} value={v}>{v}%</option>)}
                 </Sel>
               </div>
-              <div>
-                <FL>Global Discount (%)</FL>
-                <Inp type="number" value={globalDisc} onChange={e => setGlobalDisc(Number(e.target.value))} min="0" max="100" />
-              </div>
+              <div><FL>Global Discount (%)</FL><Inp type="number" value={globalDisc} onChange={e => setGlobalDisc(Number(e.target.value))} min="0" max="100" /></div>
             </div>
           </Card>
 
-          {/* Products */}
           <Card style={{ display: "flex", flexDirection: "column" }}>
             <CardTitle>Products / Line Items</CardTitle>
             <ProductSearchDropdown products={products} onSelect={addProduct} />
-
-            {/* Line items table */}
             <div style={{ marginTop: 12, border: `1px solid ${BORDER}`, borderRadius: 8, overflow: "hidden" }}>
               {items.length === 0 ? (
                 <div style={{ padding: "32px", textAlign: "center", color: TEXT_MUTED, fontSize: 13 }}>
@@ -696,11 +780,7 @@ export function AddSale() {
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
                       {["#", "Product", "SKU", "Qty", "Unit", "Unit Price (Rs.)", "Disc %", "Tax %", "Total (Rs.)", ""].map((h, i) => (
-                        <th key={i} style={{
-                          padding: "8px 10px", fontWeight: 600, fontSize: 11, color: TEXT_MUTED,
-                          borderBottom: `1px solid ${BORDER}`, textTransform: "uppercase", letterSpacing: "0.3px",
-                          textAlign: i >= 3 && i <= 8 ? "right" : "left", whiteSpace: "nowrap",
-                        }}>{h}</th>
+                        <th key={i} style={{ padding: "8px 10px", fontWeight: 600, fontSize: 11, color: TEXT_MUTED, borderBottom: `1px solid ${BORDER}`, textTransform: "uppercase", textAlign: i >= 3 && i <= 8 ? "right" : "left", whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -723,12 +803,8 @@ export function AddSale() {
                         <td style={{ padding: "8px 10px" }}><NInp value={r.unitPrice} width={90} onChange={e => upd(r.id, "unitPrice", Number(e.target.value))} /></td>
                         <td style={{ padding: "8px 10px" }}><NInp value={r.discount} width={55} max={100} onChange={e => upd(r.id, "discount", Number(e.target.value))} /></td>
                         <td style={{ padding: "8px 10px" }}><NInp value={r.tax} width={55} max={100} onChange={e => upd(r.id, "tax", Number(e.target.value))} /></td>
-                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: GREEN, whiteSpace: "nowrap" }}>
-                          Rs. {fmt(lTot(r))}
-                        </td>
-                        <td style={{ padding: "8px 6px" }}>
-                          <IBtn icon={IC.x} onClick={() => del(r.id)} color={RED} />
-                        </td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: GREEN, whiteSpace: "nowrap" }}>Rs. {fmt(lTot(r))}</td>
+                        <td style={{ padding: "8px 6px" }}><IBtn icon={IC.x} onClick={() => del(r.id)} color={RED} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -737,7 +813,6 @@ export function AddSale() {
             </div>
           </Card>
 
-          {/* Shipping + Notes */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <Card>
               <FL>Shipping Charges (Rs.)</FL>
@@ -750,9 +825,8 @@ export function AddSale() {
           </div>
         </div>
 
-        {/* RIGHT — sticky summary panel */}
+        {/* RIGHT sticky summary */}
         <div style={{ width: 272, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", overflowY: "auto", padding: "20px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-
           <Card style={{ border: "none", padding: 0 }}>
             <CardTitle>Invoice Summary</CardTitle>
             <SumRow label="Subtotal"           value={`Rs. ${fmt(subtotal)}`} />
@@ -766,11 +840,11 @@ export function AddSale() {
           <Card style={{ border: "none", padding: 0, borderTop: `1px solid ${BORDER}`, paddingTop: 14 }}>
             <CardTitle>Invoice Info</CardTitle>
             {[
-              { label: "Due Date",    value: dueDate() },
-              { label: "Items",       value: items.length },
-              { label: "Method",      value: payMethod },
-              { label: "Terms",       value: payTerm },
-              { label: "Warehouse",   value: warehouse },
+              { label: "Due Date", value: dueDate() },
+              { label: "Items",    value: items.length },
+              { label: "Method",   value: payMethod },
+              { label: "Terms",    value: payTerm },
+              { label: "Warehouse",value: warehouse },
               ...(salesperson ? [{ label: "Salesperson", value: salesperson }] : []),
               ...(customerType ? [{ label: "Cust. Type",  value: customerType }] : []),
             ].map(({ label, value }) => (
@@ -800,15 +874,16 @@ export function AddSale() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 3. LIST POS
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 3. LIST POS — with advanced detail side panel
+// ══════════════════════════════════════════════════════════════
 export function ListPOS() {
   const navigate = useNavigate();
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [perPage, setPerPage] = useState(25);
-  const [search, setSearch]   = useState("");
+  const [records, setRecords]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [perPage, setPerPage]   = useState(25);
+  const [search, setSearch]     = useState("");
+  const [selected, setSelected] = useState(null); // selected POS record for detail panel
 
   useEffect(() => {
     (async () => {
@@ -821,11 +896,11 @@ export function ListPOS() {
     })();
   }, []);
 
-  const today     = new Date().toLocaleDateString("en-IN");
-  const todayRecs = records.filter(s => s.date === today);
-  const filtered  = records.filter(s => !search || `${s.refNo} ${s.customer}`.toLowerCase().includes(search.toLowerCase())).slice(0, perPage);
-  const viewTotal = filtered.reduce((a, s) => a + Number(s.grandTotal || 0), 0);
-  const todayTotal= todayRecs.reduce((a, s) => a + Number(s.grandTotal || 0), 0);
+  const today      = new Date().toLocaleDateString("en-IN");
+  const todayRecs  = records.filter(s => s.date === today);
+  const filtered   = records.filter(s => !search || `${s.refNo} ${s.customer}`.toLowerCase().includes(search.toLowerCase())).slice(0, perPage);
+  const viewTotal  = filtered.reduce((a, s) => a + Number(s.grandTotal || 0), 0);
+  const todayTotal = todayRecs.reduce((a, s) => a + Number(s.grandTotal || 0), 0);
 
   const cols = [
     { label: "Action", center: true }, { label: "Ref No." }, { label: "Date" },
@@ -834,8 +909,13 @@ export function ListPOS() {
   ];
   const rows = filtered.map((s, i) => (
     <>
-      <Td center><IBtn icon={IC.eye} title="View" /></Td>
-      <Td mono>{s.refNo || `POS-${String(i + 1).padStart(4, "0")}`}</Td>
+      <Td center>
+        <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+          <IBtn icon={IC.eye} title="View Details" onClick={() => setSelected(s)} />
+          <IBtn icon={IC.print} title="Print" />
+        </div>
+      </Td>
+      <Td mono style={{ cursor: "pointer", color: GREEN }} onClick={() => setSelected(s)}>{s.refNo || `POS-${String(i + 1).padStart(4, "0")}`}</Td>
       <Td>{s.date || "—"}</Td>
       <Td>{s.customer || "Walk-In Customer"}</Td>
       <Td muted>{s.location || "Manod HQ"}</Td>
@@ -856,26 +936,118 @@ export function ListPOS() {
         <StatCard label="Showing Total" value={`Rs. ${fmt(viewTotal)}`} sub="Current view" accent={AMBER} />
         <StatCard label="Total POS Revenue" value={`Rs. ${fmt(records.reduce((a, s) => a + Number(s.grandTotal || 0), 0))}`} sub="All time" accent="#6366f1" />
       </div>
-      <div style={{ flex: 1, minHeight: 0, padding: "14px 24px", display: "flex", flexDirection: "column" }}>
-        <TablePage columns={cols} rows={rows} loading={loading} emptyText="No POS sales yet. Open POS to start billing."
-          topBar={<><PerPage value={perPage} onChange={setPerPage} /><SearchBox value={search} onChange={setSearch} /></>}
-          footer={<>
-            <span style={{ fontSize: 12, color: TEXT_MUTED }}>Showing {filtered.length} of {records.length} entries</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: GREEN }}>Total: Rs. {fmt(viewTotal)}</span>
-          </>}
-        />
+
+      <div style={{ flex: 1, minHeight: 0, padding: "14px 24px", display: "flex", gap: 14 }}>
+        {/* Table */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <TablePage columns={cols} rows={rows} loading={loading} emptyText="No POS sales yet. Open POS to start billing."
+            topBar={<><PerPage value={perPage} onChange={setPerPage} /><SearchBox value={search} onChange={setSearch} /></>}
+            footer={<>
+              <span style={{ fontSize: 12, color: TEXT_MUTED }}>Showing {filtered.length} of {records.length} entries</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: GREEN }}>Total: Rs. {fmt(viewTotal)}</span>
+            </>}
+          />
+        </div>
+
+        {/* Detail panel */}
+        {selected && (
+          <div style={{
+            width: 320, flexShrink: 0, background: "#fff", border: `1px solid ${BORDER}`,
+            borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column",
+          }}>
+            {/* Panel header */}
+            <div style={{ background: GREEN_GRAD, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{selected.refNo || "POS Sale"}</div>
+                <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 }}>{selected.date || "—"}</div>
+              </div>
+              <button onClick={() => setSelected(null)}
+                style={{ background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#fff", display: "flex" }}>
+                {IC.close}
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+              {/* Customer & Payment */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Transaction Info</div>
+                {[
+                  { label: "Customer",    value: selected.customer || "Walk-In Customer" },
+                  { label: "Method",      value: selected.paymentMethod || "Cash" },
+                  { label: "Status",      value: <Badge status={selected.paymentStatus || "Paid"} /> },
+                  { label: "Location",    value: selected.location || "Manod HQ" },
+                  { label: "Cashier",     value: selected.cashier || "Admin" },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}>
+                    <span style={{ color: TEXT_MUTED }}>{label}</span>
+                    <span style={{ fontWeight: 600, color: TEXT_MAIN }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Items */}
+              {selected.items && selected.items.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Items ({selected.items.length})</div>
+                  {selected.items.map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{item.name || item.product}</div>
+                        {item.sku && <div style={{ fontSize: 10, color: TEXT_MUTED }}>SKU: {item.sku}</div>}
+                        <div style={{ fontSize: 11, color: TEXT_MUTED }}>Rs. {fmt(item.price || item.unitPrice)} × {item.qty}</div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: GREEN, whiteSpace: "nowrap" }}>
+                        Rs. {fmt((item.price || item.unitPrice || 0) * item.qty)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Totals */}
+              <div style={{ background: LIGHT_GRN, borderRadius: 8, padding: "12px 14px" }}>
+                {selected.discount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4, color: RED }}>
+                    <span>Discount ({selected.discount}%)</span>
+                    <span>- Rs. {fmt(Number(selected.grandTotal) * selected.discount / 100)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4, color: AMBER }}>
+                  <span>Tax (GST)</span>
+                  <span>+ Rs. {fmt(selected.taxAmt || 0)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800, color: GREEN, paddingTop: 8, borderTop: `1px solid #a7f3d0`, marginTop: 4 }}>
+                  <span>Grand Total</span>
+                  <span>Rs. {fmt(selected.grandTotal)}</span>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {selected.notes && (
+                <div style={{ marginTop: 12, padding: "10px 12px", background: "#f8fafc", borderRadius: 6, fontSize: 12, color: TEXT_MUTED }}>
+                  <strong>Notes:</strong> {selected.notes}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ padding: "12px 16px", borderTop: `1px solid ${BORDER}`, display: "flex", gap: 8 }}>
+              <PrimaryBtn label="Print Receipt" icon={IC.print} small onClick={() => window.print()} />
+              <GhostBtn label="Return" small onClick={() => navigate("/sell-return")} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 4. POS CREATE — Full billing screen
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 4. POS CREATE
+// ══════════════════════════════════════════════════════════════
 export function POSCreate() {
   const navigate = useNavigate();
-  const [products,  setProducts]  = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const { products, customers } = useProductsAndCustomers();
   const [cart,      setCart]      = useState([]);
   const [customer,  setCustomer]  = useState("Walk-In Customer");
   const [payMethod, setPayMethod] = useState("Cash");
@@ -884,13 +1056,6 @@ export function POSCreate() {
   const [notes,     setNotes]     = useState("");
   const [receipt,   setReceipt]   = useState(null);
   const [saving,    setSaving]    = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try { const r = await fetch("http://localhost:5000/api/products"); if (r.ok) { const d = await r.json(); setProducts(d.data || []); } } catch {}
-      try { const r = await fetch("http://localhost:5000/api/contacts?type=customer"); if (r.ok) { const d = await r.json(); setCustomers(d.data || []); } } catch {}
-    })();
-  }, []);
 
   const addToCart = (p) => {
     setCart(prev => {
@@ -925,14 +1090,13 @@ export function POSCreate() {
           affectsStock: true, notes, items: cart,
         }),
       });
-      if (res.ok || true) { // show receipt even in demo mode
+      if (res.ok || true) {
         setReceipt({ refNo, customer, payMethod, cart, discount, taxAmt, grandTotal, date: new Date().toLocaleString("en-IN") });
       }
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
 
-  // Receipt modal
   if (receipt) {
     return (
       <div style={PAGE}>
@@ -970,9 +1134,7 @@ export function POSCreate() {
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800, color: GREEN, padding: "10px 0 0", borderTop: `2px solid ${BORDER}`, marginTop: 6 }}>
                 <span>Total Paid</span><span>Rs. {fmt(receipt.grandTotal)}</span>
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, color: TEXT_MUTED, textAlign: "center" }}>
-                Payment: {receipt.payMethod}
-              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: TEXT_MUTED, textAlign: "center" }}>Payment: {receipt.payMethod}</div>
             </div>
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: TEXT_MUTED, paddingTop: 12, borderTop: `1px dashed ${BORDER}` }}>
               Thank you for your purchase!
@@ -989,32 +1151,21 @@ export function POSCreate() {
         actions={<GhostBtn label="Close POS" onClick={() => navigate("/pos")} />}
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-
-        {/* LEFT — product grid */}
+        {/* LEFT product grid */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${BORDER}`, overflow: "hidden" }}>
-          {/* Customer + search */}
           <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", gap: 10, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
-              <Sel value={customer} onChange={e => setCustomer(e.target.value)}>
-                <option value="Walk-In Customer">Walk-In Customer</option>
-                {customers.map(c => { const n = c.name || c.contact_name; return <option key={c.id} value={n}>{n}</option>; })}
-              </Sel>
+              <CustomerCombobox value={customer} onChange={(name) => setCustomer(name)} customers={customers} placeholder="Walk-In Customer..." />
             </div>
             <div style={{ flex: 2 }}>
               <ProductSearchDropdown products={products} onSelect={addToCart} placeholder="Search by name, SKU, or barcode..." />
             </div>
           </div>
-
-          {/* Product grid */}
           <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
               {products.slice(0, 30).map(p => (
                 <div key={p.id} onClick={() => addToCart(p)}
-                  style={{
-                    background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 8,
-                    padding: "12px 10px", cursor: "pointer", textAlign: "center",
-                    transition: "border-color 0.15s, box-shadow 0.15s",
-                  }}
+                  style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 10px", cursor: "pointer", textAlign: "center", transition: "border-color 0.15s, box-shadow 0.15s" }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = GREEN; e.currentTarget.style.boxShadow = "0 2px 8px rgba(26,107,63,0.12)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.boxShadow = "none"; }}
                 >
@@ -1029,10 +1180,8 @@ export function POSCreate() {
           </div>
         </div>
 
-        {/* RIGHT — cart + payment */}
+        {/* RIGHT cart + payment */}
         <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
-
-          {/* Cart items */}
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
             {cart.length === 0 ? (
               <div style={{ padding: 40, textAlign: "center", color: TEXT_MUTED, fontSize: 13 }}>
@@ -1074,7 +1223,6 @@ export function POSCreate() {
             )}
           </div>
 
-          {/* Payment panel */}
           <div style={{ borderTop: `1px solid ${BORDER}`, padding: "14px 16px", flexShrink: 0 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div>
@@ -1088,7 +1236,6 @@ export function POSCreate() {
                 <Inp type="number" value={discount} onChange={e => setDiscount(Number(e.target.value))} min="0" max="100" />
               </div>
             </div>
-
             <div style={{ background: LIGHT_GRN, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
               {discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4, color: RED }}>
                 <span>Discount ({discount}%)</span><span>- Rs. {fmt(discAmt)}</span>
@@ -1100,14 +1247,8 @@ export function POSCreate() {
                 <span>Grand Total</span><span>Rs. {fmt(grandTotal)}</span>
               </div>
             </div>
-
             <button onClick={handleCompleteSale} disabled={saving || cart.length === 0}
-              style={{
-                width: "100%", padding: "13px", background: cart.length === 0 ? "#94a3b8" : GREEN_GRAD,
-                color: "#fff", border: "none", borderRadius: 8, fontSize: 15,
-                cursor: cart.length === 0 ? "not-allowed" : "pointer",
-                fontFamily: F, fontWeight: 700, letterSpacing: "-0.2px",
-              }}>
+              style={{ width: "100%", padding: "13px", background: cart.length === 0 ? "#94a3b8" : GREEN_GRAD, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: F, fontWeight: 700 }}>
               {saving ? "Processing..." : `Complete Sale — Rs. ${fmt(grandTotal)}`}
             </button>
           </div>
@@ -1117,27 +1258,19 @@ export function POSCreate() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 5. ADD DRAFT
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function AddDraft() {
   const navigate = useNavigate();
+  const { products, customers } = useProductsAndCustomers();
   const [draftNo,   setDraftNo]   = useState(() => genNo("DRF"));
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0, 10));
   const [customer,  setCustomer]  = useState("");
-  const [customers, setCustomers] = useState([]);
   const [warehouse, setWarehouse] = useState("Manod HQ");
   const [notes,     setNotes]     = useState("");
-  const [products,  setProducts]  = useState([]);
   const [items,     setItems]     = useState([]);
   const [saving,    setSaving]    = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try { const r = await fetch("http://localhost:5000/api/products"); if (r.ok) { const d = await r.json(); setProducts(d.data || []); } } catch {}
-      try { const r = await fetch("http://localhost:5000/api/contacts?type=customer"); if (r.ok) { const d = await r.json(); setCustomers(d.data || []); } } catch {}
-    })();
-  }, []);
 
   const addProduct = (p) => {
     if (!items.some(i => i.id === p.id))
@@ -1175,7 +1308,6 @@ export function AddDraft() {
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-
           <Card>
             <CardTitle>Draft Details</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
@@ -1192,7 +1324,7 @@ export function AddDraft() {
 
           <Card>
             <FL required>Customer</FL>
-            <CustomerSelect value={customer} onChange={setCustomer} customers={customers} />
+            <CustomerCombobox value={customer} onChange={(name) => setCustomer(name)} customers={customers} />
           </Card>
 
           <Card style={{ display: "flex", flexDirection: "column" }}>
@@ -1213,9 +1345,7 @@ export function AddDraft() {
                           <td style={{ padding: "8px 10px", color: TEXT_MUTED, width: 28 }}>{i + 1}</td>
                           <td style={{ padding: "8px 10px" }}>{r.name}</td>
                           <td style={{ padding: "8px 10px", color: TEXT_MUTED, fontSize: 11 }}>{r.sku || "—"}</td>
-                          <td style={{ padding: "8px 10px", textAlign: "right" }}>
-                            <NInp value={r.qty} min={1} onChange={e => upd(r.id, "qty", Number(e.target.value))} />
-                          </td>
+                          <td style={{ padding: "8px 10px", textAlign: "right" }}><NInp value={r.qty} min={1} onChange={e => upd(r.id, "qty", Number(e.target.value))} /></td>
                           <td style={{ padding: "8px 10px", textAlign: "right" }}>Rs. {fmt(r.unitPrice)}</td>
                           <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: GREEN }}>Rs. {fmt(r.qty * r.unitPrice)}</td>
                           <td style={{ padding: "8px 6px" }}><IBtn icon={IC.x} onClick={() => setItems(prev => prev.filter(i => i.id !== r.id))} color={RED} /></td>
@@ -1233,7 +1363,6 @@ export function AddDraft() {
           </Card>
         </div>
 
-        {/* Summary */}
         <div style={{ width: 260, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", padding: "20px 18px" }}>
           <Card style={{ border: "none", padding: 0 }}>
             <CardTitle>Draft Summary</CardTitle>
@@ -1252,9 +1381,9 @@ export function AddDraft() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 6. LIST DRAFTS
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function ListDrafts() {
   const navigate = useNavigate();
   const [drafts, setDrafts]   = useState([]);
@@ -1310,40 +1439,29 @@ export function ListDrafts() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 7. ADD QUOTATION
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function AddQuotation() {
   const navigate = useNavigate();
-  const [quotNo,     setQuotNo]     = useState(() => genNo("QOT"));
-  const [quotDate,   setQuotDate]   = useState(new Date().toISOString().slice(0, 10));
-  const [validUntil, setValidUntil] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [customer,    setCustomer]    = useState("");
-  const [customers,   setCustomers]   = useState([]);
+  const { products, customers } = useProductsAndCustomers();
+  const [quotNo,       setQuotNo]       = useState(() => genNo("QOT"));
+  const [quotDate,     setQuotDate]     = useState(new Date().toISOString().slice(0, 10));
+  const [validUntil,   setValidUntil]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10); });
+  const [customer,     setCustomer]     = useState("");
   const [contactPerson, setContactPerson] = useState("");
-  const [email,       setEmail]       = useState("");
-  const [phone,       setPhone]       = useState("");
-  const [salesperson, setSalesperson] = useState("");
-  const [warehouse,   setWarehouse]   = useState("Manod HQ");
-  const [products,    setProducts]    = useState([]);
-  const [items,       setItems]       = useState([]);
-  const [globalDisc,  setGlobalDisc]  = useState(0);
-  const [taxRate,     setTaxRate]     = useState(18);
-  const [shipping,    setShipping]    = useState(0);
-  const [notes,       setNotes]       = useState("");
-  const [terms,       setTerms]       = useState("");
-  const [docStatus,   setDocStatus]   = useState("Draft");
-  const [saving,      setSaving]      = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try { const r = await fetch("http://localhost:5000/api/products"); if (r.ok) { const d = await r.json(); setProducts(d.data || []); } } catch {}
-      try { const r = await fetch("http://localhost:5000/api/contacts?type=customer"); if (r.ok) { const d = await r.json(); setCustomers(d.data || []); } } catch {}
-    })();
-  }, []);
+  const [email,        setEmail]        = useState("");
+  const [phone,        setPhone]        = useState("");
+  const [salesperson,  setSalesperson]  = useState("");
+  const [warehouse,    setWarehouse]    = useState("Manod HQ");
+  const [items,        setItems]        = useState([]);
+  const [globalDisc,   setGlobalDisc]   = useState(0);
+  const [taxRate,      setTaxRate]      = useState(18);
+  const [shipping,     setShipping]     = useState(0);
+  const [notes,        setNotes]        = useState("");
+  const [terms,        setTerms]        = useState("");
+  const [docStatus,    setDocStatus]    = useState("Draft");
+  const [saving,       setSaving]       = useState(false);
 
   const addProduct = (p) => {
     if (!items.some(i => i.id === p.id))
@@ -1355,12 +1473,11 @@ export function AddQuotation() {
   const lDisc = r => lSub(r) * (r.discount / 100);
   const lTax  = r => (lSub(r) - lDisc(r)) * (r.tax / 100);
   const lTot  = r => lSub(r) - lDisc(r) + lTax(r);
-
-  const subtotal    = items.reduce((s, r) => s + lSub(r), 0);
-  const discTotal   = items.reduce((s, r) => s + lDisc(r), 0);
-  const globalDA    = (subtotal - discTotal) * (globalDisc / 100);
-  const taxTotal    = items.reduce((s, r) => s + lTax(r), 0);
-  const grandTotal  = subtotal - discTotal - globalDA + taxTotal + Number(shipping);
+  const subtotal   = items.reduce((s, r) => s + lSub(r), 0);
+  const discTotal  = items.reduce((s, r) => s + lDisc(r), 0);
+  const globalDA   = (subtotal - discTotal) * (globalDisc / 100);
+  const taxTotal   = items.reduce((s, r) => s + lTax(r), 0);
+  const grandTotal = subtotal - discTotal - globalDA + taxTotal + Number(shipping);
 
   const handleSave = async () => {
     if (!customer) { alert("Customer is required."); return; }
@@ -1395,20 +1512,21 @@ export function AddQuotation() {
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-
           <Card>
             <CardTitle>Quotation Details</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
               <div><FL>Quotation Number</FL><Inp value={quotNo} onChange={e => setQuotNo(e.target.value)} /></div>
               <div><FL>Quotation Date</FL><Inp type="date" value={quotDate} onChange={e => setQuotDate(e.target.value)} /></div>
               <div><FL>Valid Until</FL><Inp type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} /></div>
-              <div><FL>Salesperson</FL>
+              <div>
+                <FL>Salesperson</FL>
                 <Sel value={salesperson} onChange={e => setSalesperson(e.target.value)}>
                   <option value="">— None —</option>
                   <option>Admin</option><option>Sales Rep</option><option>Cashier</option>
                 </Sel>
               </div>
-              <div><FL>Warehouse / Location</FL>
+              <div>
+                <FL>Warehouse / Location</FL>
                 <Sel value={warehouse} onChange={e => setWarehouse(e.target.value)}>
                   <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
                 </Sel>
@@ -1421,7 +1539,7 @@ export function AddQuotation() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div style={{ gridColumn: "span 2" }}>
                 <FL required>Customer</FL>
-                <CustomerSelect value={customer} onChange={setCustomer} customers={customers} />
+                <CustomerCombobox value={customer} onChange={(name) => setCustomer(name)} customers={customers} />
               </div>
               <div><FL>Contact Person</FL><Inp value={contactPerson} onChange={e => setContactPerson(e.target.value)} placeholder="Optional" /></div>
               <div><FL>Email</FL><Inp type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="customer@email.com" /></div>
@@ -1465,7 +1583,8 @@ export function AddQuotation() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginTop: 12 }}>
               <div><FL>Global Discount (%)</FL><Inp type="number" value={globalDisc} onChange={e => setGlobalDisc(Number(e.target.value))} min="0" max="100" /></div>
-              <div><FL>Tax Rate (GST %)</FL>
+              <div>
+                <FL>Tax Rate (GST %)</FL>
                 <Sel value={taxRate} onChange={e => { const v = Number(e.target.value); setTaxRate(v); setItems(p => p.map(i => ({ ...i, tax: v }))); }}>
                   {[0, 5, 12, 18, 28].map(v => <option key={v} value={v}>{v}%</option>)}
                 </Sel>
@@ -1480,23 +1599,20 @@ export function AddQuotation() {
           </div>
         </div>
 
-        {/* Summary */}
         <div style={{ width: 260, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", padding: "20px 18px" }}>
           <Card style={{ border: "none", padding: 0 }}>
             <CardTitle>Quotation Summary</CardTitle>
-            <SumRow label="Subtotal"       value={`Rs. ${fmt(subtotal)}`} />
-            <SumRow label="Discount"       value={`- Rs. ${fmt(discTotal + globalDA)}`} color="#ef4444" />
-            <SumRow label="Tax (GST)"      value={`+ Rs. ${fmt(taxTotal)}`} color={AMBER} />
+            <SumRow label="Subtotal"   value={`Rs. ${fmt(subtotal)}`} />
+            <SumRow label="Discount"   value={`- Rs. ${fmt(discTotal + globalDA)}`} color="#ef4444" />
+            <SumRow label="Tax (GST)"  value={`+ Rs. ${fmt(taxTotal)}`} color={AMBER} />
             {Number(shipping) > 0 && <SumRow label="Shipping" value={`+ Rs. ${fmt(shipping)}`} />}
             <SumRow label="Grand Total" value={`Rs. ${fmt(grandTotal)}`} big border />
-
             <div style={{ marginTop: 16, padding: "12px", background: "#dbeafe", borderRadius: 8, border: "1px solid #bfdbfe" }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#1e40af" }}>Quotation Notice</div>
               <div style={{ fontSize: 11, color: "#1e40af", marginTop: 4, lineHeight: 1.5 }}>
                 This quotation does NOT affect stock or accounting. Convert to Sales Invoice when accepted.
               </div>
             </div>
-
             <div style={{ marginTop: 14 }}>
               <GhostBtn label="Print Quotation" icon={IC.print} onClick={() => window.print()} small />
             </div>
@@ -1507,9 +1623,9 @@ export function AddQuotation() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 8. LIST QUOTATIONS
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function ListQuotations() {
   const navigate = useNavigate();
   const [quotations, setQuotations] = useState([]);
@@ -1569,20 +1685,18 @@ export function ListQuotations() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 9. SELL RETURN
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function SellReturn() {
   const navigate = useNavigate();
-  const [view, setView]       = useState("list"); // "list" | "add"
+  const { customers } = useProductsAndCustomers();
+  const [view, setView]       = useState("list");
   const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Add return form state
   const [returnNo,    setReturnNo]    = useState(() => genNo("RTN"));
   const [returnDate,  setReturnDate]  = useState(new Date().toISOString().slice(0, 10));
   const [customer,    setCustomer]    = useState("");
-  const [customers,   setCustomers]   = useState([]);
   const [invoiceRef,  setInvoiceRef]  = useState("");
   const [invoiceList, setInvoiceList] = useState([]);
   const [warehouse,   setWarehouse]   = useState("Manod HQ");
@@ -1595,25 +1709,14 @@ export function SellReturn() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const r = await fetch("http://localhost:5000/api/sales-returns");
-        if (r.ok) { const d = await r.json(); setReturns(d.data || []); }
-      } catch { setReturns([]); }
+      try { const r = await fetch("http://localhost:5000/api/sales-returns"); if (r.ok) { const d = await r.json(); setReturns(d.data || []); } } catch { setReturns([]); }
       finally { setLoading(false); }
     })();
     (async () => {
-      try {
-        const r = await fetch("http://localhost:5000/api/contacts?type=customer");
-        if (r.ok) { const d = await r.json(); setCustomers(d.data || []); }
-      } catch {}
-      try {
-        const r = await fetch("http://localhost:5000/api/sales-invoice?status=Submitted");
-        if (r.ok) { const d = await r.json(); setInvoiceList(d.data || []); }
-      } catch {}
+      try { const r = await fetch("http://localhost:5000/api/sales-invoice?status=Submitted"); if (r.ok) { const d = await r.json(); setInvoiceList(d.data || []); } } catch {}
     })();
   }, []);
 
-  // Auto-load items from selected invoice
   useEffect(() => {
     if (!invoiceRef) { setItems([]); return; }
     const inv = invoiceList.find(i => i.invoiceNo === invoiceRef);
@@ -1625,9 +1728,8 @@ export function SellReturn() {
 
   const upd = (id, v) => setItems(prev => prev.map(i => i.id === id ? { ...i, returnQty: Math.min(Number(v), i.maxQty) } : i));
   const selectedItems = items.filter(i => i.returnQty > 0);
-  const taxRate = 18;
-  const subtotal = selectedItems.reduce((s, i) => s + i.returnQty * (i.unitPrice || 0), 0);
-  const taxAmt   = subtotal * (taxRate / 100);
+  const subtotal   = selectedItems.reduce((s, i) => s + i.returnQty * (i.unitPrice || 0), 0);
+  const taxAmt     = subtotal * 0.18;
   const grandTotal = subtotal + taxAmt;
 
   const handleSave = async () => {
@@ -1645,13 +1747,12 @@ export function SellReturn() {
           notes, items: selectedItems.map(i => ({ ...i, qty: i.returnQty })),
         }),
       });
-      if (res.ok) { setView("list"); }
+      if (res.ok) setView("list");
       else alert("Failed to save return");
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
 
-  // ── List view ────────────────────────────────────────────────
   if (view === "list") {
     const cols = [
       { label: "Action", center: true }, { label: "Return No." }, { label: "Date" },
@@ -1676,7 +1777,6 @@ export function SellReturn() {
         <Td right><span style={{ fontWeight: 700, color: RED }}>- Rs. {fmt(r.grandTotal)}</span></Td>
       </>
     ));
-
     return (
       <div style={PAGE}>
         <PageHeader title="Sales Returns" breadcrumb="Home / Sell / Returns"
@@ -1689,7 +1789,6 @@ export function SellReturn() {
     );
   }
 
-  // ── Add return form ──────────────────────────────────────────
   return (
     <div style={PAGE}>
       <PageHeader title="New Sales Return" breadcrumb={`Home / Sell / Returns / New — ${returnNo}`}
@@ -1705,7 +1804,6 @@ export function SellReturn() {
       />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-
           <Card>
             <CardTitle>Return Details</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
@@ -1719,13 +1817,12 @@ export function SellReturn() {
               </div>
             </div>
           </Card>
-
           <Card>
             <CardTitle>Customer &amp; Invoice</CardTitle>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
                 <FL required>Customer</FL>
-                <CustomerSelect value={customer} onChange={setCustomer} customers={customers} />
+                <CustomerCombobox value={customer} onChange={(name) => setCustomer(name)} customers={customers} />
               </div>
               <div>
                 <FL required>Reference Sales Invoice</FL>
@@ -1743,7 +1840,6 @@ export function SellReturn() {
               <div><FL>Notes / Remarks</FL><Inp value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional..." /></div>
             </div>
           </Card>
-
           <Card>
             <CardTitle>Products to Return</CardTitle>
             {items.length === 0 ? (
@@ -1753,7 +1849,7 @@ export function SellReturn() {
             ) : (
               <>
                 <div style={{ background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#854d0e" }}>
-                  Enter the return quantity for each item. Return quantity cannot exceed original quantity sold.
+                  Enter the return quantity for each item. Cannot exceed original quantity sold.
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead><tr style={{ background: "#f8fafc" }}>
@@ -1767,12 +1863,7 @@ export function SellReturn() {
                         <td style={{ padding: "8px 10px", fontWeight: 600 }}>{r.product || r.name}</td>
                         <td style={{ padding: "8px 10px", color: TEXT_MUTED, fontSize: 11 }}>{r.sku || "—"}</td>
                         <td style={{ padding: "8px 10px", textAlign: "right" }}>{r.maxQty || r.qty}</td>
-                        <td style={{ padding: "8px 10px", textAlign: "right" }}>
-                          <NInp value={r.returnQty} min={0} max={r.maxQty || r.qty}
-                            onChange={e => upd(r.id, e.target.value)}
-                            width={65}
-                          />
-                        </td>
+                        <td style={{ padding: "8px 10px", textAlign: "right" }}><NInp value={r.returnQty} min={0} max={r.maxQty || r.qty} onChange={e => upd(r.id, e.target.value)} width={65} /></td>
                         <td style={{ padding: "8px 10px", textAlign: "right" }}>Rs. {fmt(r.unitPrice || 0)}</td>
                         <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: r.returnQty > 0 ? RED : TEXT_MUTED }}>
                           {r.returnQty > 0 ? `- Rs. ${fmt(r.returnQty * (r.unitPrice || 0))}` : "—"}
@@ -1785,8 +1876,6 @@ export function SellReturn() {
             )}
           </Card>
         </div>
-
-        {/* Summary */}
         <div style={{ width: 260, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", padding: "20px 18px" }}>
           <Card style={{ border: "none", padding: 0 }}>
             <CardTitle>Return Summary</CardTitle>
@@ -1794,7 +1883,6 @@ export function SellReturn() {
             <SumRow label="Subtotal"        value={`Rs. ${fmt(subtotal)}`} />
             <SumRow label="Tax (GST 18%)"   value={`Rs. ${fmt(taxAmt)}`} color={AMBER} />
             <SumRow label="Total Refund"    value={`Rs. ${fmt(grandTotal)}`} big border color={RED} />
-
             <div style={{ marginTop: 16, padding: "12px", background: "#fef2f2", borderRadius: 8, border: "1px solid #fecaca" }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: RED }}>Return Notice</div>
               <div style={{ fontSize: 11, color: "#991b1b", marginTop: 4, lineHeight: 1.5 }}>
@@ -1808,38 +1896,200 @@ export function SellReturn() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 10. SHIPMENTS — Advanced list (no create form yet)
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 10. SHIPMENTS — Full list + Add Shipment form
+// ══════════════════════════════════════════════════════════════
 export function Shipments() {
+  const navigate = useNavigate();
+  const { customers } = useProductsAndCustomers();
+  const [view, setView]         = useState("list");
   const [shipments, setShipments] = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState("");
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState("");
+
+  // Add Shipment form state
+  const [shipNo,      setShipNo]      = useState(() => genNo("SHP"));
+  const [shipDate,    setShipDate]    = useState(new Date().toISOString().slice(0, 10));
+  const [customer,    setCustomer]    = useState("");
+  const [invoiceRef,  setInvoiceRef]  = useState("");
+  const [invoiceList, setInvoiceList] = useState([]);
+  const [carrier,     setCarrier]     = useState("FedEx");
+  const [trackingNo,  setTrackingNo]  = useState("");
+  const [warehouse,   setWarehouse]   = useState("Manod HQ");
+  const [deliveryAddr,setDeliveryAddr]= useState("");
+  const [estimatedDel,setEstimatedDel]= useState("");
+  const [weight,      setWeight]      = useState("");
+  const [shipCost,    setShipCost]    = useState(0);
+  const [notes,       setNotes]       = useState("");
+  const [shipStatus,  setShipStatus]  = useState("Pending");
+  const [saving,      setSaving]      = useState(false);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const r = await fetch("http://localhost:5000/api/shipments");
-        if (r.ok) { const d = await r.json(); setShipments(d.data || []); }
-      } catch { setShipments([]); }
+      try { const r = await fetch("http://localhost:5000/api/shipments"); if (r.ok) { const d = await r.json(); setShipments(d.data || []); } } catch { setShipments([]); }
       finally { setLoading(false); }
+    })();
+    (async () => {
+      try { const r = await fetch("http://localhost:5000/api/sales-invoice?status=Submitted"); if (r.ok) { const d = await r.json(); setInvoiceList(d.data || []); } } catch {}
     })();
   }, []);
 
   const filtered = shipments.filter(s => !search || `${s.shipmentNo} ${s.customer}`.toLowerCase().includes(search.toLowerCase()));
 
+  const handleSave = async () => {
+    if (!customer) { alert("Customer is required."); return; }
+    if (!invoiceRef) { alert("Reference invoice is required."); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("http://localhost:5000/api/shipments", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shipmentNo: shipNo, date: shipDate, customer, invoiceRef,
+          carrier, trackingNo, warehouse, deliveryAddress: deliveryAddr,
+          estimatedDelivery: estimatedDel, weight, shippingCost: shipCost,
+          status: shipStatus, notes,
+        }),
+      });
+      if (res.ok) {
+        setView("list");
+        // Refresh list
+        try { const r = await fetch("http://localhost:5000/api/shipments"); if (r.ok) { const d = await r.json(); setShipments(d.data || []); } } catch {}
+      } else alert("Failed to create shipment");
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (view === "add") {
+    return (
+      <div style={PAGE}>
+        <PageHeader title="New Shipment" breadcrumb={`Home / Sell / Shipments / New — ${shipNo}`}
+          actions={<>
+            <select value={shipStatus} onChange={e => setShipStatus(e.target.value)}
+              style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: F, background: "#fff", cursor: "pointer" }}>
+              {["Pending", "Shipped", "In Transit", "Delivered", "Cancelled"].map(s => <option key={s}>{s}</option>)}
+            </select>
+            <GhostBtn label="Cancel" onClick={() => setView("list")} />
+            <PrimaryBtn label={saving ? "Saving..." : "Create Shipment"} icon={IC.save} onClick={handleSave} disabled={saving} />
+          </>}
+        />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+            <Card>
+              <CardTitle>Shipment Details</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+                <div><FL>Shipment Number</FL><Inp value={shipNo} onChange={e => setShipNo(e.target.value)} /></div>
+                <div><FL>Ship Date</FL><Inp type="date" value={shipDate} onChange={e => setShipDate(e.target.value)} /></div>
+                <div>
+                  <FL>Warehouse / Origin</FL>
+                  <Sel value={warehouse} onChange={e => setWarehouse(e.target.value)}>
+                    <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+                  </Sel>
+                </div>
+                <div><FL>Estimated Delivery</FL><Inp type="date" value={estimatedDel} onChange={e => setEstimatedDel(e.target.value)} /></div>
+                <div>
+                  <FL required>Carrier / Courier</FL>
+                  <Sel value={carrier} onChange={e => setCarrier(e.target.value)}>
+                    {["FedEx", "DHL", "Blue Dart", "DTDC", "India Post", "Delhivery", "Ecom Express", "XpressBees", "Other"].map(c => <option key={c}>{c}</option>)}
+                  </Sel>
+                </div>
+                <div><FL>Tracking Number</FL><Inp value={trackingNo} onChange={e => setTrackingNo(e.target.value)} placeholder="AWB / Tracking ID" /></div>
+              </div>
+            </Card>
+
+            <Card>
+              <CardTitle>Customer &amp; Invoice</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <FL required>Customer</FL>
+                  <CustomerCombobox value={customer} onChange={(name) => setCustomer(name)} customers={customers} />
+                </div>
+                <div>
+                  <FL required>Reference Sales Invoice</FL>
+                  <Sel value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)}>
+                    <option value="">— Select invoice —</option>
+                    {invoiceList.map(inv => <option key={inv.id} value={inv.invoiceNo}>{inv.invoiceNo} — {inv.customer}</option>)}
+                  </Sel>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <FL>Delivery Address</FL>
+                  <TextArea value={deliveryAddr} onChange={e => setDeliveryAddr(e.target.value)} placeholder="Full delivery address..." rows={2} />
+                </div>
+              </div>
+            </Card>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <Card>
+                <CardTitle>Shipping Details</CardTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <FL>Weight (kg)</FL>
+                    <Inp type="number" value={weight} onChange={e => setWeight(e.target.value)} placeholder="0.00" min="0" />
+                  </div>
+                  <div>
+                    <FL>Shipping Cost (Rs.)</FL>
+                    <Inp type="number" value={shipCost} onChange={e => setShipCost(e.target.value)} placeholder="0.00" min="0" />
+                  </div>
+                </div>
+              </Card>
+              <Card>
+                <FL>Notes / Instructions</FL>
+                <TextArea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Fragile, handle with care, etc..." rows={3} />
+              </Card>
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div style={{ width: 260, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", padding: "20px 18px" }}>
+            <Card style={{ border: "none", padding: 0 }}>
+              <CardTitle>Shipment Summary</CardTitle>
+              {[
+                { label: "Shipment No.", value: shipNo },
+                { label: "Carrier",      value: carrier },
+                { label: "Status",       value: <Badge status={shipStatus} /> },
+                { label: "Ship Date",    value: shipDate },
+                { label: "Est. Delivery",value: estimatedDel || "—" },
+                { label: "Weight",       value: weight ? `${weight} kg` : "—" },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}>
+                  <span style={{ color: TEXT_MUTED }}>{label}</span>
+                  <span style={{ fontWeight: 600, color: TEXT_MAIN }}>{value}</span>
+                </div>
+              ))}
+              {Number(shipCost) > 0 && (
+                <div style={{ marginTop: 12, padding: "10px 12px", background: LIGHT_GRN, borderRadius: 8, border: `1px solid #a7f3d0` }}>
+                  <div style={{ fontSize: 12, color: TEXT_MUTED }}>Shipping Cost</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: GREEN }}>Rs. {fmt(shipCost)}</div>
+                </div>
+              )}
+              {trackingNo && (
+                <div style={{ marginTop: 12, padding: "10px 12px", background: "#dbeafe", borderRadius: 8, border: `1px solid #bfdbfe` }}>
+                  <div style={{ fontSize: 11, color: "#1e40af", fontWeight: 600 }}>Tracking No.</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1e40af", marginTop: 4, wordBreak: "break-all" }}>{trackingNo}</div>
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // List view
   const cols = [
     { label: "Action", center: true }, { label: "Shipment No." }, { label: "Date" },
     { label: "Customer" }, { label: "Invoice Ref." }, { label: "Carrier" },
-    { label: "Tracking No." }, { label: "Status" }, { label: "Amount (Rs.)", right: true },
+    { label: "Tracking No." }, { label: "Est. Delivery" }, { label: "Status" },
   ];
   const rows = filtered.map((s, i) => (
     <>
       <Td center>
         <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
           <IBtn icon={IC.eye} title="View" />
-          <IBtn icon={IC.print} title="Print" />
+          <IBtn icon={IC.edit} title="Edit" />
+          <IBtn icon={IC.print} title="Print Shipping Label" />
+          <IBtn icon={IC.trash} title="Delete" color={RED} />
         </div>
       </Td>
       <Td mono>{s.shipmentNo || `SHP-${String(i + 1).padStart(4, "0")}`}</Td>
@@ -1848,22 +2098,24 @@ export function Shipments() {
       <Td mono muted>{s.invoiceRef || "—"}</Td>
       <Td muted>{s.carrier || "—"}</Td>
       <Td mono muted>{s.trackingNo || "—"}</Td>
+      <Td muted>{s.estimatedDelivery || "—"}</Td>
       <Td><Badge status={s.status || "Pending"} /></Td>
-      <Td right><span style={{ fontWeight: 700, color: GREEN }}>Rs. {fmt(s.amount)}</span></Td>
     </>
   ));
 
   return (
     <div style={PAGE}>
       <PageHeader title="Shipments" breadcrumb="Home / Sell / Shipments"
-        actions={<>
-          <span style={{ fontSize: 12, color: TEXT_MUTED, padding: "8px 14px", background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 8 }}>
-            Shipment creation coming soon
-          </span>
-        </>}
+        actions={<PrimaryBtn label="New Shipment" icon={IC.truck} onClick={() => setView("add")} />}
       />
-      <div style={{ flex: 1, minHeight: 0, padding: "16px 24px", display: "flex", flexDirection: "column" }}>
-        <TablePage columns={cols} rows={rows} loading={loading} emptyText="No shipments yet."
+      <div style={{ padding: "16px 24px 0", display: "flex", gap: 14, flexShrink: 0 }}>
+        <StatCard label="Total Shipments" value={shipments.length} sub="All time" accent={GREEN} />
+        <StatCard label="Pending" value={shipments.filter(s => s.status === "Pending").length} sub="Awaiting dispatch" accent={AMBER} />
+        <StatCard label="In Transit" value={shipments.filter(s => s.status === "Shipped" || s.status === "In Transit").length} sub="On the way" accent="#6366f1" />
+        <StatCard label="Delivered" value={shipments.filter(s => s.status === "Delivered").length} sub="Completed" accent="#22c55e" />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "14px 24px", display: "flex", flexDirection: "column" }}>
+        <TablePage columns={cols} rows={rows} loading={loading} emptyText="No shipments yet. Click New Shipment to create one."
           topBar={<SearchBox value={search} onChange={setSearch} placeholder="Search shipment or customer..." />}
           footer={<span style={{ fontSize: 12, color: TEXT_MUTED }}>{filtered.length} shipment(s)</span>}
         />
@@ -1872,43 +2124,205 @@ export function Shipments() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 11. DISCOUNTS — Advanced list (no create form yet)
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// 11. DISCOUNTS — Full list + Add Discount form
+// ══════════════════════════════════════════════════════════════
 export function Discounts() {
+  const [view, setView]         = useState("list");
   const [discounts, setDiscounts] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading]   = useState(true);
+
+  // Add form state
+  const [discName,    setDiscName]    = useState("");
+  const [discCode,    setDiscCode]    = useState(() => `DISC${Date.now().toString().slice(-4)}`);
+  const [discType,    setDiscType]    = useState("Percentage");
+  const [discValue,   setDiscValue]   = useState(0);
+  const [appliesTo,   setAppliesTo]   = useState("All Products");
+  const [minOrder,    setMinOrder]    = useState(0);
+  const [maxUses,     setMaxUses]     = useState("");
+  const [validFrom,   setValidFrom]   = useState(new Date().toISOString().slice(0, 10));
+  const [validTo,     setValidTo]     = useState(() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d.toISOString().slice(0, 10); });
+  const [custGroup,   setCustGroup]   = useState("All");
+  const [discStatus,  setDiscStatus]  = useState("Active");
+  const [desc,        setDesc]        = useState("");
+  const [saving,      setSaving]      = useState(false);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const r = await fetch("http://localhost:5000/api/discounts");
-        if (r.ok) { const d = await r.json(); setDiscounts(d.data || []); }
-      } catch { setDiscounts([]); }
+      try { const r = await fetch("http://localhost:5000/api/discounts"); if (r.ok) { const d = await r.json(); setDiscounts(d.data || []); } } catch { setDiscounts([]); }
       finally { setLoading(false); }
     })();
   }, []);
 
+  const handleSave = async () => {
+    if (!discName) { alert("Discount name is required."); return; }
+    if (!discValue) { alert("Discount value is required."); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("http://localhost:5000/api/discounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: discName, code: discCode, type: discType, value: discValue,
+          appliesTo, minOrderAmount: minOrder, maxUses, validFrom, validTo,
+          customerGroup: custGroup, status: discStatus, description: desc,
+        }),
+      });
+      if (res.ok) {
+        setView("list");
+        try { const r = await fetch("http://localhost:5000/api/discounts"); if (r.ok) { const d = await r.json(); setDiscounts(d.data || []); } } catch {}
+      } else alert("Failed to save discount");
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (view === "add") {
+    return (
+      <div style={PAGE}>
+        <PageHeader title="New Discount" breadcrumb="Home / Sell / Discounts / New"
+          actions={<>
+            <select value={discStatus} onChange={e => setDiscStatus(e.target.value)}
+              style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: F, background: "#fff", cursor: "pointer" }}>
+              {["Active", "Inactive", "Draft"].map(s => <option key={s}>{s}</option>)}
+            </select>
+            <GhostBtn label="Cancel" onClick={() => setView("list")} />
+            <PrimaryBtn label={saving ? "Saving..." : "Save Discount"} icon={IC.tag} onClick={handleSave} disabled={saving} />
+          </>}
+        />
+        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+            <Card>
+              <CardTitle>Discount Information</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <FL required>Discount Name</FL>
+                  <Inp value={discName} onChange={e => setDiscName(e.target.value)} placeholder="e.g. Summer Sale 20%" />
+                </div>
+                <div>
+                  <FL>Discount Code (Coupon)</FL>
+                  <Inp value={discCode} onChange={e => setDiscCode(e.target.value.toUpperCase())} placeholder="SUMMER20" />
+                </div>
+                <div>
+                  <FL required>Discount Type</FL>
+                  <Sel value={discType} onChange={e => setDiscType(e.target.value)}>
+                    <option value="Percentage">Percentage (%)</option>
+                    <option value="Fixed Amount">Fixed Amount (Rs.)</option>
+                    <option value="Buy X Get Y">Buy X Get Y</option>
+                    <option value="Free Shipping">Free Shipping</option>
+                  </Sel>
+                </div>
+                <div>
+                  <FL required>Discount Value {discType === "Percentage" ? "(%)" : discType === "Fixed Amount" ? "(Rs.)" : ""}</FL>
+                  <Inp type="number" value={discValue} onChange={e => setDiscValue(e.target.value)} placeholder="0" min="0" max={discType === "Percentage" ? "100" : undefined} />
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <FL>Description</FL>
+                  <TextArea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Optional description for this discount..." rows={2} />
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <CardTitle>Applicability &amp; Rules</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <FL>Applies To</FL>
+                  <Sel value={appliesTo} onChange={e => setAppliesTo(e.target.value)}>
+                    {["All Products", "Specific Category", "Specific Product", "Specific Brand"].map(o => <option key={o}>{o}</option>)}
+                  </Sel>
+                </div>
+                <div>
+                  <FL>Customer Group</FL>
+                  <Sel value={custGroup} onChange={e => setCustGroup(e.target.value)}>
+                    {["All", "Walk-In", "Retail", "Wholesale", "VIP"].map(o => <option key={o}>{o}</option>)}
+                  </Sel>
+                </div>
+                <div>
+                  <FL>Minimum Order Amount (Rs.)</FL>
+                  <Inp type="number" value={minOrder} onChange={e => setMinOrder(e.target.value)} placeholder="0" min="0" />
+                </div>
+                <div>
+                  <FL>Max Uses (leave blank for unlimited)</FL>
+                  <Inp type="number" value={maxUses} onChange={e => setMaxUses(e.target.value)} placeholder="Unlimited" min="1" />
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <CardTitle>Validity Period</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div><FL required>Valid From</FL><Inp type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} /></div>
+                <div><FL required>Valid Until</FL><Inp type="date" value={validTo} onChange={e => setValidTo(e.target.value)} /></div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Summary */}
+          <div style={{ width: 260, flexShrink: 0, borderLeft: `1px solid ${BORDER}`, background: "#fff", padding: "20px 18px" }}>
+            <Card style={{ border: "none", padding: 0 }}>
+              <CardTitle>Discount Preview</CardTitle>
+              <div style={{ textAlign: "center", padding: "20px 0", borderBottom: `1px solid ${BORDER}`, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 4 }}>Coupon Code</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: GREEN, letterSpacing: 2, background: LIGHT_GRN, padding: "10px 16px", borderRadius: 8, border: `1px dashed #a7f3d0` }}>
+                  {discCode || "—"}
+                </div>
+              </div>
+              {[
+                { label: "Type",        value: discType },
+                { label: "Value",       value: discType === "Percentage" ? `${discValue}%` : `Rs. ${fmt(discValue)}` },
+                { label: "Applies To",  value: appliesTo },
+                { label: "For Group",   value: custGroup },
+                { label: "Min Order",   value: minOrder > 0 ? `Rs. ${fmt(minOrder)}` : "None" },
+                { label: "Max Uses",    value: maxUses || "Unlimited" },
+                { label: "Valid From",  value: validFrom || "—" },
+                { label: "Valid To",    value: validTo || "—" },
+                { label: "Status",      value: <Badge status={discStatus} /> },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}>
+                  <span style={{ color: TEXT_MUTED }}>{label}</span>
+                  <span style={{ fontWeight: 600, color: TEXT_MAIN }}>{value}</span>
+                </div>
+              ))}
+
+              {discType === "Percentage" && discValue > 0 && (
+                <div style={{ marginTop: 14, padding: "12px", background: LIGHT_GRN, borderRadius: 8, border: `1px solid #a7f3d0` }}>
+                  <div style={{ fontSize: 11, color: TEXT_MUTED }}>Example: Rs. 1,000 order</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: GREEN, marginTop: 4 }}>
+                    <span>Customer saves</span>
+                    <span>Rs. {fmt(1000 * discValue / 100)}</span>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const cols = [
-    { label: "Action", center: true }, { label: "Name" }, { label: "Type" },
-    { label: "Value" }, { label: "Applies To" }, { label: "Valid From" },
-    { label: "Valid To" }, { label: "Status" },
+    { label: "Action", center: true }, { label: "Name" }, { label: "Code" },
+    { label: "Type" }, { label: "Value" }, { label: "Applies To" },
+    { label: "Valid From" }, { label: "Valid To" }, { label: "Max Uses" }, { label: "Status" },
   ];
   const rows = discounts.map(d => (
     <>
       <Td center>
         <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+          <IBtn icon={IC.eye} title="View" />
           <IBtn icon={IC.edit} title="Edit" />
           <IBtn icon={IC.trash} title="Delete" color={RED} />
         </div>
       </Td>
-      <Td>{d.name || "—"}</Td>
+      <Td><span style={{ fontWeight: 600 }}>{d.name || "—"}</span></Td>
+      <Td mono><span style={{ background: LIGHT_GRN, color: GREEN, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{d.code || "—"}</span></Td>
       <Td muted>{d.type || "Percentage"}</Td>
-      <Td>{d.value || "—"}</Td>
+      <Td><span style={{ fontWeight: 700, color: d.type === "Percentage" ? GREEN : TEXT_MAIN }}>{d.type === "Percentage" ? `${d.value}%` : `Rs. ${fmt(d.value)}`}</span></Td>
       <Td muted>{d.appliesTo || "All Products"}</Td>
       <Td muted>{d.validFrom || "—"}</Td>
       <Td muted>{d.validTo || "—"}</Td>
+      <Td center muted>{d.maxUses || "∞"}</Td>
       <Td><Badge status={d.status || "Draft"} /></Td>
     </>
   ));
@@ -1916,22 +2330,26 @@ export function Discounts() {
   return (
     <div style={PAGE}>
       <PageHeader title="Discounts" breadcrumb="Home / Sell / Discounts"
-        actions={<>
-          <span style={{ fontSize: 12, color: TEXT_MUTED, padding: "8px 14px", background: "#fef9c3", border: "1px solid #fde68a", borderRadius: 8 }}>
-            Discount creation coming soon
-          </span>
-        </>}
+        actions={<PrimaryBtn label="New Discount" icon={IC.tag} onClick={() => setView("add")} />}
       />
-      <div style={{ flex: 1, minHeight: 0, padding: "16px 24px", display: "flex", flexDirection: "column" }}>
-        <TablePage columns={cols} rows={rows} loading={loading} emptyText="No discounts configured yet." />
+      <div style={{ padding: "16px 24px 0", display: "flex", gap: 14, flexShrink: 0 }}>
+        <StatCard label="Total Discounts" value={discounts.length} sub="All campaigns" accent={GREEN} />
+        <StatCard label="Active" value={discounts.filter(d => d.status === "Active").length} sub="Currently running" accent="#22c55e" />
+        <StatCard label="Inactive" value={discounts.filter(d => d.status === "Inactive").length} sub="Paused" accent={AMBER} />
+        <StatCard label="Draft" value={discounts.filter(d => d.status === "Draft").length} sub="Not published" accent={TEXT_MUTED} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "14px 24px", display: "flex", flexDirection: "column" }}>
+        <TablePage columns={cols} rows={rows} loading={loading} emptyText="No discounts configured yet. Click New Discount to create one."
+          footer={<span style={{ fontSize: 12, color: TEXT_MUTED }}>{discounts.length} discount(s)</span>}
+        />
       </div>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 // 12. IMPORT SALES
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
 export function ImportSales() {
   const [file, setFile]         = useState(null);
   const [status, setStatus]     = useState("");
@@ -1955,10 +2373,8 @@ export function ImportSales() {
               onDragLeave={() => setDragging(false)}
               onDrop={e => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); }}
               style={{
-                border: `2px dashed ${dragging ? GREEN : BORDER}`,
-                borderRadius: 10, padding: "40px 24px",
-                textAlign: "center", background: dragging ? LIGHT_GRN : "#fafafa",
-                transition: "all 0.2s",
+                border: `2px dashed ${dragging ? GREEN : BORDER}`, borderRadius: 10, padding: "40px 24px",
+                textAlign: "center", background: dragging ? LIGHT_GRN : "#fafafa", transition: "all 0.2s",
               }}
             >
               {IC.csv}

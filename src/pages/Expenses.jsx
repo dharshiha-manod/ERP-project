@@ -27,6 +27,7 @@ const styles = {
     height: "calc(100vh - 60px)", // assumes 60px TopHeader, matches AppLayout
     width: "100%",
     maxWidth: "100%",
+    minWidth: 0,
     display: "flex",
     flexDirection: "column",
     color: T.textMain,
@@ -54,7 +55,9 @@ const styles = {
     padding: "14px 20px 10px",
     flexShrink: 0,
     width: "100%",
+    minWidth: 0,
     boxSizing: "border-box",
+    overflowX: "hidden",
   },
   pageTitle: { fontSize: 22, fontWeight: 700, color: T.textMain, margin: 0 },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
@@ -344,37 +347,111 @@ export function ListExpenses() {
     { label: "Note", value: (e) => e.description },
   ];
 
+  const iconBtn = (bg, color) => ({
+    width: 30, height: 30, borderRadius: 8, border: "none", background: bg, color,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer", fontSize: 14,
+  });
+
+  const exportCSV = () => {
+    const header = columns.map((c) => c.label).join(",");
+    const body = expenses
+      .map((r) => columns.map((c) => `"${(c.value(r) ?? "").toString().replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([header + "\n" + body], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expenses_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── KPI metrics — derived live from the loaded rows, not the server totals,
+  // so refunds/paid/due always reflect exactly what's on screen ──────────────
+  const paidCount = expenses.filter((e) => e.payment_status === "paid").length;
+  const dueCount = expenses.filter((e) => e.payment_status !== "paid").length;
+  const refundRows = expenses.filter((e) => e.is_refund);
+  const refundTotal = refundRows.reduce((s, e) => s + parseFloat(e.total_amount || 0), 0);
+  // "Amount paid" = total billed minus whatever is still due — correct even for partial payments
+  const amountPaid = expenses.reduce((s, e) => s + (parseFloat(e.total_amount || 0) - parseFloat(e.payment_due || 0)), 0);
+
+  const kpiCards = [
+    { label: "TOTAL EXPENSES", value: expenses.length, sub: `${paidCount} paid`, color: T.primary },
+    { label: "TOTAL AMOUNT", value: money(totals.total), sub: `${expenses.length} records`, color: "#2563eb" },
+    { label: "AMOUNT PAID", value: money(amountPaid), sub: `${dueCount} due`, color: "#16a34a" },
+    { label: "REFUNDS", value: money(refundTotal), sub: `${refundRows.length} refunded`, color: "#dc2626" },
+  ];
+
   return (
     <div style={styles.page}>
-      {/* ── Sticky top bar: title + primary actions always visible ── */}
-      <div style={styles.topBar}>
-        <h1 style={styles.pageTitle}>Expenses</h1>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {/* ── Sticky top bar: title + breadcrumb + primary action ── */}
+      <div style={{ ...styles.topBar, overflowX: "hidden" }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={styles.pageTitle}>Expenses</h1>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+            Home / Expenses / List
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 320px", minWidth: 0 }}>
           <button style={styles.btnPrimary} onClick={() => navigate("/import-expenses")}>⬆ Import expense</button>
           <button style={styles.btnPrimary} onClick={() => navigate("/expense-categories")}>🏷 Categories</button>
-          <button style={styles.btnSave} onClick={() => navigate("/expenses/create")}>+ Add</button>
+          <button style={styles.btnSave} onClick={() => navigate("/expenses/create")}>⊕ Add Expense</button>
         </div>
+      </div>
+
+      {/* ── KPI cards (Stock-Adjustment style) — fixed height, never affects scroll ── */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16,
+        margin: "0 20px 16px", flexShrink: 0,
+      }}>
+        {kpiCards.map(({ label, value, sub, color }) => (
+          <div key={label} style={{
+            background: T.surface, borderRadius: 10, padding: "16px 20px",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.06)", borderLeft: `4px solid ${color}`,
+            minWidth: 0,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: 0.6 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.textMain, margin: "6px 0 2px" }}>{value}</div>
+            <div style={{ fontSize: 12, color: T.textMuted }}>{sub}</div>
+          </div>
+        ))}
       </div>
 
       {/* ── Card fills remaining height; only table body scrolls ── */}
       <div style={{ ...styles.card, flex: 1, display: "flex", flexDirection: "column", margin: "0 20px 16px", minHeight: 0, minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
-        <ExportBar
-          rows={expenses}
-          columns={columns}
-          filename="expenses"
-          search={search}
-          onSearch={handleSearch}
-        />
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>All Expenses</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: T.textSub }}>Show</span>
+              <select style={{ ...styles.select, width: 70, padding: "6px 8px" }}>
+                <option>25</option><option>50</option><option>100</option>
+              </select>
+              <span style={{ fontSize: 13, color: T.textSub }}>entries</span>
+              <button style={styles.exportBtn("#217a48")} onClick={exportCSV}>📊 Export CSV</button>
+              <button style={styles.exportBtn()} onClick={() => window.print()}>🖨️ Print</button>
+            </div>
+            <input
+              placeholder="Search ref, category..."
+              style={{ ...styles.input, width: 220 }}
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </div>
+        </div>
 
         {error && (
-          <div style={{ padding: "10px 16px", color: T.danger, fontSize: 13 }}>{error}</div>
+          <div style={{ padding: "10px 16px", color: T.danger, fontSize: 13, flexShrink: 0 }}>{error}</div>
         )}
 
-        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        <div style={{ flex: 1, overflow: "auto", minHeight: 0, minWidth: 0, width: "100%" }}>
           <table style={styles.table}>
             <thead>
               <tr>
-                {["Action", "Date", "Reference No", "Category", "Sub category", "Location", "Payment Status", "Tax", "Total amount", "Payment due", "Expense for", "Note"].map((h) => (
+                {["Date", "Reference No", "Category", "Sub category", "Location", "Payment Status", "Tax", "Total amount", "Payment due", "Expense for", "Note", "Action"].map((h) => (
                   <th key={h} style={styles.th}>{h}</th>
                 ))}
               </tr>
@@ -386,13 +463,6 @@ export function ListExpenses() {
                 <tr><td colSpan={12} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>No expenses found</td></tr>
               ) : expenses.map((e, i) => (
                 <tr key={e.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
-                  <td style={styles.td}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button title="View" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15 }} onClick={() => navigate(`/expenses/${e.id}`)}>👁</button>
-                      <button title="Edit" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15 }} onClick={() => navigate(`/expenses/${e.id}/edit`)}>✏️</button>
-                      <button title="Delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15 }} onClick={() => handleDelete(e.id)}>🗑️</button>
-                    </div>
-                  </td>
                   <td style={styles.td}>{e.expense_date ? new Date(e.expense_date).toLocaleDateString("en-GB") : "—"}</td>
                   <td style={styles.td}><strong>{e.expense_number}</strong></td>
                   <td style={styles.td}>{e.category_name || e.category || "—"}</td>
@@ -410,16 +480,23 @@ export function ListExpenses() {
                   <td style={styles.td}>{money(e.payment_due)}</td>
                   <td style={styles.td}>{e.expense_for || "—"}</td>
                   <td style={styles.td}>{e.description || ""}</td>
+                  <td style={styles.td}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button title="View" style={iconBtn("#eaf2ff", "#2563eb")} onClick={() => navigate(`/expenses/${e.id}`)}>👁</button>
+                      <button title="Edit" style={iconBtn("#fff4e6", "#dd6b20")} onClick={() => navigate(`/expenses/${e.id}/edit`)}>✏️</button>
+                      <button title="Delete" style={iconBtn("#fdecec", "#e53e3e")} onClick={() => handleDelete(e.id)}>🗑️</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
             {expenses.length > 0 && (
               <tfoot>
                 <tr style={{ background: "#f0f4f1" }}>
-                  <td colSpan={8} style={{ ...styles.td, fontWeight: 700, textAlign: "right" }}>Total:</td>
+                  <td colSpan={7} style={{ ...styles.td, fontWeight: 700, textAlign: "right" }}>Total:</td>
                   <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.total)}</td>
                   <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.due)}</td>
-                  <td colSpan={2} style={styles.td}></td>
+                  <td colSpan={3} style={styles.td}></td>
                 </tr>
               </tfoot>
             )}
@@ -453,6 +530,9 @@ function ExpenseFormPage({ mode = "create" }) {
     expense_date: new Date().toISOString().slice(0, 10),
     expense_for: "", contact_id: "", tax_amount: 0, total_amount: "",
     description: "", payment_status: "due",
+    attachment_url: "", attachment_name: "",
+    refund_amount: "", refund_date: new Date().toISOString().slice(0, 10),
+    refund_reason: "", refund_method: "Cash",
     interval: "", intervalUnit: "Days", repetitions: "",
   });
   const fileRef = useRef();
@@ -470,18 +550,34 @@ function ExpenseFormPage({ mode = "create" }) {
       .then((d) => {
         const e = d.expense;
         if (!e) { setError("Expense not found"); return; }
+        let dateStr = "";
+        if (e.expense_date) {
+          try { dateStr = new Date(e.expense_date).toISOString().slice(0, 10); }
+          catch { dateStr = String(e.expense_date).slice(0, 10); }
+        }
+        let refundDateStr = "";
+        if (e.refund_date) {
+          try { refundDateStr = new Date(e.refund_date).toISOString().slice(0, 10); }
+          catch { refundDateStr = String(e.refund_date).slice(0, 10); }
+        }
         setForm({
           location: e.location || "Manodtechnologies (BL0001)",
           category: e.category_name || "",
           sub_category: e.sub_category_name || "",
           expense_number: e.expense_number || "",
-          expense_date: e.expense_date ? new Date(e.expense_date).toISOString().slice(0, 10) : "",
+          expense_date: dateStr,
           expense_for: e.expense_for || "",
           contact_id: e.contact_id || "",
           tax_amount: e.tax_amount || 0,
           total_amount: e.total_amount || "",
           description: e.description || "",
           payment_status: e.payment_status || "due",
+          attachment_url: e.attachment_url || "",
+          attachment_name: "",
+          refund_amount: e.refund_amount ?? "",
+          refund_date: refundDateStr || new Date().toISOString().slice(0, 10),
+          refund_reason: e.refund_reason || "",
+          refund_method: e.refund_method || "Cash",
           interval: e.recurring_interval || "",
           intervalUnit: e.recurring_interval_unit || "Days",
           repetitions: e.recurring_repetitions || "",
@@ -513,6 +609,24 @@ function ExpenseFormPage({ mode = "create" }) {
     e.preventDefault();
     if (readOnly) return;
     if (!form.total_amount) { setError("Total amount is required"); return; }
+
+    // ── Refund validation — mirrors the backend rules exactly ──────────────
+    if (isRefund) {
+      const refundAmt = parseFloat(form.refund_amount);
+      if (form.refund_amount === "" || isNaN(refundAmt)) {
+        setError("Refund amount is required when \"Is refund?\" is checked");
+        return;
+      }
+      if (refundAmt <= 0) {
+        setError("Refund amount must be greater than 0");
+        return;
+      }
+      if (refundAmt > parseFloat(form.total_amount)) {
+        setError("Refund amount cannot be greater than the original expense amount");
+        return;
+      }
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -526,6 +640,10 @@ function ExpenseFormPage({ mode = "create" }) {
         category_name: form.category || null,
         sub_category_name: form.sub_category || null,
         is_refund: isRefund,
+        refund_amount: isRefund ? form.refund_amount : null,
+        refund_date: isRefund ? form.refund_date : null,
+        refund_reason: isRefund ? (form.refund_reason || null) : null,
+        refund_method: isRefund ? (form.refund_method || null) : null,
         is_recurring: isRecurring,
         recurring_interval: form.interval || null,
         recurring_interval_unit: form.intervalUnit,
@@ -549,18 +667,27 @@ function ExpenseFormPage({ mode = "create" }) {
 
   if (loadingRecord) {
     return (
-      <div style={{ ...styles.page, height: "auto", overflow: "visible", padding: "30px 20px" }}>
+      <div style={{ ...styles.page, alignItems: "center", justifyContent: "center", display: "flex" }}>
         Loading...
       </div>
     );
   }
 
   return (
-    <div style={{ ...styles.page, height: "auto", overflow: "visible" }}>
-      <div style={{ padding: "16px 20px 0" }}>
-        <h1 style={{ ...styles.pageTitle, marginBottom: 16 }}>{pageHeading}</h1>
+    <div style={styles.page}>
+      {/* ── Sticky header: title + breadcrumb stay fixed, never scroll ── */}
+      <div style={{ ...styles.topBar, overflowX: "hidden" }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={styles.pageTitle}>{pageHeading}</h1>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+            Home / Expenses / {pageHeading}
+          </div>
+        </div>
       </div>
-      <form onSubmit={handleSave} style={{ padding: "0 20px 20px" }}>
+
+      {/* ── Only this inner area scrolls — the page frame itself is static ── */}
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, minWidth: 0, width: "100%", padding: "0 20px 20px", boxSizing: "border-box" }}>
+        <form onSubmit={handleSave}>
         {error && <div style={{ color: T.danger, marginBottom: 12, fontSize: 13 }}>{error}</div>}
 
         <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
@@ -621,13 +748,36 @@ function ExpenseFormPage({ mode = "create" }) {
             <div>
               <label style={styles.label}>Attach Document:</label>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input ref={fileRef} type="file" style={{ display: "none" }} />
+                <input
+                  ref={fileRef}
+                  type="file"
+                  style={{ display: "none" }}
+                  accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { alert("Max file size is 5MB"); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      setForm((f) => ({ ...f, attachment_url: reader.result, attachment_name: file.name }));
+                    };
+                    reader.onerror = () => alert("Failed to read file");
+                    reader.readAsDataURL(file);
+                  }}
+                />
                 <button type="button" style={{ ...styles.btnPrimary, padding: "8px 12px" }} onClick={() => fileRef.current.click()} disabled={readOnly}>📁 Browse..</button>
+                {form.attachment_name && (
+                  <span style={{ fontSize: 12, color: T.textSub }}>{form.attachment_name}</span>
+                )}
+                {!form.attachment_name && form.attachment_url && (
+                  <a href={form.attachment_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.primary }}>📎 View attachment</a>
+                )}
               </div>
+              <span style={{ fontSize: 11, color: T.textMuted }}>Max 5MB — .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</span>
             </div>
             <div>
               <label style={styles.label}>Tax amount:</label>
-              <input style={styles.input} type="number" value={form.tax_amount} onChange={(e) => setForm({ ...form, tax_amount: e.target.value })} />
+              <input style={styles.input} type="number" value={form.tax_amount} onChange={(e) => setForm({ ...form, tax_amount: e.target.value })} disabled={readOnly} />
             </div>
             <div>
               <label style={styles.label}>Total amount:*</label>
@@ -647,6 +797,74 @@ function ExpenseFormPage({ mode = "create" }) {
               </label>
             </div>
           </div>
+
+          {/* ── Refund details — only visible when "Is refund?" is checked ── */}
+          {isRefund && (
+            <div style={{
+              marginTop: 18, padding: 16, borderRadius: 10,
+              background: "#fff7f7", border: "1px solid #fecaca",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.danger, marginBottom: 12 }}>↩ Refund Details</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 }}>
+                <div>
+                  <label style={styles.label}>Refund Amount:*</label>
+                  <input
+                    style={styles.input} type="number" min="0.01" step="0.01"
+                    placeholder="0.00"
+                    value={form.refund_amount}
+                    onChange={(e) => setForm({ ...form, refund_amount: e.target.value })}
+                    required={isRefund}
+                  />
+                  {form.total_amount && (
+                    <span style={{ fontSize: 11, color: T.textMuted }}>Max: {money(form.total_amount)}</span>
+                  )}
+                </div>
+                <div>
+                  <label style={styles.label}>Refund Date:</label>
+                  <input
+                    style={styles.input} type="date"
+                    value={form.refund_date}
+                    onChange={(e) => setForm({ ...form, refund_date: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={styles.label}>Refund Method:</label>
+                  <select
+                    style={styles.select}
+                    value={form.refund_method}
+                    onChange={(e) => setForm({ ...form, refund_method: e.target.value })}
+                  >
+                    <option>Cash</option>
+                    <option>Bank</option>
+                    <option>UPI</option>
+                    <option>Card</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={styles.label}>Refund Reason:</label>
+                  <input
+                    style={styles.input} placeholder="Optional"
+                    value={form.refund_reason}
+                    onChange={(e) => setForm({ ...form, refund_reason: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Live Net Expense preview: Net = Total - Refund */}
+              {form.total_amount && form.refund_amount && !isNaN(parseFloat(form.refund_amount)) && (
+                <div style={{
+                  marginTop: 14, paddingTop: 12, borderTop: "1px solid #fecaca",
+                  display: "flex", gap: 24, fontSize: 13,
+                }}>
+                  <span style={{ color: T.textSub }}>Original: <b style={{ color: T.textMain }}>{money(form.total_amount)}</b></span>
+                  <span style={{ color: T.textSub }}>Refund: <b style={{ color: T.danger }}>-{money(form.refund_amount)}</b></span>
+                  <span style={{ color: T.textSub }}>Net Expense: <b style={{ color: T.primary }}>
+                    {money(Math.max(0, parseFloat(form.total_amount) - parseFloat(form.refund_amount)))}
+                  </b></span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ ...styles.card, marginBottom: 20, padding: "20px" }}>
@@ -686,6 +904,7 @@ function ExpenseFormPage({ mode = "create" }) {
           )}
         </div>
       </form>
+      </div>
     </div>
   );
 }
@@ -837,39 +1056,37 @@ export function ExpenseCategories() {
 
   return (
     <div style={styles.page}>
-      {/* ── Sticky top bar ── */}
-      <div style={styles.topBar}>
-        <div>
+      {/* ── Sticky top bar: title + breadcrumb + primary action (matches Stock Adjustments) ── */}
+      <div style={{ ...styles.topBar, overflowX: "hidden" }}>
+        <div style={{ minWidth: 0 }}>
           <h1 style={styles.pageTitle}>Expense Categories</h1>
-          <div style={{ fontSize: 13, color: T.textSub, marginTop: 2 }}>Manage your expense categories</div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+            Home / Expenses / Categories
+          </div>
         </div>
-        <button style={styles.btnSave} onClick={() => { setModalForm({ name: "", parent_name: "" }); setEditId(null); setEditCode(""); setShowModal(true); }}>
-          + Add Category
+        <button
+          style={{ ...styles.btnSave, borderRadius: 20, padding: "10px 22px" }}
+          onClick={() => { setModalForm({ name: "", parent_name: "" }); setEditId(null); setEditCode(""); setShowModal(true); }}
+        >
+          ⊕ Add Category
         </button>
       </div>
 
       {/* ── Card fills remaining height; only table body scrolls ── */}
       <div style={{ ...styles.card, flex: 1, display: "flex", flexDirection: "column", margin: "0 20px 16px", minHeight: 0, minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-            🏷 All your expense categories
-            <span style={{
-              background: "#eaf6ee", color: T.primary, fontSize: 11, fontWeight: 700,
-              borderRadius: 999, padding: "2px 9px",
-            }}>{categories.length}</span>
-          </span>
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>All Expense Categories</div>
         </div>
 
         {error && <div style={{ padding: "10px 18px", color: T.danger, fontSize: 13, flexShrink: 0 }}>{error}</div>}
 
-        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        <div style={{ flex: 1, overflow: "auto", minHeight: 0, minWidth: 0, width: "100%" }}>
           <table style={styles.table}>
             <thead>
-              <tr>
-                <th style={styles.th}>Category name</th>
-                <th style={styles.th}>Code</th>
-                <th style={styles.th}>Parent</th>
-                <th style={styles.th}>Action</th>
+              <tr style={{ background: "#f9fafb" }}>
+                {["CATEGORY NAME", "CODE", "PARENT", "ACTION"].map((h) => (
+                  <th key={h} style={{ ...styles.th, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", borderBottom: `2px solid ${T.border}` }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -877,12 +1094,12 @@ export function ExpenseCategories() {
                 <tr><td colSpan={4} style={{ ...styles.td, textAlign: "center", padding: 32, color: T.textMuted }}>Loading categories...</td></tr>
               ) : categories.length === 0 ? (
                 <tr><td colSpan={4} style={{ ...styles.td, textAlign: "center", color: T.textMuted, padding: 32 }}>
-                  No categories yet — click "+ Add Category" to create one
+                  No categories yet — click "⊕ Add Category" to create one
                 </td></tr>
               ) : categories.map((c, i) => (
-                <tr key={c.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
+                <tr key={c.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                   <td style={styles.td}>
-                    <span style={{ fontWeight: 600 }}>{c.name}</span>
+                    <span style={{ fontWeight: 600, color: T.textMain }}>{c.name}</span>
                   </td>
                   <td style={styles.td}>
                     {c.code ? (
@@ -905,10 +1122,18 @@ export function ExpenseCategories() {
                       }}>Top-level</span>
                     )}
                   </td>
-                  <td style={styles.td}>
+                  <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => handleEdit(c)} style={{ ...styles.btnSecondary, padding: "5px 12px", fontSize: 12 }}>✏️ Edit</button>
-                      <button onClick={() => handleDelete(c.id)} style={{ ...styles.btnSecondary, padding: "5px 12px", fontSize: 12, color: T.danger, borderColor: "#fca5a5" }}>🗑️ Delete</button>
+                      <button
+                        title="Edit"
+                        onClick={() => handleEdit(c)}
+                        style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #fed7aa", background: "#fff7ed", color: "#dd6b20", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+                      >✏️</button>
+                      <button
+                        title="Delete"
+                        onClick={() => handleDelete(c.id)}
+                        style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: T.danger, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}
+                      >🗑️</button>
                     </div>
                   </td>
                 </tr>
