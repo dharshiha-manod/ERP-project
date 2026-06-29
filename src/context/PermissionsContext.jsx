@@ -1,14 +1,3 @@
-/**
- * ============================================================
- * src/context/PermissionsContext.jsx  (FIXED)
- *
- * Changes:
- * 1. Now also stores `userRole` and `userName` from the JWT/API
- *    so Sidebar can show the real logged-in user (not hardcoded "Admin")
- * 2. Reads user info from JWT token stored in localStorage
- * ============================================================
- */
-
 import { createContext, useContext, useState, useEffect } from "react";
 
 const PermissionsContext = createContext({
@@ -24,7 +13,6 @@ const PermissionsContext = createContext({
   userAvatar: "",
 });
 
-// ── Helper: decode JWT payload without a library ─────────────
 function decodeJWT(token) {
   try {
     const payload = token.split(".")[1];
@@ -53,7 +41,6 @@ export function PermissionsProvider({ children }) {
       return;
     }
 
-    // ── Decode JWT to get user info immediately (no extra API call) ──
     const jwt = decodeJWT(token);
     if (jwt) {
       const name  = jwt.full_name || jwt.name || jwt.email?.split("@")[0] || "User";
@@ -62,7 +49,6 @@ export function PermissionsProvider({ children }) {
       setUserName(name);
       setUserEmail(email);
       setUserRole(role);
-      // Avatar = first letter of name, uppercase
       setUserAvatar((name[0] || "U").toUpperCase());
     }
 
@@ -75,7 +61,6 @@ export function PermissionsProvider({ children }) {
       if (data.success) {
         setPermissions(data.permissions);
         setIsAdmin(!!data.isAdmin);
-        // Use role from API response (more authoritative than JWT)
         if (data.role) {
           setUserRole(data.role);
         }
@@ -85,8 +70,20 @@ export function PermissionsProvider({ children }) {
       }
     } catch (err) {
       console.error("Failed to load permissions:", err);
-      setPermissions([]);
-      setIsAdmin(false);
+      try {
+        const t = localStorage.getItem("manod_token");
+        const j = t ? JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))) : null;
+        if (j?.role === "Admin" || j?.is_admin === true || j?.isAdmin === true) {
+          setIsAdmin(true);
+          setPermissions([]);
+        } else {
+          setPermissions([]);
+          setIsAdmin(false);
+        }
+      } catch {
+        setPermissions([]);
+        setIsAdmin(false);
+      }
     } finally {
       setLoaded(true);
     }
@@ -104,7 +101,7 @@ export function PermissionsProvider({ children }) {
 
   const hasPermission = (group, name) => {
     if (!permissions) return false;
-    if (isAdmin) return true; // admin bypass on frontend too
+    if (isAdmin) return true;
     return permissions.includes(`${group}::${name}`);
   };
 

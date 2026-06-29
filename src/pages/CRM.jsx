@@ -1,1621 +1,1388 @@
-import { useState } from "react";
-import { Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useState, useMemo, useEffect } from "react";
+import {
+  BarChart3, TrendingUp, Users, FileText, MessageSquare, Settings,
+  Plus, Edit2, Trash2, Eye, Search, Download, Check,
+  AlertCircle, Megaphone, Layout, UserCheck, PieChart, Globe,
+  Star, CheckCircle2, Phone, Mail, Building2, Calendar, X
+} from "lucide-react";
+import * as crmAPI from "../api/crmAPI";
 
-/* ─────────────────────────────────────────────
-   THEME TOKENS
-───────────────────────────────────────────── */
-const G       = "#1a5c38";
-const G2      = "#14532d";
-const TEAL    = "#0891b2";
-const RED     = "#dc2626";
-const AMBER   = "#d97706";
-const PURPLE  = "#7c3aed";
-
-/* ─────────────────────────────────────────────
-   SHARED STYLE OBJECTS
-───────────────────────────────────────────── */
-const s = {
-  /* ── wrapper: NO minHeight/overflow/background — App.jsx owns that ── */
-  wrap: { fontFamily: "'Segoe UI', system-ui, sans-serif", fontSize: 13 },
-
-  /* ── CRM sub-nav (sits at top of the CRM content area) ── */
-  subNav: {
-    background: G,
-    display: "flex",
-    alignItems: "center",
-    padding: "0 16px",
-    gap: 0,
-    borderRadius: 8,
-    marginBottom: 20,
-    flexWrap: "nowrap",
-    overflowX: "auto",
-    msOverflowStyle: "none",
-    scrollbarWidth: "none",
-  },
-  subNavBrand: {
-    color: "#fff", fontWeight: 700, fontSize: 14, marginRight: 12,
-    display: "flex", alignItems: "center", gap: 6,
-    padding: "10px 0", whiteSpace: "nowrap", flexShrink: 0,
-    borderRight: "1px solid rgba(255,255,255,0.2)", paddingRight: 14,
-  },
-  navLink: (active) => ({
-    color: active ? "#fff" : "rgba(255,255,255,0.75)",
-    background: active ? "rgba(0,0,0,0.2)" : "transparent",
-    padding: "11px 11px",
-    fontSize: 12,
-    cursor: "pointer",
-    display: "inline-block",
-    whiteSpace: "nowrap",
-    textDecoration: "none",
-    fontWeight: active ? 600 : 400,
-    borderBottom: active ? "2px solid #86efac" : "2px solid transparent",
-    transition: "all 0.15s",
-    flexShrink: 0,
-  }),
-
-  /* ── page sections ── */
-  pageHeader: {
-    display: "flex", alignItems: "flex-start",
-    justifyContent: "space-between", marginBottom: 18,
-  },
-  pageTitle:  { fontSize: 19, fontWeight: 600, color: "#111827" },
-  breadcrumb: { fontSize: 12, color: "#6b7280", marginTop: 2 },
-
-  /* ── cards ── */
-  card: {
-    background: "#fff", borderRadius: 8,
-    border: "1px solid #e5e7eb", marginBottom: 16, overflow: "hidden",
-  },
-  cardHeader: {
-    padding: "12px 16px", borderBottom: "1px solid #e5e7eb",
-    display: "flex", alignItems: "center",
-    justifyContent: "space-between", background: "#fafafa",
-  },
-  cardTitle: { fontSize: 13.5, fontWeight: 600, color: "#111827" },
-  cardBody:  { padding: "14px 16px" },
-
-  /* ── filter bar ── */
-  filterBar: {
-    background: "#fff", border: "1px solid #e5e7eb",
-    borderRadius: 8, marginBottom: 14, overflow: "hidden",
-  },
-  filterToggle: {
-    padding: "10px 16px", cursor: "pointer",
-    display: "flex", alignItems: "center", gap: 8,
-    background: "#fafafa", userSelect: "none",
-  },
-  filterBody: {
-    padding: "14px 16px", display: "flex",
-    gap: 12, flexWrap: "wrap", alignItems: "flex-end",
-    borderTop: "1px solid #e5e7eb",
-  },
-  fg: { display: "flex", flexDirection: "column", gap: 4, minWidth: 130 },
-  fgLabel: {
-    fontSize: 11, fontWeight: 600, color: "#6b7280",
-    textTransform: "uppercase", letterSpacing: "0.04em",
-  },
-  ctrl: {
-    border: "1px solid #e5e7eb", borderRadius: 5,
-    padding: "6px 9px", fontSize: 12.5,
-    background: "#fff", color: "#111827",
-    outline: "none", width: "100%", boxSizing: "border-box",
-  },
-
-  /* ── toolbar ── */
-  toolbar: {
-    display: "flex", alignItems: "center",
-    gap: 7, marginBottom: 12, flexWrap: "wrap",
-  },
-  toolbarL: { display: "flex", alignItems: "center", gap: 7, flex: 1, flexWrap: "wrap" },
-  toolbarR: { display: "flex", alignItems: "center", gap: 6 },
-  showEntr: { display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#6b7280" },
-  showSel: {
-    border: "1px solid #e5e7eb", borderRadius: 4,
-    padding: "3px 6px", fontSize: 12, background: "#fff",
-  },
-
-  expBtn: (color = "#6b7280") => ({
-    background: "#fff", color, border: "1px solid #e5e7eb",
-    borderRadius: 5, padding: "5px 9px", fontSize: 12,
-    cursor: "pointer", display: "inline-flex",
-    alignItems: "center", gap: 4, fontWeight: 500,
-  }),
-  searchWrap: { position: "relative", display: "inline-flex", alignItems: "center" },
-  searchIco: {
-    position: "absolute", left: 8, fontSize: 13,
-    color: "#9ca3af", pointerEvents: "none",
-  },
-  searchInput: {
-    border: "1px solid #e5e7eb", borderRadius: 5,
-    padding: "5px 10px 5px 26px", fontSize: 12.5,
-    width: 185, outline: "none",
-  },
-
-  /* ── table ── */
-  tableWrap: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 12.5 },
-  th: {
-    padding: "8px 10px", textAlign: "left", fontWeight: 600,
-    color: "#374151", borderBottom: "1px solid #e5e7eb",
-    whiteSpace: "nowrap", fontSize: 11.5,
-    textTransform: "uppercase", letterSpacing: "0.04em",
-    background: "#f9fafb",
-  },
-  td: {
-    padding: "8px 10px", color: "#111827",
-    borderBottom: "1px solid #f3f4f6", verticalAlign: "middle",
-  },
-  noData: { textAlign: "center", padding: 28, color: "#9ca3af", fontStyle: "italic" },
-  pagInfo: {
-    fontSize: 12, color: "#6b7280",
-    paddingTop: 10, borderTop: "1px solid #f3f4f6", marginTop: 8,
-  },
-
-  /* ── badge ── */
-  badge: (v) => {
-    const m = {
-      green:  { background: "#dcfce7", color: "#15803d" },
-      amber:  { background: "#fef3c7", color: "#b45309" },
-      red:    { background: "#fee2e2", color: "#b91c1c" },
-      blue:   { background: "#dbeafe", color: "#1d4ed8" },
-      gray:   { background: "#f3f4f6", color: "#374151" },
-      teal:   { background: "#ccfbf1", color: "#0f766e" },
-      purple: { background: "#ede9fe", color: "#6d28d9" },
-    };
-    return {
-      ...(m[v] || m.gray),
-      display: "inline-flex", alignItems: "center",
-      padding: "2px 9px", borderRadius: 20,
-      fontSize: 11, fontWeight: 600, lineHeight: 1.5,
-    };
-  },
-
-  /* ── buttons ── */
-  btn: (variant = "green", size = "md") => {
-    const colors = {
-      green:   { background: G,       color: "#fff", border: `1px solid ${G}` },
-      teal:    { background: TEAL,    color: "#fff", border: `1px solid ${TEAL}` },
-      gray:    { background: "#6b7280", color: "#fff", border: "1px solid #6b7280" },
-      red:     { background: RED,     color: "#fff", border: `1px solid ${RED}` },
-      purple:  { background: PURPLE,  color: "#fff", border: `1px solid ${PURPLE}` },
-      outline: { background: "#fff",  color: G,      border: `1px solid ${G}` },
-    };
-    return {
-      ...(colors[variant] || colors.green),
-      borderRadius: 5,
-      padding: size === "sm" ? "4px 10px" : "6px 14px",
-      fontSize: size === "sm" ? 11.5 : 12.5,
-      cursor: "pointer",
-      display: "inline-flex", alignItems: "center", gap: 5,
-      fontWeight: 500,
-    };
-  },
-
-  /* ── stat cards ── */
-  statGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))",
-    gap: 12, marginBottom: 16,
-  },
-  statCard: {
-    background: "#fff", border: "1px solid #e5e7eb",
-    borderRadius: 8, padding: "14px 16px",
-    display: "flex", alignItems: "center", gap: 12,
-  },
-  statIcon: (color) => ({
-    width: 44, height: 44, borderRadius: 8, background: color,
-    display: "flex", alignItems: "center",
-    justifyContent: "center", flexShrink: 0, fontSize: 20, color: "#fff",
-  }),
-  statLabel: {
-    fontSize: 10.5, color: "#6b7280",
-    textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3,
-  },
-  statValue: { fontSize: 22, fontWeight: 700, color: "#111827" },
-
-  /* ── modal ── */
-  overlay: {
-    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-    background: "rgba(0,0,0,0.45)", zIndex: 9999,
-    display: "flex", alignItems: "flex-start",
-    justifyContent: "center", paddingTop: 60,
-  },
-  modalBox: {
-    background: "#fff", borderRadius: 10, padding: 24,
-    width: "90%", maxWidth: 640,
-    maxHeight: "82vh", overflowY: "auto",
-    border: "1px solid #e5e7eb",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-  },
-  modalHdr: {
-    display: "flex", justifyContent: "space-between",
-    alignItems: "center", marginBottom: 18,
-  },
-  modalTitle: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  formGrid: (cols = 2) => ({
-    display: "grid",
-    gridTemplateColumns: `repeat(${cols}, 1fr)`,
-    gap: "12px 14px",
-  }),
-  fg2: { display: "flex", flexDirection: "column", gap: 4 },
-  fgLabel2: {
-    fontSize: 11, fontWeight: 600, color: "#6b7280",
-    textTransform: "uppercase", letterSpacing: "0.04em",
-  },
-  input: {
-    border: "1px solid #e5e7eb", borderRadius: 5,
-    padding: "6px 9px", fontSize: 13,
-    background: "#fff", color: "#111827",
-    outline: "none", width: "100%", boxSizing: "border-box",
-  },
-  textarea: {
-    border: "1px solid #e5e7eb", borderRadius: 5,
-    padding: "7px 9px", fontSize: 13,
-    background: "#fff", color: "#111827",
-    outline: "none", width: "100%",
-    resize: "vertical", boxSizing: "border-box", fontFamily: "inherit",
-  },
-  select: {
-    border: "1px solid #e5e7eb", borderRadius: 5,
-    padding: "6px 9px", fontSize: 13,
-    background: "#fff", color: "#111827",
-    outline: "none", width: "100%", boxSizing: "border-box",
-  },
-  mFooter: {
-    display: "flex", justifyContent: "flex-end",
-    gap: 8, marginTop: 18,
-    paddingTop: 14, borderTop: "1px solid #e5e7eb",
-  },
-
-  /* ── misc ── */
-  tabs: { display: "flex", gap: 0, borderBottom: "2px solid #e5e7eb", marginBottom: 14 },
-  tab: (active) => ({
-    background: "none", border: "none", padding: "9px 16px",
-    cursor: "pointer", fontSize: 13,
-    color: active ? G : "#6b7280",
-    fontWeight: active ? 600 : 400,
-    borderBottom: active ? `2px solid ${G}` : "2px solid transparent",
-    marginBottom: -2, transition: "all 0.15s",
-  }),
-  avatar: {
-    width: 28, height: 28, borderRadius: "50%",
-    background: G, color: "#fff",
-    display: "inline-flex", alignItems: "center",
-    justifyContent: "center", fontSize: 10, fontWeight: 600,
-  },
-  actionRow: { display: "flex", gap: 4 },
+// ═══════════════════════════════════════════════════════════════════════════
+// DESIGN TOKENS
+// ═══════════════════════════════════════════════════════════════════════════
+const COLORS = {
+  primary: "#1a5c38", primaryLight: "#16a34a", secondary: "#0891b2",
+  danger: "#dc2626", warning: "#d97706", success: "#15803d",
+  info: "#2563eb", neutral: "#6b7280", purple: "#7c3aed",
+  bg: "#f9fafb", bgCard: "#ffffff", border: "#e5e7eb",
 };
 
-/* ─────────────────────────────────────────────
-   SMALL REUSABLE COMPONENTS
-───────────────────────────────────────────── */
-function Badge({ v, children }) {
-  return <span style={s.badge(v)}>{children}</span>;
+const USERS   = ["Er Sarath Raj", "Ms Dharshiha C", "Mr Leejin"];
+const STAGES  = ["New", "Contacted", "Qualified", "Proposal"];
+const SOURCES = ["Website", "Referral", "Cold Call", "Exhibition", "Social Media", "Email Campaign"];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════
+const formatCurrency = (v) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0 }).format(v || 0);
+
+const getInitials = (name) =>
+  name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+
+const getStageColor     = (s) => ({ New: "#f3f4f6", Contacted: "#dbeafe", Qualified: "#ede9fe", Proposal: "#fef3c7" }[s] || "#f3f4f6");
+const getStageTextColor = (s) => ({ New: "#374151", Contacted: "#1d4ed8", Qualified: "#6d28d9", Proposal: "#b45309" }[s] || "#374151");
+
+function exportCSV(rows, filename = "export.csv") {
+  if (!rows?.length) { alert("Nothing to export."); return; }
+  const csv = rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
+    download: filename,
+  });
+  a.click();
 }
 
-function StatusBadge({ status }) {
-  const map = { Scheduled: "amber", Open: "blue", Completed: "green", Cancelled: "red", Sent: "green", Draft: "gray" };
-  return <Badge v={map[status] || "gray"}>{status}</Badge>;
-}
-
-function NoData({ cols }) {
-  return <tr><td colSpan={cols} style={s.noData}>No data available</td></tr>;
-}
-
-function ShowEntries({ value = 25, onChange }) {
-  return (
-    <span style={s.showEntr}>
-      Show{" "}
-      <select style={s.showSel} value={value} onChange={(e) => onChange && onChange(Number(e.target.value))}>
-        {[10, 25, 50, 100].map((n) => <option key={n}>{n}</option>)}
-      </select>{" "}
-      entries
-    </span>
-  );
-}
-
-function ExportButtons({ onCSV }) {
-  return (
-    <>
-      <button style={s.expBtn("#059669")} onClick={onCSV || (() => alert("Pass onCSV prop."))}>📄 CSV</button>
-      <button style={s.expBtn("#15803d")} onClick={() => alert("Excel: integrate SheetJS in your project.")}>📊 Excel</button>
-      <button style={s.expBtn("#dc2626")} onClick={() => alert("PDF: use jsPDF or your backend PDF route.")}>📑 PDF</button>
-      <button style={s.expBtn("#7c3aed")} onClick={() => window.print()}>🖨️ Print</button>
-    </>
-  );
-}
-
-function SearchInput({ value, onChange }) {
-  return (
-    <div style={s.searchWrap}>
-      <span style={s.searchIco}>🔍</span>
-      <input
-        style={s.searchInput}
-        placeholder="Search..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
+// ═══════════════════════════════════════════════════════════════════════════
+// REUSABLE UI COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════
+const KPICard = ({ icon: Icon, label, value, color, trend }) => (
+  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 20, display: "flex", gap: 16, alignItems: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+    <div style={{ width: 56, height: 56, borderRadius: 12, background: color + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <Icon size={28} color={color} strokeWidth={1.5} />
     </div>
-  );
-}
-
-function FilterBar({ open, onToggle, children }) {
-  return (
-    <div style={s.filterBar}>
-      <div
-        style={s.filterToggle}
-        onClick={onToggle}
-      >
-        <span style={{ color: G, fontSize: 14 }}>⚙</span>
-        <span style={{ fontWeight: 600, fontSize: 13, color: "#111827", flex: 1 }}>Filters</span>
-        <span style={{ color: "#6b7280", transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "none" }}>▼</span>
-      </div>
-      {open && <div style={s.filterBody}>{children}</div>}
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 12, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#1f2937", lineHeight: 1 }}>{value}</div>
+      {trend && <div style={{ fontSize: 11, color: COLORS.success, marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}><TrendingUp size={14} />{trend}</div>}
     </div>
-  );
-}
+  </div>
+);
 
-function FG({ label, children }) {
-  return (
-    <div style={s.fg}>
-      <label style={s.fgLabel}>{label}</label>
-      {children}
-    </div>
-  );
-}
+const StatusBadge = ({ status }) => {
+  const map = {
+    Sent: { bg: "#dcfce7", color: "#15803d" }, Viewed: { bg: "#ccfbf1", color: "#0f766e" },
+    Accepted: { bg: "#dbeafe", color: "#1d4ed8" }, Rejected: { bg: "#fee2e2", color: "#b91c1c" },
+    Scheduled: { bg: "#fef3c7", color: "#b45309" }, Completed: { bg: "#dcfce7", color: "#15803d" },
+    Open: { bg: "#dbeafe", color: "#1d4ed8" }, Cancelled: { bg: "#fee2e2", color: "#b91c1c" },
+    Draft: { bg: "#f3f4f6", color: "#374151" }, Active: { bg: "#dcfce7", color: "#15803d" },
+    Inactive: { bg: "#f3f4f6", color: "#374151" }, Customer: { bg: "#dcfce7", color: "#15803d" },
+    Call: { bg: "#ede9fe", color: "#6d28d9" }, Email: { bg: "#dbeafe", color: "#1d4ed8" },
+    Meeting: { bg: "#fef3c7", color: "#b45309" },
+  };
+  const s = map[status] || { bg: "#f3f4f6", color: "#374151" };
+  return <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 8, background: s.bg, color: s.color, fontSize: 12, fontWeight: 600 }}>{status}</span>;
+};
 
-function FilterActions({ onClear }) {
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginLeft: "auto" }}>
-      <button style={s.btn("gray", "sm")} onClick={onClear}>✕ Clear</button>
-    </div>
-  );
-}
+const Avatar = ({ name, size = 36 }) => (
+  <div style={{ width: size, height: size, borderRadius: "50%", background: COLORS.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size > 40 ? 16 : 12, fontWeight: 600, flexShrink: 0 }}>
+    {getInitials(name)}
+  </div>
+);
 
-function Modal({ title, onClose, children }) {
+const Button = ({ children, variant = "primary", size = "md", onClick, icon: Icon, disabled }) => {
+  const base = { padding: size === "sm" ? "6px 12px" : "10px 16px", fontSize: size === "sm" ? 12 : 13, fontWeight: 600, border: "none", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, transition: "all 0.2s", opacity: disabled ? 0.6 : 1 };
+  const vars = { primary: { background: COLORS.primary, color: "white" }, secondary: { background: COLORS.bg, color: "#1f2937", border: `1px solid ${COLORS.border}` }, danger: { background: COLORS.danger, color: "white" } };
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...vars[variant] }}>{Icon && <Icon size={16} />}{children}</button>;
+};
+
+const Modal = ({ title, open, onClose, children, maxWidth = 600 }) => {
+  if (!open) return null;
   return (
-    <div style={s.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={s.modalBox}>
-        <div style={s.modalHdr}>
-          <h3 style={s.modalTitle}>{title}</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280", lineHeight: 1 }}>×</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: COLORS.bgCard, borderRadius: 12, width: "90%", maxWidth, maxHeight: "90vh", overflow: "auto", padding: 28, boxShadow: "0 20px 25px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: COLORS.neutral }}>×</button>
         </div>
         {children}
       </div>
     </div>
   );
-}
+};
 
-function FF({ label, required, fullWidth, children }) {
-  return (
-    <div style={{ ...s.fg2, ...(fullWidth ? { gridColumn: "1/-1" } : {}) }}>
-      <label style={s.fgLabel2}>{label}{required && <span style={{ color: RED }}> *</span>}</label>
-      {children}
+const inputStyle = { width: "100%", padding: "8px 10px", border: `1px solid ${COLORS.border}`, borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" };
+const labelStyle = { fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 };
+
+const Th = ({ children }) => (
+  <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: COLORS.neutral, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg, whiteSpace: "nowrap" }}>{children}</th>
+);
+const Td = ({ children, style: s }) => (
+  <td style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 13, ...s }}>{children}</td>
+);
+const NoData = ({ cols, message = "No records found" }) => (
+  <tr><td colSpan={cols} style={{ padding: 40, textAlign: "center", color: COLORS.neutral }}>{message}</td></tr>
+);
+
+const TableCard = ({ title, count, children, onExport, searchVal, onSearch }) => (
+  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+    <div style={{ padding: "14px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{title}{count !== undefined && ` (${count})`}</h3>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        {onSearch && (
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: COLORS.neutral }} />
+            <input placeholder="Search…" value={searchVal} onChange={e => onSearch(e.target.value)} style={{ ...inputStyle, width: 200, paddingLeft: 32 }} />
+          </div>
+        )}
+        {onExport && <Button variant="secondary" size="sm" icon={Download} onClick={onExport}>Export</Button>}
+      </div>
     </div>
-  );
-}
+    <div style={{ overflowX: "auto" }}>{children}</div>
+  </div>
+);
 
-function MFooter({ onClose, onSave, saveLabel = "Save" }) {
-  return (
-    <div style={s.mFooter}>
-      <button style={s.btn("gray")} onClick={onClose}>Cancel</button>
-      <button style={s.btn("green")} onClick={onSave}>✓ {saveLabel}</button>
-    </div>
-  );
-}
+const FilterBar = ({ children }) => (
+  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 16, marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+    {children}
+  </div>
+);
+const FilterGroup = ({ label, children }) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.neutral, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
+    {children}
+  </div>
+);
 
-/* ─────────────────────────────────────────────
-   CSV EXPORT HELPER
-───────────────────────────────────────────── */
-function exportCSV(rows, filename = "export.csv") {
-  if (!rows || rows.length === 0) { alert("Nothing to export."); return; }
-  const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-}
-
-/* ─────────────────────────────────────────────
-   SEED DATA
-───────────────────────────────────────────── */
-const SEED_LEADS = [
-  { id: "CO0009", name: "Prime Grow Traders, Sampath Kumar",          mobile: "6380204252",      email: "",                 source: "Referral",   lastFU: "06/02/2026", stage: "New",       assigned: "Er Sarath Raj"  },
-  { id: "CO0010", name: "Westry INC, Santhosh Kumar",                 mobile: "9626733733",      email: "",                 source: "Exhibition", lastFU: "06/02/2026", stage: "Contacted", assigned: "Ms Dharshiha C" },
-  { id: "CO0011", name: "Sarath Chandran Ramakrishnan",               mobile: "cant connect",    email: "",                 source: "Cold Call",  lastFU: "06/02/2026", stage: "New",       assigned: "Er Sarath Raj"  },
-  { id: "CO0012", name: "EXHICONNECT",                                mobile: "9904044745",      email: "",                 source: "Exhibition", lastFU: "06/02/2026", stage: "Qualified", assigned: "Mr Leejin"      },
-  { id: "CO0013", name: "Sanket Electrotech, Arvind Patel",           mobile: "9687689988",      email: "",                 source: "Website",    lastFU: "06/02/2026", stage: "Proposal",  assigned: "Er Sarath Raj"  },
-  { id: "CO0014", name: "Kaveri Polymers, Rajan M",                   mobile: "9944123456",      email: "kaveri@email.com", source: "Referral",   lastFU: "06/10/2026", stage: "Contacted", assigned: "Ms Dharshiha C" },
-];
-
-const SEED_FU = [
-  { contact: "Dharshini Rubber Products, Karthik", start: "06/07/2026 09:54", end: "06/07/2026 16:55", status: "Scheduled", type: "Call",    cat: "call",  assigned: "SA", title: "contact on 1-6",  addedBy: "Er Sarath Raj"  },
-  { contact: "SRI MADURA RUBBER, Manikandan",      start: "06/04/2026 10:00", end: "06/04/2026 13:09", status: "Open",      type: "Call",    cat: "call",  assigned: "SA", title: "didnt pickup",    addedBy: "Er Sarath Raj"  },
-  { contact: "Prime Grow Traders",                 start: "06/05/2026 11:00", end: "06/05/2026 12:00", status: "Completed", type: "Meeting", cat: "email", assigned: "DC", title: "demo call",       addedBy: "Ms Dharshiha C" },
-];
-
-const SEED_CAMPAIGNS = [
-  { name: "shalijah",          type: "Email", status: "Sent", by: "Ms Shalijah Stalin Rajakumar", date: "05/26/2026" },
-  { name: "Digital Marketing", type: "Email", status: "Sent", by: "Ms Shalijah Stalin Rajakumar", date: "05/26/2026" },
-];
-
-/* ─────────────────────────────────────────────
-   CRM SUB-NAV
-   NOTE: No page background wrapper here.
-   The outer <main> in App.jsx already provides
-   the grey background, margin, and padding.
-───────────────────────────────────────────── */
-function CRMNav() {
-  const location = useLocation();
-  const links = [
-    { label: "CRM",               path: "/crm" },
-    { label: "Leads",             path: "/crm/leads" },
-    { label: "Follow ups",        path: "/crm/follow-ups" },
-    { label: "Campaigns",         path: "/crm/campaigns" },
-    { label: "Contacts Login",    path: "/crm/contacts-login" },
-    { label: "Reports",           path: "/crm/reports" },
-    { label: "Proposal template", path: "/crm/proposal-template" },
-    { label: "Proposals",         path: "/crm/proposals" },
-    { label: "Sources",           path: "/crm/sources" },
-    { label: "Life Stage",        path: "/crm/life-stage" },
-    { label: "Followup Category", path: "/crm/followup-category" },
-    { label: "Settings",          path: "/crm/settings" },
+// ═══════════════════════════════════════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════════════════════════════════════
+const CRMNav = ({ activeTab, onTabChange, counts = {} }) => {
+  const tabs = [
+    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { id: "leads",     label: "Leads",     icon: Users,        count: counts.leads },
+    { id: "proposals", label: "Proposals", icon: FileText,     count: counts.proposals },
+    { id: "followups", label: "Follow Ups",icon: MessageSquare },
+    { id: "campaigns", label: "Campaigns", icon: Megaphone },
+    { id: "templates", label: "Templates", icon: Layout },
+    { id: "contacts",  label: "Contacts",  icon: UserCheck },
+    { id: "reports",   label: "Reports",   icon: PieChart },
+    { id: "sources",   label: "Sources",   icon: Globe },
+    { id: "settings",  label: "Settings",  icon: Settings },
   ];
   return (
-    <div style={s.subNav}>
-      <span style={s.subNavBrand}>🤝 CRM</span>
-      {links.map((l) => {
-        const active =
-          location.pathname === l.path ||
-          (l.path !== "/crm" && location.pathname.startsWith(l.path));
+    <div style={{ background: COLORS.bgCard, borderBottom: `1px solid ${COLORS.border}`, display: "flex", overflowX: "auto" }}>
+      {tabs.map(tab => {
+        const Icon = tab.icon;
+        const active = activeTab === tab.id;
         return (
-          <Link key={l.path} to={l.path} style={s.navLink(active)}>
-            {l.label}
-          </Link>
+          <button key={tab.id} onClick={() => onTabChange(tab.id)} style={{ padding: "14px 18px", border: "none", background: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: active ? 600 : 500, color: active ? COLORS.primary : COLORS.neutral, borderBottom: active ? `3px solid ${COLORS.primary}` : "3px solid transparent", whiteSpace: "nowrap" }}>
+            <Icon size={15} strokeWidth={1.5} />{tab.label}
+            {tab.count > 0 && <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: COLORS.primary, color: "#fff", fontSize: 10, fontWeight: 700, padding: "0 5px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{tab.count}</span>}
+          </button>
         );
       })}
     </div>
   );
-}
+};
 
-/* ─────────────────────────────────────────────
-   DASHBOARD
-───────────────────────────────────────────── */
-function CRMDashboard() {
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>CRM Dashboard</div>
-          <div style={s.breadcrumb}>Overview of your CRM activity</div>
-        </div>
-      </div>
-
-      {/* Stat cards */}
-      <div style={s.statGrid}>
-        {[
-          { icon: "📅", color: TEAL,   label: "Today's Follow Ups",  value: 0  },
-          { icon: "👤", color: G,      label: "My Leads",             value: 22 },
-          { icon: "🔄", color: AMBER,  label: "Lead Conversions",     value: 0  },
-          { icon: "👥", color: PURPLE, label: "Customers",            value: 1  },
-        ].map((stat) => (
-          <div key={stat.label} style={s.statCard}>
-            <div style={s.statIcon(stat.color)}>{stat.icon}</div>
-            <div>
-              <div style={s.statLabel}>{stat.label}</div>
-              <div style={s.statValue}>{stat.value}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Two-column row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-        <div style={s.card}>
-          <div style={s.cardHeader}><span style={s.cardTitle}>My Follow ups</span></div>
-          <div style={{ ...s.cardBody, padding: 0 }}>
-            <table style={s.table}>
-              <tbody>
-                {[["Scheduled","amber"],["Open","blue"],["Cancelled","red"],["Completed","green"]].map(([k, v]) => (
-                  <tr key={k}>
-                    <td style={s.td}>{k}</td>
-                    <td style={{ ...s.td, textAlign: "right" }}><Badge v={v}>0</Badge></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div style={s.card}>
-          <div style={s.cardHeader}><span style={s.cardTitle}>Leads to Customer Conversion</span></div>
-          <div style={s.cardBody}>
-            <table style={s.table}>
-              <thead><tr><th style={s.th}>Converted By</th><th style={s.th}>Total</th></tr></thead>
-              <tbody><NoData cols={2} /></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Follow ups by user */}
-      <div style={s.card}>
-        <div style={s.cardHeader}>
-          <span style={s.cardTitle}>Follow ups by user</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="date" style={{ ...s.ctrl, width: 140 }} defaultValue="2026-01-01" />
-            <span style={{ fontSize: 12, color: "#6b7280", lineHeight: "2.2" }}>to</span>
-            <input type="date" style={{ ...s.ctrl, width: 140 }} defaultValue="2026-12-31" />
-          </div>
-        </div>
-        <div style={s.cardBody}>
-          <div style={s.tableWrap}>
-            <table style={s.table}>
-              <thead>
-                <tr>{["User","Scheduled","Open","Cancelled","Completed","None","Total"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {[["Er Sarath Raj",9,0,0,0,44,53],["Mr Leejin",1,0,0,0,0,1]].map(([u,...vals]) => (
-                  <tr key={u}>
-                    <td style={s.td}>{u}</td>
-                    {vals.map((v,i) => (
-                      <td key={i} style={s.td}>
-                        {i === vals.length - 1
-                          ? <Badge v="teal">{v}</Badge>
-                          : <>{v}<br /><a href="#" style={{ color: TEAL, fontSize: 11 }}>View</a></>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom three cols */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 14 }}>
-        {[
-          { title: "Sources",     cols: ["Source","Total","Conv."],  rows: [] },
-          { title: "Life Stages", cols: ["Stage","Total"],           rows: [] },
-        ].map(({ title, cols, rows }) => (
-          <div key={title} style={s.card}>
-            <div style={s.cardHeader}><span style={s.cardTitle}>{title}</span></div>
-            <div style={s.cardBody}>
-              <table style={s.table}>
-                <thead><tr>{cols.map((c) => <th key={c} style={s.th}>{c}</th>)}</tr></thead>
-                <tbody><NoData cols={cols.length} /></tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-        <div style={s.card}>
-          <div style={s.cardHeader}>
-            <span style={s.cardTitle}>🎂 Birthdays</span>
-            <button style={s.btn("teal","sm")}>✉ Send Wishes</button>
-          </div>
-          <div style={s.cardBody}>
-            <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>Today</div>
-            <table style={s.table}><thead><tr><th style={s.th}>#</th><th style={s.th}>Name</th></tr></thead><tbody><NoData cols={2} /></tbody></table>
-            <div style={{ fontWeight: 600, fontSize: 12, margin: "12px 0 6px" }}>Upcoming</div>
-            <table style={s.table}><thead><tr><th style={s.th}>#</th><th style={s.th}>Name</th><th style={s.th}>Birthday</th></tr></thead><tbody><NoData cols={3} /></tbody></table>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   LEADS
-───────────────────────────────────────────── */
-function LeadsPage() {
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [showAdd, setShowAdd]       = useState(false);
-  const [view, setView]             = useState("list");
-  const [search, setSearch]         = useState("");
-  const [entries, setEntries]       = useState(25);
-  const [filters, setFilters]       = useState({ source: "", stage: "", assigned: "" });
-  const [form, setForm]             = useState({ mobile: "", email: "", source: "", stage: "New", assigned: "Ms Dharshiha C" });
-
-  const filtered = SEED_LEADS.filter((l) => {
-    const q = search.toLowerCase();
-    const ms = !q || [l.name, l.mobile, l.email, l.id].some((v) => v.toLowerCase().includes(q));
-    return ms
-      && (!filters.source   || l.source   === filters.source)
-      && (!filters.stage    || l.stage    === filters.stage)
-      && (!filters.assigned || l.assigned === filters.assigned);
-  }).slice(0, entries);
-
-  const stageColor = { New: "gray", Contacted: "teal", Qualified: "blue", Proposal: "green" };
-
-  const handleCSV = () => exportCSV(
-    [["ID","Name","Mobile","Email","Source","Last FU","Stage","Assigned"],
-     ...filtered.map((l) => [l.id, l.name, l.mobile, l.email, l.source, l.lastFU, l.stage, l.assigned])],
-    "leads.csv"
-  );
+// ═══════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════
+const CRMDashboard = ({ leads, proposals, followups }) => {
+  const totalLeads = leads.length;
+  const totalProposalValue = proposals.reduce((s, p) => s + (p.value || 0), 0);
+  const acceptedValue = proposals.filter(p => p.status === "Accepted").reduce((s, p) => s + (p.value || 0), 0);
+  const pendingProposals = proposals.filter(p => p.status === "Sent").length;
+  const leaderboard = USERS.map(u => ({ name: u, leads: leads.filter(l => l.assigned === u).length })).sort((a, b) => b.leads - a.leads);
 
   return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Leads</div>
-          <div style={s.breadcrumb}>CRM › Leads</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => setShowAdd(true)}>+ Add Lead</button>
+    <div style={{ padding: 24 }}>
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, margin: "0 0 8px 0" }}>CRM Dashboard</h1>
+        <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Overview of your sales pipeline and customer relationships</p>
       </div>
-
-      <FilterBar open={filterOpen} onToggle={() => setFilterOpen(!filterOpen)}>
-        <FG label="Source">
-          <select style={s.ctrl} value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })}>
-            <option value="">All Sources</option>
-            {["Website","Referral","Cold Call","Exhibition"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Life Stage">
-          <select style={s.ctrl} value={filters.stage} onChange={(e) => setFilters({ ...filters, stage: e.target.value })}>
-            <option value="">All Stages</option>
-            {["New","Contacted","Qualified","Proposal"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Assigned to">
-          <select style={s.ctrl} value={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.value })}>
-            <option value="">All Users</option>
-            {["Er Sarath Raj","Ms Dharshiha C","Mr Leejin"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Date From"><input type="date" style={s.ctrl} /></FG>
-        <FG label="Date To"><input type="date" style={s.ctrl} /></FG>
-        <FilterActions onClear={() => setFilters({ source: "", stage: "", assigned: "" })} />
-      </FilterBar>
-
-      <div style={s.card}>
-        <div style={s.cardHeader}>
-          <span style={s.cardTitle}>All Leads</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button style={s.btn(view === "list"   ? "green" : "outline", "sm")} onClick={() => setView("list")}>☰ List</button>
-            <button style={s.btn(view === "kanban" ? "green" : "gray",    "sm")} onClick={() => setView("kanban")}>⬛ Kanban</button>
-          </div>
-        </div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries value={entries} onChange={setEntries} /><ExportButtons onCSV={handleCSV} /></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-
-          {view === "list" ? (
-            <div style={s.tableWrap}>
-              <table style={s.table}>
-                <thead>
-                  <tr>{["Action","Contact ID","Name","Mobile","Email","Source","Last Follow Up","Upcoming","Life Stage","Assigned to"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? <NoData cols={10} /> : filtered.map((l) => (
-                    <tr key={l.id}>
-                      <td style={s.td}>
-                        <div style={s.actionRow}>
-                          <button style={s.btn("teal",   "sm")} title="Edit">✏️</button>
-                          <button style={s.btn("purple", "sm")} title="View">👁</button>
-                          <button style={s.btn("red",    "sm")} title="Delete">🗑</button>
-                        </div>
-                      </td>
-                      <td style={{ ...s.td, color: TEAL, fontWeight: 500 }}>{l.id}</td>
-                      <td style={{ ...s.td, maxWidth: 160 }}>{l.name}</td>
-                      <td style={s.td}>{l.mobile}</td>
-                      <td style={s.td}>{l.email || "—"}</td>
-                      <td style={s.td}>{l.source ? <Badge v="gray">{l.source}</Badge> : "—"}</td>
-                      <td style={s.td}>{l.lastFU}</td>
-                      <td style={s.td}><button style={s.btn("green","sm")}>+ Follow Up</button></td>
-                      <td style={s.td}><Badge v={stageColor[l.stage] || "gray"}>{l.stage}</Badge></td>
-                      <td style={s.td}>{l.assigned}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-              {["New","Contacted","Qualified","Proposal"].map((stage) => {
-                const bg  = { New:"#e5e7eb", Contacted:"#ccfbf1", Qualified:"#ede9fe", Proposal:"#dcfce7" };
-                const col = { New:"#374151", Contacted:"#0f766e",  Qualified:"#6d28d9",  Proposal:"#15803d"  };
-                return (
-                  <div key={stage} style={{ background: "#f9fafb", borderRadius: 8, padding: 10, border: "1px solid #e5e7eb" }}>
-                    <div style={{ fontWeight: 600, fontSize: 11, color: col[stage], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10, padding: "3px 8px", background: bg[stage], borderRadius: 4 }}>{stage}</div>
-                    {filtered.filter((l) => l.stage === stage).length === 0
-                      ? <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: 10 }}>Empty</div>
-                      : filtered.filter((l) => l.stage === stage).map((l) => (
-                        <div key={l.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, padding: 10, marginBottom: 8, fontSize: 12 }}>
-                          <div style={{ fontWeight: 500, marginBottom: 4 }}>{l.name}</div>
-                          <div style={{ color: "#6b7280" }}>{l.mobile}</div>
-                          <div style={{ marginTop: 6 }}><Badge v="gray">{l.id}</Badge></div>
-                        </div>
-                      ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div style={s.pagInfo}>Showing {filtered.length} of {SEED_LEADS.length} entries</div>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 32 }}>
+        <KPICard icon={Users}     label="Total Leads"          value={totalLeads}                     color={COLORS.primary}   trend="+12% this month" />
+        <KPICard icon={FileText}  label="Pipeline Value"       value={formatCurrency(totalProposalValue)} color={COLORS.secondary} />
+        <KPICard icon={Check}     label="Accepted Proposals"   value={formatCurrency(acceptedValue)}  color={COLORS.success}   />
+        <KPICard icon={AlertCircle} label="Pending Proposals"  value={pendingProposals}               color={COLORS.warning}   />
       </div>
-
-      {showAdd && (
-        <Modal title="Add New Lead" onClose={() => setShowAdd(false)}>
-          <div style={s.formGrid(2)}>
-            <FF label="Contact Type" fullWidth>
-              <div style={{ display: "flex", gap: 16, marginBottom: 6 }}>
-                <label style={{ fontSize: 13 }}><input type="radio" name="ctype" defaultChecked /> Individual</label>
-                <label style={{ fontSize: 13 }}><input type="radio" name="ctype" /> Business</label>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        <div style={{ background: COLORS.bgCard, borderRadius: 12, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg, display: "flex", justifyContent: "space-between" }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Recent Leads</h3>
+            <span style={{ fontSize: 12, color: COLORS.neutral }}>{leads.length} total</span>
+          </div>
+          {leads.length === 0 && <div style={{ padding: 32, textAlign: "center", color: COLORS.neutral }}>No leads yet</div>}
+          {leads.slice(0, 5).map((lead, idx) => (
+            <div key={lead.id} style={{ padding: "14px 20px", borderBottom: idx < 4 ? `1px solid ${COLORS.border}` : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{lead.name}</div>
+                <div style={{ fontSize: 12, color: COLORS.neutral }}>{lead.mobile}</div>
               </div>
-              <select style={s.select}><option>Lead</option><option>Customer</option></select>
-            </FF>
-            <FF label="Contact ID"><input style={s.input} placeholder="Auto-generated if empty" /></FF>
-            <FF label="Mobile" required><input style={s.input} value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} /></FF>
-            <FF label="Alternate Number"><input style={s.input} /></FF>
-            <FF label="Email"><input style={s.input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></FF>
-            <FF label="Landline"><input style={s.input} /></FF>
-            <FF label="Source">
-              <select style={s.select} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
-                <option value="">Select Source</option>
-                {["Website","Referral","Cold Call","Exhibition"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Life Stage">
-              <select style={s.select} value={form.stage} onChange={(e) => setForm({ ...form, stage: e.target.value })}>
-                {["New","Contacted","Qualified","Proposal"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Assigned to" required fullWidth>
-              <select style={s.select} value={form.assigned} onChange={(e) => setForm({ ...form, assigned: e.target.value })}>
-                {["Ms Dharshiha C","Er Sarath Raj","Mr Leejin"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-          </div>
-          <MFooter onClose={() => setShowAdd(false)} onSave={() => { alert("Lead saved! Connect to Supabase to persist."); setShowAdd(false); }} saveLabel="Save Lead" />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   FOLLOW UPS
-───────────────────────────────────────────── */
-function FollowUpsPage() {
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [showAdd, setShowAdd]       = useState(false);
-  const [tab, setTab]               = useState("fu");
-  const [search, setSearch]         = useState("");
-  const [filters, setFilters]       = useState({ status: "", type: "", cat: "" });
-  const [form, setForm]             = useState({ title: "", status: "Scheduled", type: "Call", cat: "call", assigned: "Ms Dharshiha C" });
-
-  const filtered = SEED_FU.filter((f) => {
-    const q = search.toLowerCase();
-    const ms = !q || [f.contact, f.title, f.addedBy].some((v) => v.toLowerCase().includes(q));
-    return ms
-      && (!filters.status || f.status === filters.status)
-      && (!filters.type   || f.type   === filters.type)
-      && (!filters.cat    || f.cat    === filters.cat);
-  });
-
-  const handleCSV = () => exportCSV(
-    [["Contact","Start","End","Status","Type","Category","Assigned","Title","Added By"],
-     ...filtered.map((f) => [f.contact,f.start,f.end,f.status,f.type,f.cat,f.assigned,f.title,f.addedBy])],
-    "followups.csv"
-  );
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Follow Ups</div>
-          <div style={s.breadcrumb}>CRM › Follow ups</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={s.btn("green")} onClick={() => setShowAdd(true)}>+ Add Follow Up</button>
-          <button style={s.btn("teal")}  onClick={() => setShowAdd(true)}>+ Advanced</button>
-        </div>
-      </div>
-
-      <FilterBar open={filterOpen} onToggle={() => setFilterOpen(!filterOpen)}>
-        <FG label="Status">
-          <select style={s.ctrl} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-            <option value="">All Statuses</option>
-            {["Scheduled","Open","Completed","Cancelled"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Type">
-          <select style={s.ctrl} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
-            <option value="">All Types</option>
-            {["Call","Email","Meeting","WhatsApp"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Category">
-          <select style={s.ctrl} value={filters.cat} onChange={(e) => setFilters({ ...filters, cat: e.target.value })}>
-            <option value="">All</option>
-            {["call","email"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </FG>
-        <FG label="Date From"><input type="date" style={s.ctrl} /></FG>
-        <FG label="Date To"><input type="date" style={s.ctrl} /></FG>
-        <FilterActions onClear={() => setFilters({ status: "", type: "", cat: "" })} />
-      </FilterBar>
-
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>All Follow Ups</span></div>
-        <div style={s.cardBody}>
-          <div style={s.tabs}>
-            <button style={s.tab(tab === "fu")}        onClick={() => setTab("fu")}>Follow ups</button>
-            <button style={s.tab(tab === "recurring")} onClick={() => setTab("recurring")}>Recurring Follow up</button>
-          </div>
-
-          {tab === "fu" ? (
-            <>
-              <div style={s.toolbar}>
-                <div style={s.toolbarL}><ShowEntries /><ExportButtons onCSV={handleCSV} /></div>
-                <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ display: "inline-block", padding: "4px 10px", borderRadius: 6, background: getStageColor(lead.stage), color: getStageTextColor(lead.stage), fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{lead.stage}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{formatCurrency(lead.value)}</div>
               </div>
-              <div style={s.tableWrap}>
-                <table style={s.table}>
-                  <thead>
-                    <tr>{["Action","Contact","Start","End","Status","Type","Category","Assigned","Title","Added By"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {filtered.length === 0 ? <NoData cols={10} /> : filtered.map((f, i) => (
-                      <tr key={i}>
-                        <td style={s.td}>
-                          <div style={s.actionRow}>
-                            <button style={s.btn("teal","sm")}>✏️</button>
-                            <button style={s.btn("red", "sm")}>🗑</button>
-                          </div>
-                        </td>
-                        <td style={{ ...s.td, maxWidth: 150 }}>{f.contact}</td>
-                        <td style={s.td}>{f.start}</td>
-                        <td style={s.td}>{f.end}</td>
-                        <td style={s.td}><StatusBadge status={f.status} /></td>
-                        <td style={s.td}>{f.type}</td>
-                        <td style={s.td}><Badge v="gray">{f.cat}</Badge></td>
-                        <td style={s.td}><div style={s.avatar}>{f.assigned}</div></td>
-                        <td style={s.td}>{f.title}</td>
-                        <td style={s.td}>{f.addedBy}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: COLORS.bgCard, borderRadius: 12, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Team Performance</h3>
+          </div>
+          {leaderboard.map((m, idx) => (
+            <div key={m.name} style={{ padding: "14px 20px", borderBottom: idx < leaderboard.length - 1 ? `1px solid ${COLORS.border}` : "none", display: "flex", alignItems: "center", gap: 12 }}>
+              <Avatar name={m.name} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</div>
+                <div style={{ fontSize: 12, color: COLORS.neutral }}>{m.leads} leads</div>
               </div>
-              <div style={s.pagInfo}>Showing {filtered.length} of {SEED_FU.length} entries</div>
-            </>
-          ) : (
-            <div style={s.noData}>No recurring follow ups set up</div>
-          )}
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>{idx + 1}</div>
+            </div>
+          ))}
         </div>
       </div>
-
-      {showAdd && (
-        <Modal title="Add Follow Up" onClose={() => setShowAdd(false)}>
-          <div style={s.formGrid(2)}>
-            <FF label="Title" required fullWidth><input style={s.input} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></FF>
-            <FF label="Contact / Lead" required fullWidth>
-              <select style={s.select}><option value="">Select Contact</option>{SEED_LEADS.map((l) => <option key={l.id}>{l.name}</option>)}</select>
-            </FF>
-            <FF label="Status">
-              <select style={s.select} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                {["Scheduled","Open","Completed","Cancelled"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Follow Up Type" required>
-              <select style={s.select} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                {["Call","Email","Meeting","WhatsApp"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Start Datetime" required><input type="datetime-local" style={s.input} /></FF>
-            <FF label="End Datetime"   required><input type="datetime-local" style={s.input} /></FF>
-            <FF label="Category" required>
-              <select style={s.select} value={form.cat} onChange={(e) => setForm({ ...form, cat: e.target.value })}>
-                {["call","email"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Assigned to" required>
-              <select style={s.select} value={form.assigned} onChange={(e) => setForm({ ...form, assigned: e.target.value })}>
-                {["Ms Dharshiha C","Er Sarath Raj","Mr Leejin"].map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </FF>
-            <FF label="Description" fullWidth><textarea style={{ ...s.textarea, height: 80 }} /></FF>
-            <div style={{ gridColumn: "1/-1" }}>
-              <label style={{ fontSize: 13 }}><input type="checkbox" style={{ marginRight: 6 }} />Send notification to contact</label>
-            </div>
-          </div>
-          <MFooter onClose={() => setShowAdd(false)} onSave={() => { alert("Follow up saved!"); setShowAdd(false); }} />
-        </Modal>
-      )}
     </div>
   );
-}
+};
 
-/* ─────────────────────────────────────────────
-   CAMPAIGNS
-───────────────────────────────────────────── */
-function CampaignsPage() {
-  const navigate = useNavigate();
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [search, setSearch]         = useState("");
-  const [filters, setFilters]       = useState({ type: "", status: "", by: "" });
-  const [campaigns, setCampaigns]   = useState(SEED_CAMPAIGNS);
+// ═══════════════════════════════════════════════════════════════════════════
+// LEADS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const LeadsPage = ({ leads, onAddLead, onEditLead, onDeleteLead, onConvertLead, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [viewLead, setViewLead] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStage, setFilterStage] = useState("");
+  const [filterSource, setFilterSource] = useState("");
+  const [filterAssigned, setFilterAssigned] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const blankForm = { name: "", contact: "", email: "", phone: "", company: "", source: "Website", stage: "New", value: "", assigned: USERS[0], notes: "" };
+  const [formData, setFormData] = useState(blankForm);
 
-  const filtered = campaigns.filter((c) => {
-    const q = search.toLowerCase();
-    const ms = !q || [c.name, c.by, c.type].some((v) => v.toLowerCase().includes(q));
-    return ms
-      && (!filters.type   || c.type   === filters.type)
-      && (!filters.status || c.status === filters.status)
-      && (!filters.by     || c.by     === filters.by);
-  });
+  const filteredLeads = useMemo(() =>
+    leads.filter(l => {
+      const q = searchTerm.toLowerCase();
+      const match = !q || [l.name, l.contact, l.email, l.mobile, l.phone].some(v => (v || "").toLowerCase().includes(q));
+      return match && (!filterStage || l.stage === filterStage) && (!filterSource || l.source === filterSource) && (!filterAssigned || l.assigned === filterAssigned);
+    }), [leads, searchTerm, filterStage, filterSource, filterAssigned]);
 
-  const handleCSV = () => exportCSV(
-    [["Name","Type","Status","Created By","Date"],
-     ...filtered.map((c) => [c.name, c.type, c.status, c.by, c.date])],
-    "campaigns.csv"
-  );
+  const resetForm = () => { setFormData(blankForm); setEditingId(null); };
+
+  const openEdit = (lead) => {
+    setFormData({ ...lead, phone: lead.phone || lead.mobile || "" });
+    setEditingId(lead.id);
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.name || !formData.phone) { alert("Lead Name and Phone are required"); return; }
+    setLoading(true);
+    try {
+      if (editingId) { await onEditLead(editingId, formData); }
+      else { await onAddLead({ ...formData, value: Number(formData.value) || 0 }); }
+      setShowModal(false); resetForm(); onRefresh();
+    } catch (err) { alert("Error saving lead: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this lead?")) return;
+    setLoading(true);
+    try { await onDeleteLead(id); onRefresh(); }
+    catch (err) { alert("Error deleting lead: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleConvert = async (id) => {
+    if (!window.confirm("Convert this lead to customer?")) return;
+    setLoading(true);
+    try { await onConvertLead(id); alert("Lead converted!"); onRefresh(); }
+    catch (err) { alert("Error converting lead: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const stageColors = { New: COLORS.neutral, Contacted: COLORS.info, Qualified: COLORS.purple, Proposal: COLORS.warning };
 
   return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <div style={s.pageTitle}>Campaigns</div>
-          <div style={s.breadcrumb}>CRM › Campaigns</div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Leads</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Manage and track your sales leads · {filteredLeads.length} records</p>
         </div>
-        <button style={s.btn("green")} onClick={() => navigate("/crm/campaigns/create")}>+ Add</button>
+        <Button icon={Plus} onClick={() => { resetForm(); setShowModal(true); }}>Add New Lead</Button>
       </div>
 
-      <FilterBar open={filterOpen} onToggle={() => setFilterOpen(!filterOpen)}>
-        <FG label="Campaign Type">
-          <select style={s.ctrl} value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
-            <option value="">All Types</option>
-            {["Email","SMS","WhatsApp"].map((o) => <option key={o}>{o}</option>)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+        {STAGES.map(s => {
+          const cnt = leads.filter(l => l.stage === s).length;
+          return (
+            <div key={s} onClick={() => setFilterStage(filterStage === s ? "" : s)}
+              style={{ background: COLORS.bgCard, border: `1px solid ${filterStage === s ? stageColors[s] : COLORS.border}`, borderLeft: `4px solid ${stageColors[s]}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer" }}>
+              <div style={{ fontSize: 11, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase" }}>{s}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: stageColors[s], marginTop: 4 }}>{cnt}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <FilterBar>
+        <FilterGroup label="Search">
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: COLORS.neutral }} />
+            <input placeholder="Search leads…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: 220, paddingLeft: 32 }} />
+          </div>
+        </FilterGroup>
+        <FilterGroup label="Stage">
+          <select value={filterStage} onChange={e => setFilterStage(e.target.value)} style={{ ...inputStyle, width: 140 }}>
+            <option value="">All Stages</option>{STAGES.map(o => <option key={o}>{o}</option>)}
           </select>
-        </FG>
-        <FG label="Status">
-          <select style={s.ctrl} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
-            <option value="">All Statuses</option>
-            {["Sent","Draft","Scheduled"].map((o) => <option key={o}>{o}</option>)}
+        </FilterGroup>
+        <FilterGroup label="Source">
+          <select value={filterSource} onChange={e => setFilterSource(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+            <option value="">All Sources</option>{SOURCES.map(o => <option key={o}>{o}</option>)}
           </select>
-        </FG>
-        <FG label="Created By">
-          <select style={s.ctrl} value={filters.by} onChange={(e) => setFilters({ ...filters, by: e.target.value })}>
-            <option value="">All Users</option>
-            <option>Ms Shalijah Stalin Rajakumar</option>
+        </FilterGroup>
+        <FilterGroup label="Assigned">
+          <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+            <option value="">All Users</option>{USERS.map(o => <option key={o}>{o}</option>)}
           </select>
-        </FG>
-        <FilterActions onClear={() => setFilters({ type: "", status: "", by: "" })} />
+        </FilterGroup>
+        <button onClick={() => { setFilterStage(""); setFilterSource(""); setFilterAssigned(""); setSearchTerm(""); }}
+          style={{ ...inputStyle, width: "auto", background: COLORS.bg, cursor: "pointer", color: COLORS.neutral, marginTop: 16 }}>✕ Clear</button>
+        <div style={{ marginLeft: "auto", marginTop: 16 }}>
+          <Button variant="secondary" size="sm" icon={Download}
+            onClick={() => exportCSV([["ID","Name","Phone","Email","Company","Source","Stage","Value","Assigned"],
+              ...filteredLeads.map(l => [l.id, l.name, l.mobile||l.phone, l.email, l.company, l.source, l.stage, l.value||0, l.assigned])], "leads.csv")}>
+            Export CSV
+          </Button>
+        </div>
       </FilterBar>
 
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>All Campaigns</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><ExportButtons onCSV={handleCSV} /></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <div style={s.tableWrap}>
-            <table style={s.table}>
-              <thead>
-                <tr>{["Action","Campaign Name","Type","Status","Created By","Created At"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? <NoData cols={6} /> : filtered.map((c) => (
-                  <tr key={c.name}>
-                    <td style={s.td}>
-                      <div style={s.actionRow}>
-                        <button style={s.btn("teal","sm")}>👁 View</button>
-                        <button style={s.btn("red", "sm")} onClick={() => { if(window.confirm(`Delete "${c.name}"?`)) setCampaigns(campaigns.filter((x) => x.name !== c.name)); }}>🗑</button>
-                      </div>
-                    </td>
-                    <td style={{ ...s.td, fontWeight: 500 }}>{c.name}</td>
-                    <td style={s.td}>{c.type}</td>
-                    <td style={s.td}><StatusBadge status={c.status} /></td>
-                    <td style={s.td}>{c.by}</td>
-                    <td style={s.td}>{c.date}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={s.pagInfo}>Showing {filtered.length} of {campaigns.length} entries</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CampaignCreate() {
-  const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", type: "Email", to: "", subject: "", body: "" });
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Create Campaign</div>
-          <div style={s.breadcrumb}>CRM › Campaigns › Create</div>
-        </div>
-        <button style={s.btn("gray","sm")} onClick={() => navigate("/crm/campaigns")}>← Back</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>Campaign Details</span></div>
-        <div style={s.cardBody}>
-          <div style={s.formGrid(2)}>
-            <FF label="Campaign Name" required><input style={s.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></FF>
-            <FF label="Campaign Type" required>
-              <select style={s.select} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                <option>Email</option><option>SMS</option><option>WhatsApp</option>
-              </select>
-            </FF>
-            <FF label="To" required fullWidth>
-              <select style={s.select}><option value="">Select Recipients</option><option>All Leads</option><option>All Customers</option></select>
-            </FF>
-            <FF label="Subject" required fullWidth><input style={s.input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></FF>
-            <FF label="Email Body" required fullWidth><textarea style={{ ...s.textarea, height: 180 }} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></FF>
-          </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-            Available tags: {"{contact_name}"}, {"{campaign_name}"}, {"{business_name}"}
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-            <button style={s.btn("gray")} onClick={() => navigate("/crm/campaigns")}>Cancel</button>
-            <button style={s.btn("teal")} onClick={() => { if(!form.name.trim()){alert("Name required");return;} alert("Draft saved!"); navigate("/crm/campaigns"); }}>📝 Save Draft</button>
-            <button style={s.btn("green")} onClick={() => { if(!form.name.trim()||!form.subject.trim()){alert("Name & Subject required");return;} alert("Campaign sent!"); navigate("/crm/campaigns"); }}>✉ Send Campaign</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   CONTACTS LOGIN
-───────────────────────────────────────────── */
-function ContactsLoginPage() {
-  const [showAdd, setShowAdd] = useState(false);
-  const [logins, setLogins]   = useState([]);
-  const [search, setSearch]   = useState("");
-  const [form, setForm]       = useState({ prefix: "", firstName: "", lastName: "", contact: "", email: "", mobile: "", dept: "", designation: "", active: true, allowLogin: false });
-
-  const filtered = logins.filter((l) => {
-    const q = search.toLowerCase();
-    return !q || [l.firstName, l.lastName, l.email, l.dept].some((v) => (v||"").toLowerCase().includes(q));
-  });
-
-  const handleSave = () => {
-    if (!form.firstName.trim() || !form.email.trim()) { alert("First Name and Email are required."); return; }
-    setLogins([...logins, { ...form }]);
-    setForm({ prefix: "", firstName: "", lastName: "", contact: "", email: "", mobile: "", dept: "", designation: "", active: true, allowLogin: false });
-    setShowAdd(false);
-  };
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Contacts Login</div>
-          <div style={s.breadcrumb}>CRM › Contacts Login</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => setShowAdd(true)}>+ Add Login</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>All Contact Logins</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><ExportButtons /></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <table style={s.table}>
-            <thead><tr>{["Action","Contact","Username","Name","Email","Department","Active"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {filtered.length === 0 ? <NoData cols={7} /> : filtered.map((l, i) => (
-                <tr key={i}>
-                  <td style={s.td}><div style={s.actionRow}><button style={s.btn("teal","sm")}>✏️</button><button style={s.btn("red","sm")}>🗑</button></div></td>
-                  <td style={s.td}>{l.contact||"—"}</td>
-                  <td style={s.td}>{l.email}</td>
-                  <td style={s.td}>{l.prefix} {l.firstName} {l.lastName}</td>
-                  <td style={s.td}>{l.email}</td>
-                  <td style={s.td}>{l.dept||"—"}</td>
-                  <td style={s.td}><Badge v={l.active?"green":"gray"}>{l.active?"Active":"Inactive"}</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={s.pagInfo}>Showing {filtered.length} of {logins.length} entries</div>
-        </div>
-      </div>
-      {showAdd && (
-        <Modal title="Add Contact Login" onClose={() => setShowAdd(false)}>
-          <div style={s.formGrid(3)}>
-            <FF label="Prefix"><input style={s.input} placeholder="Mr / Ms" value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} /></FF>
-            <FF label="First Name" required><input style={s.input} value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></FF>
-            <FF label="Last Name"><input style={s.input} value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></FF>
-            <FF label="Contact" required>
-              <select style={s.select} value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })}>
-                <option value="">Select</option>{SEED_LEADS.map((l) => <option key={l.id}>{l.name}</option>)}
-              </select>
-            </FF>
-            <FF label="Email" required><input style={s.input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></FF>
-            <FF label="Mobile"><input style={s.input} value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} /></FF>
-            <FF label="Department"><input style={s.input} value={form.dept} onChange={(e) => setForm({ ...form, dept: e.target.value })} /></FF>
-            <FF label="Designation"><input style={s.input} value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} /></FF>
-            <div style={{ gridColumn: "1/-1", display: "flex", gap: 20 }}>
-              <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} style={{ marginRight: 6 }} />Is Active?</label>
-              <label style={{ fontSize: 13 }}><input type="checkbox" checked={form.allowLogin} onChange={(e) => setForm({ ...form, allowLogin: e.target.checked })} style={{ marginRight: 6 }} />Allow Login?</label>
-            </div>
-          </div>
-          <MFooter onClose={() => setShowAdd(false)} onSave={handleSave} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   REPORTS
-───────────────────────────────────────────── */
-function CRMReportsPage() {
-  const [filterOpen, setFilterOpen] = useState(true);
-  const [filters, setFilters]       = useState({ from: "2026-01-01", to: "2026-12-31", user: "" });
-
-  const userRows     = [["Er Sarath Raj",9,0,0,0,44,53],["Mr Leejin",1,0,0,0,0,1]];
-  const contactRows  = [["Mr Sanjeev Sharma",1,0,0,0,0,1],["NPE MAGNETICS INDIA PVT LTD",1,0,0,0,1,2],["SATHISH KUMAR G",1,0,0,0,0,1]];
-  const filteredUsers = userRows.filter(([u]) => !filters.user || u === filters.user);
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Reports</div>
-          <div style={s.breadcrumb}>CRM › Reports</div>
-        </div>
-      </div>
-      <FilterBar open={filterOpen} onToggle={() => setFilterOpen(!filterOpen)}>
-        <FG label="Date From"><input type="date" style={s.ctrl} value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></FG>
-        <FG label="Date To"><input type="date" style={s.ctrl} value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></FG>
-        <FG label="User">
-          <select style={s.ctrl} value={filters.user} onChange={(e) => setFilters({ ...filters, user: e.target.value })}>
-            <option value="">All Users</option>
-            <option>Er Sarath Raj</option><option>Mr Leejin</option>
-          </select>
-        </FG>
-        <FilterActions onClear={() => setFilters({ from: "2026-01-01", to: "2026-12-31", user: "" })} />
-      </FilterBar>
-      <div style={s.card}>
-        <div style={s.cardHeader}>
-          <span style={s.cardTitle}>Follow ups by user</span>
-          <button style={s.expBtn("#059669")} onClick={() => exportCSV([["User","Scheduled","Open","Cancelled","Completed","Others","Total"],...filteredUsers],"report_users.csv")}>📄 CSV</button>
-        </div>
-        <div style={s.cardBody}>
-          <table style={s.table}>
-            <thead><tr>{["User","Scheduled","Open","Cancelled","Completed","Others","Total"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {filteredUsers.length === 0 ? <NoData cols={7} /> : filteredUsers.map(([u,...vals]) => (
-                <tr key={u}>
-                  <td style={s.td}>{u}</td>
-                  {vals.map((v, i) => (
-                    <td key={i} style={s.td}>
-                      {i === vals.length - 1 ? <Badge v="teal">{v}</Badge> : <>{v}<br /><a href="#" style={{ color: TEAL, fontSize: 11 }}>View</a></>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>Follow ups by contact</span></div>
-        <div style={s.cardBody}>
-          <table style={s.table}>
-            <thead><tr>{["Contact","Scheduled","Open","Cancelled","Completed","Others","Total"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {contactRows.map(([c,...vals]) => (
-                <tr key={c}>
-                  <td style={s.td}>{c}</td>
-                  {vals.map((v, i) => <td key={i} style={s.td}>{i === vals.length - 1 ? <Badge v="gray">{v}</Badge> : v}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   PROPOSAL TEMPLATE
-───────────────────────────────────────────── */
-function ProposalTemplatePage() {
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ cc: "", bcc: "", subject: "", body: "" });
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Proposal Template</div>
-          <div style={s.breadcrumb}>CRM › Proposal template</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => setShowAdd(true)}>+ Add Template</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardBody}>
-          <div style={{ background: TEAL, color: "#fff", borderRadius: 6, padding: "14px 18px", fontWeight: 600 }}>
-            No proposal templates found! Click "+ Add Template" to create one.
-          </div>
-        </div>
-      </div>
-      {showAdd && (
-        <Modal title="Create Proposal Template" onClose={() => setShowAdd(false)}>
-          <FF label="CC"><input style={s.input} placeholder="Comma separated emails" value={form.cc} onChange={(e) => setForm({ ...form, cc: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="BCC"><input style={s.input} placeholder="Comma separated emails" value={form.bcc} onChange={(e) => setForm({ ...form, bcc: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Subject" required><input style={s.input} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Email Body" required><textarea style={{ ...s.textarea, height: 140 }} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Attachments">
-            <div style={{ border: "2px dashed #e5e7eb", borderRadius: 6, padding: 16, textAlign: "center", fontSize: 13, color: "#6b7280" }}>
-              <input type="file" style={{ display: "block", margin: "0 auto" }} />
-              <div style={{ marginTop: 6 }}>Max 5MB · .pdf, .csv, .doc, .docx, .jpg, .png</div>
-            </div>
-          </FF>
-          <MFooter onClose={() => setShowAdd(false)} onSave={() => { if(!form.subject.trim()){alert("Subject required");return;} alert("Template saved!"); setShowAdd(false); }} saveLabel="Save Template" />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   PROPOSALS
-───────────────────────────────────────────── */
-function ProposalsPage() {
-  const [search, setSearch] = useState("");
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Proposals</div>
-          <div style={s.breadcrumb}>CRM › Proposals</div>
-        </div>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>All Proposals</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><ExportButtons /></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <table style={s.table}>
-            <thead><tr>{["Contact","Subject","Sent by","Date","Action"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody><NoData cols={5} /></tbody>
-          </table>
-          <div style={s.pagInfo}>Showing 0 entries</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   SOURCES
-───────────────────────────────────────────── */
-function SourcesPage() {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editIdx, setEditIdx] = useState(null);
-  const [rows, setRows]       = useState([]);
-  const [search, setSearch]   = useState("");
-  const [form, setForm]       = useState({ source: "", desc: "" });
-
-  const filtered = rows.filter((r) => !search || r.source.toLowerCase().includes(search.toLowerCase()));
-
-  const handleSave = () => {
-    if (!form.source.trim()) { alert("Source name is required."); return; }
-    if (editIdx !== null) { const u=[...rows]; u[editIdx]={...form}; setRows(u); setEditIdx(null); }
-    else setRows([...rows, { ...form }]);
-    setForm({ source: "", desc: "" }); setShowAdd(false);
-  };
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Sources</div>
-          <div style={s.breadcrumb}>CRM › Sources</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => { setForm({ source:"",desc:"" }); setEditIdx(null); setShowAdd(true); }}>+ Add Source</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>Manage Sources</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><button style={s.expBtn("#059669")} onClick={() => exportCSV([["Source","Description"],...rows.map((r)=>[r.source,r.desc])],"sources.csv")}>📄 CSV</button></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <table style={s.table}>
-            <thead><tr><th style={s.th}>Source Name</th><th style={s.th}>Description</th><th style={s.th}>Action</th></tr></thead>
-            <tbody>
-              {filtered.length === 0 ? <NoData cols={3} /> : filtered.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ ...s.td, fontWeight: 500 }}>{r.source}</td>
-                  <td style={s.td}>{r.desc||"—"}</td>
-                  <td style={s.td}>
-                    <div style={s.actionRow}>
-                      <button style={s.btn("teal","sm")} onClick={() => { setForm({...r}); setEditIdx(i); setShowAdd(true); }}>✏️ Edit</button>
-                      <button style={s.btn("red","sm")}  onClick={() => { if(window.confirm("Delete?")) setRows(rows.filter((_,idx)=>idx!==i)); }}>🗑 Delete</button>
+      <TableCard title="All Leads" count={filteredLeads.length}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>{["Name","Company","Phone","Email","Source","Stage","Value","Assigned","Status","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr>
+          </thead>
+          <tbody>
+            {filteredLeads.length === 0 ? <NoData cols={10} /> :
+              filteredLeads.map(lead => (
+                <tr key={lead.id}>
+                  <Td><span style={{ fontWeight: 600 }}>{lead.name}</span></Td>
+                  <Td>{lead.company || "—"}</Td>
+                  <Td>{lead.mobile || lead.phone || "—"}</Td>
+                  <Td style={{ color: COLORS.secondary, fontSize: 12 }}>{lead.email || "—"}</Td>
+                  <Td>{lead.source ? <span style={{ padding: "3px 8px", borderRadius: 6, background: "#f3f4f6", color: "#374151", fontSize: 11, fontWeight: 600 }}>{lead.source}</span> : "—"}</Td>
+                  <Td><span style={{ padding: "4px 10px", borderRadius: 6, background: getStageColor(lead.stage), color: getStageTextColor(lead.stage), fontSize: 12, fontWeight: 600 }}>{lead.stage}</span></Td>
+                  <Td style={{ fontWeight: 700 }}>{lead.value ? formatCurrency(lead.value) : "—"}</Td>
+                  <Td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><Avatar name={lead.assigned} /><span style={{ fontSize: 11, color: COLORS.neutral }}>{lead.assigned?.split(" ")[0]}</span></div></Td>
+                  <Td>{lead.converted ? <StatusBadge status="Customer" /> : <span style={{ padding: "3px 8px", borderRadius: 6, background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 600 }}>Active</span>}</Td>
+                  <Td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button onClick={() => setViewLead(lead)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.secondary, padding: "4px 6px" }}><Eye size={15} /></button>
+                      <button onClick={() => openEdit(lead)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.warning, padding: "4px 6px" }}><Edit2 size={15} /></button>
+                      {!lead.converted && <button onClick={() => handleConvert(lead.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.success, padding: "4px 6px" }} title="Convert to Customer"><Star size={15} /></button>}
+                      <button onClick={() => handleDelete(lead.id)} disabled={loading} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button>
                     </div>
-                  </td>
+                  </Td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-          <div style={s.pagInfo}>Showing {filtered.length} of {rows.length} entries</div>
-        </div>
-      </div>
-      {showAdd && (
-        <Modal title={editIdx !== null ? "Edit Source" : "Add Source"} onClose={() => setShowAdd(false)}>
-          <FF label="Source Name" required><input style={s.input} placeholder="e.g. Website, Referral" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Description"><textarea style={{ ...s.textarea, height: 80 }} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} /></FF>
-          <MFooter onClose={() => setShowAdd(false)} onSave={handleSave} saveLabel={editIdx !== null ? "Update" : "Save"} />
-        </Modal>
-      )}
-    </div>
-  );
-}
+          </tbody>
+        </table>
+      </TableCard>
 
-/* ─────────────────────────────────────────────
-   LIFE STAGE
-───────────────────────────────────────────── */
-function LifeStagePage() {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editIdx, setEditIdx] = useState(null);
-  const [rows, setRows]       = useState([]);
-  const [search, setSearch]   = useState("");
-  const [form, setForm]       = useState({ lifeStage: "", desc: "" });
-
-  const filtered = rows.filter((r) => !search || r.lifeStage.toLowerCase().includes(search.toLowerCase()));
-
-  const handleSave = () => {
-    if (!form.lifeStage.trim()) { alert("Life stage name is required."); return; }
-    if (editIdx !== null) { const u=[...rows]; u[editIdx]={...form}; setRows(u); setEditIdx(null); }
-    else setRows([...rows, { ...form }]);
-    setForm({ lifeStage: "", desc: "" }); setShowAdd(false);
-  };
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Life Stage</div>
-          <div style={s.breadcrumb}>CRM › Life Stage</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => { setForm({ lifeStage:"",desc:"" }); setEditIdx(null); setShowAdd(true); }}>+ Add Life Stage</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>Manage Life Stages</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><button style={s.expBtn("#059669")} onClick={() => exportCSV([["Life Stage","Description"],...rows.map((r)=>[r.lifeStage,r.desc])],"life_stages.csv")}>📄 CSV</button></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <table style={s.table}>
-            <thead><tr><th style={s.th}>Life Stage</th><th style={s.th}>Description</th><th style={s.th}>Action</th></tr></thead>
-            <tbody>
-              {filtered.length === 0 ? <NoData cols={3} /> : filtered.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ ...s.td, fontWeight: 500 }}>{r.lifeStage}</td>
-                  <td style={s.td}>{r.desc||"—"}</td>
-                  <td style={s.td}>
-                    <div style={s.actionRow}>
-                      <button style={s.btn("teal","sm")} onClick={() => { setForm({...r}); setEditIdx(i); setShowAdd(true); }}>✏️ Edit</button>
-                      <button style={s.btn("red","sm")}  onClick={() => { if(window.confirm("Delete?")) setRows(rows.filter((_,idx)=>idx!==i)); }}>🗑 Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={s.pagInfo}>Showing {filtered.length} of {rows.length} entries</div>
-        </div>
-      </div>
-      {showAdd && (
-        <Modal title={editIdx !== null ? "Edit Life Stage" : "Add Life Stage"} onClose={() => setShowAdd(false)}>
-          <FF label="Life Stage Name" required><input style={s.input} placeholder="e.g. New, Contacted, Qualified" value={form.lifeStage} onChange={(e) => setForm({ ...form, lifeStage: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Description"><textarea style={{ ...s.textarea, height: 80 }} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} /></FF>
-          <MFooter onClose={() => setShowAdd(false)} onSave={handleSave} saveLabel={editIdx !== null ? "Update" : "Save"} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   FOLLOWUP CATEGORY
-───────────────────────────────────────────── */
-function FollowupCategoryPage() {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editIdx, setEditIdx] = useState(null);
-  const [rows, setRows]       = useState([{ cat: "call", desc: "Telephone follow up" }, { cat: "email", desc: "Email communication" }]);
-  const [search, setSearch]   = useState("");
-  const [form, setForm]       = useState({ cat: "", desc: "" });
-
-  const filtered = rows.filter((r) => !search || r.cat.toLowerCase().includes(search.toLowerCase()));
-
-  const handleSave = () => {
-    if (!form.cat.trim()) { alert("Category name is required."); return; }
-    if (editIdx !== null) { const u=[...rows]; u[editIdx]={...form}; setRows(u); setEditIdx(null); }
-    else setRows([...rows, { ...form }]);
-    setForm({ cat: "", desc: "" }); setShowAdd(false);
-  };
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Followup Category</div>
-          <div style={s.breadcrumb}>CRM › Followup Category</div>
-        </div>
-        <button style={s.btn("green")} onClick={() => { setForm({ cat:"",desc:"" }); setEditIdx(null); setShowAdd(true); }}>+ Add Category</button>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>Manage Followup Categories</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}>
-            <div style={s.toolbarL}><ShowEntries /><button style={s.expBtn("#059669")} onClick={() => exportCSV([["Category","Description"],...rows.map((r)=>[r.cat,r.desc])],"followup_cats.csv")}>📄 CSV</button></div>
-            <div style={s.toolbarR}><SearchInput value={search} onChange={setSearch} /></div>
-          </div>
-          <table style={s.table}>
-            <thead><tr><th style={s.th}>Category Name</th><th style={s.th}>Description</th><th style={s.th}>Action</th></tr></thead>
-            <tbody>
-              {filtered.length === 0 ? <NoData cols={3} /> : filtered.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ ...s.td, fontWeight: 500 }}>{r.cat}</td>
-                  <td style={s.td}>{r.desc||"—"}</td>
-                  <td style={s.td}>
-                    <div style={s.actionRow}>
-                      <button style={s.btn("teal","sm")} onClick={() => { setForm({...r}); setEditIdx(i); setShowAdd(true); }}>✏️ Edit</button>
-                      <button style={s.btn("red","sm")}  onClick={() => { if(window.confirm("Delete?")) setRows(rows.filter((_,idx)=>idx!==i)); }}>🗑 Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={s.pagInfo}>Showing {filtered.length} of {rows.length} entries</div>
-        </div>
-      </div>
-      {showAdd && (
-        <Modal title={editIdx !== null ? "Edit Category" : "Add Followup Category"} onClose={() => setShowAdd(false)}>
-          <FF label="Category Name" required><input style={s.input} placeholder="e.g. call, email, meeting" value={form.cat} onChange={(e) => setForm({ ...form, cat: e.target.value })} /></FF>
-          <div style={{ marginTop: 12 }} />
-          <FF label="Description"><textarea style={{ ...s.textarea, height: 80 }} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} /></FF>
-          <MFooter onClose={() => setShowAdd(false)} onSave={handleSave} saveLabel={editIdx !== null ? "Update" : "Save"} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   COMMISSIONS
-───────────────────────────────────────────── */
-function CommissionsPage() {
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>Commissions</div>
-          <div style={s.breadcrumb}>CRM › Contacts Login › Commissions</div>
-        </div>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>All Commissions</span></div>
-        <div style={s.cardBody}>
-          <div style={s.toolbar}><div style={s.toolbarL}><ShowEntries /><ExportButtons /></div></div>
-          <table style={s.table}>
-            <thead><tr>{["Date","Contact","Name","Mobile","Invoice No.","Location","Total Commission"].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody><NoData cols={7} /></tbody>
-          </table>
-          <div style={{ background: "#f9fafb", padding: "8px 10px", display: "flex", justifyContent: "space-between", fontWeight: 600, marginTop: 4, fontSize: 13 }}>
-            <span>Total:</span><span>₹ 0.00</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   SETTINGS
-───────────────────────────────────────────── */
-function CRMSettings() {
-  const [settings, setSettings] = useState({ orderRequest: false, prefix: "", defaultUser: "Ms Dharshiha C", fuReminder: false });
-
-  return (
-    <div style={s.wrap}>
-      <CRMNav />
-      <div style={s.pageHeader}>
-        <div>
-          <div style={s.pageTitle}>CRM Settings</div>
-          <div style={s.breadcrumb}>CRM › Settings</div>
-        </div>
-      </div>
-      <div style={s.card}>
-        <div style={s.cardHeader}><span style={s.cardTitle}>General Settings</span></div>
-        <div style={s.cardBody}>
-          <div style={{ maxWidth: 580 }}>
-            {[
-              { key: "orderRequest", label: "Enable Order Request", desc: "Allow contacts to submit order requests from the portal" },
-              { key: "fuReminder",   label: "Enable Follow-up Reminders", desc: "Send email notifications for upcoming follow-ups" },
-            ].map(({ key, label, desc }) => (
-              <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: 14, background: "#f9fafb", borderRadius: 6, border: "1px solid #e5e7eb", marginBottom: 12 }}>
-                <input type="checkbox" checked={settings[key]} onChange={(e) => setSettings({ ...settings, [key]: e.target.checked })} style={{ width: 15, height: 15, cursor: "pointer" }} />
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>{desc}</div>
+      {/* View Modal */}
+      <Modal title="Lead Details" open={!!viewLead} onClose={() => setViewLead(null)}>
+        {viewLead && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px", marginBottom: 20 }}>
+              {[["Name", viewLead.name], ["Company", viewLead.company || "—"], ["Phone", viewLead.mobile || viewLead.phone || "—"], ["Email", viewLead.email || "—"], ["Source", viewLead.source || "—"], ["Stage", viewLead.stage], ["Assigned", viewLead.assigned], ["Value", viewLead.value ? formatCurrency(viewLead.value) : "—"], ["Status", viewLead.converted ? "Customer" : "Active Lead"]].map(([label, val]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, color: COLORS.neutral, textTransform: "uppercase", fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{val}</div>
                 </div>
+              ))}
+            </div>
+            {viewLead.notes && <div style={{ background: COLORS.bg, borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 13 }}>{viewLead.notes}</div>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Button variant="secondary" onClick={() => setViewLead(null)}>Close</Button>
+              <Button onClick={() => { setViewLead(null); openEdit(viewLead); }}>Edit</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Add/Edit Modal */}
+      <Modal title={editingId ? "Edit Lead" : "Add New Lead"} open={showModal} onClose={() => { setShowModal(false); resetForm(); }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+          {[["Lead Name *", "name", "text"], ["Company Name", "company", "text"], ["Phone *", "phone", "text"], ["Email", "email", "email"], ["Lead Value (₹)", "value", "number"]].map(([lbl, key, type]) => (
+            <div key={key}>
+              <label style={labelStyle}>{lbl}</label>
+              <input type={type} value={formData[key] || ""} onChange={e => setFormData({ ...formData, [key]: e.target.value })} style={inputStyle} />
+            </div>
+          ))}
+          <div>
+            <label style={labelStyle}>Source</label>
+            <select value={formData.source} onChange={e => setFormData({ ...formData, source: e.target.value })} style={inputStyle}>
+              {SOURCES.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Stage</label>
+            <select value={formData.stage} onChange={e => setFormData({ ...formData, stage: e.target.value })} style={inputStyle}>
+              {STAGES.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Assigned To</label>
+            <select value={formData.assigned} onChange={e => setFormData({ ...formData, assigned: e.target.value })} style={inputStyle}>
+              {USERS.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1/-1" }}>
+            <label style={labelStyle}>Notes</label>
+            <textarea value={formData.notes || ""} onChange={e => setFormData({ ...formData, notes: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => { setShowModal(false); resetForm(); }} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>{editingId ? "Update Lead" : "Save Lead"}</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROPOSALS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const ProposalsPage = ({ proposals, leads, onAddProposal, onDeleteProposal, onStatusChange, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSentBy, setFilterSentBy] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ lead: "", subject: "", sentBy: USERS[0], value: "", status: "Draft" });
+
+  const filtered = useMemo(() =>
+    proposals.filter(p => {
+      const q = searchTerm.toLowerCase();
+      const match = !q || [p.lead, p.lead_name, p.subject, p.sentBy, p.sent_by].some(v => (v || "").toLowerCase().includes(q));
+      return match && (!filterStatus || p.status === filterStatus) && (!filterSentBy || (p.sentBy || p.sent_by) === filterSentBy);
+    }), [proposals, searchTerm, filterStatus, filterSentBy]);
+
+  const totalValue    = filtered.reduce((s, p) => s + (p.value || 0), 0);
+  const acceptedValue = filtered.filter(p => p.status === "Accepted").reduce((s, p) => s + (p.value || 0), 0);
+  const pendingValue  = filtered.filter(p => p.status === "Sent" || p.status === "Viewed").reduce((s, p) => s + (p.value || 0), 0);
+
+  const handleSave = async () => {
+    if (!formData.lead || !formData.subject) { alert("Lead and Subject are required."); return; }
+    setLoading(true);
+    try {
+      await onAddProposal({ ...formData, value: Number(formData.value) || 0 });
+      setShowModal(false);
+      setFormData({ lead: "", subject: "", sentBy: USERS[0], value: "", status: "Draft" });
+      onRefresh();
+    } catch (err) { alert("Error saving proposal: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this proposal?")) return;
+    setLoading(true);
+    try { await onDeleteProposal(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Proposals</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Track your sales proposals and quotations</p>
+        </div>
+        <Button icon={Plus} onClick={() => setShowModal(true)}>Create Proposal</Button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+        {[["Total Value", totalValue, COLORS.primary], ["Accepted", acceptedValue, COLORS.success], ["Pending Response", pendingValue, COLORS.warning]].map(([label, val, color]) => (
+          <div key={label} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderLeft: `4px solid ${color}`, borderRadius: 10, padding: 20 }}>
+            <div style={{ fontSize: 12, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color }}>{formatCurrency(val)}</div>
+          </div>
+        ))}
+      </div>
+
+      <FilterBar>
+        <FilterGroup label="Search">
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: COLORS.neutral }} />
+            <input placeholder="Search…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: 220, paddingLeft: 32 }} />
+          </div>
+        </FilterGroup>
+        <FilterGroup label="Status">
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...inputStyle, width: 150 }}>
+            <option value="">All Statuses</option>
+            {["Draft","Sent","Viewed","Accepted","Rejected"].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </FilterGroup>
+        <FilterGroup label="Sent By">
+          <select value={filterSentBy} onChange={e => setFilterSentBy(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+            <option value="">All Users</option>{USERS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </FilterGroup>
+        <button onClick={() => { setFilterStatus(""); setFilterSentBy(""); setSearchTerm(""); }} style={{ ...inputStyle, width: "auto", background: COLORS.bg, cursor: "pointer", color: COLORS.neutral, marginTop: 16 }}>✕ Clear</button>
+      </FilterBar>
+
+      <TableCard title="All Proposals" count={filtered.length}
+        onExport={() => exportCSV([["Lead","Subject","Value","Status","Sent By"], ...filtered.map(p => [p.lead||p.lead_name, p.subject, p.value, p.status, p.sentBy||p.sent_by])], "proposals.csv")}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>{["Lead","Subject","Value","Status","Sent By","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? <NoData cols={6} /> :
+              filtered.map(p => (
+                <tr key={p.id}>
+                  <Td style={{ fontWeight: 600 }}>{p.lead || p.lead_name}</Td>
+                  <Td>{p.subject}</Td>
+                  <Td style={{ fontWeight: 700 }}>{formatCurrency(p.value)}</Td>
+                  <Td><StatusBadge status={p.status} /></Td>
+                  <Td>{p.sentBy || p.sent_by}</Td>
+                  <Td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {p.status === "Sent" && <button onClick={() => onStatusChange(p.id, "Accepted")} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.success, padding: "4px 6px" }} title="Mark Accepted"><CheckCircle2 size={15} /></button>}
+                      {p.status === "Sent" && <button onClick={() => onStatusChange(p.id, "Rejected")} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }} title="Mark Rejected"><X size={15} /></button>}
+                      <button onClick={() => handleDelete(p.id)} disabled={loading} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </TableCard>
+
+      <Modal title="Create Proposal" open={showModal} onClose={() => setShowModal(false)}>
+        <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Lead Name *</label>
+            <input list="propLeads" value={formData.lead} onChange={e => setFormData({ ...formData, lead: e.target.value })} style={inputStyle} placeholder="Type or select a lead" />
+            <datalist id="propLeads">{leads.map(l => <option key={l.id} value={l.name} />)}</datalist>
+          </div>
+          <div>
+            <label style={labelStyle}>Subject *</label>
+            <input value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} style={inputStyle} placeholder="Proposal subject" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Sent By</label>
+              <select value={formData.sentBy} onChange={e => setFormData({ ...formData, sentBy: e.target.value })} style={inputStyle}>
+                {USERS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Value (₹)</label>
+              <input type="number" value={formData.value} onChange={e => setFormData({ ...formData, value: e.target.value })} style={inputStyle} placeholder="0" />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Status</label>
+            <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} style={inputStyle}>
+              {["Draft","Sent","Viewed","Accepted","Rejected"].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => setShowModal(false)} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>Create Proposal</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLLOW UPS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const FollowUpsPage = ({ followups, leads, onAddFollowup, onDeleteFollowup, onMarkComplete, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [loading, setLoading] = useState(false);
+  const blankForm = { lead: "", title: "", type: "Call", status: "Scheduled", assigned: USERS[0], start: "", end: "", desc: "" };
+  const [formData, setFormData] = useState(blankForm);
+
+  const filtered = useMemo(() =>
+    followups.filter(f => {
+      const q = searchTerm.toLowerCase();
+      const match = !q || [f.lead, f.lead_name, f.title, f.assigned].some(v => (v || "").toLowerCase().includes(q));
+      return match && (!filterStatus || f.status === filterStatus) && (!filterType || f.type === filterType);
+    }), [followups, searchTerm, filterStatus, filterType]);
+
+  const handleSave = async () => {
+    if (!formData.title) { alert("Title is required"); return; }
+    setLoading(true);
+    try { await onAddFollowup(formData); setShowModal(false); setFormData(blankForm); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this follow-up?")) return;
+    setLoading(true);
+    try { await onDeleteFollowup(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleComplete = async (id) => {
+    setLoading(true);
+    try { await onMarkComplete(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const scheduled  = followups.filter(f => f.status === "Scheduled").length;
+  const completed  = followups.filter(f => f.status === "Completed").length;
+  const cancelled  = followups.filter(f => f.status === "Cancelled").length;
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Follow Ups</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Schedule and manage follow-up activities</p>
+        </div>
+        <Button icon={Plus} onClick={() => setShowModal(true)}>Add Follow Up</Button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+        {[["Scheduled", scheduled, COLORS.warning], ["Completed", completed, COLORS.success], ["Cancelled", cancelled, COLORS.danger]].map(([label, val, color]) => (
+          <div key={label} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderLeft: `4px solid ${color}`, borderRadius: 10, padding: 20 }}>
+            <div style={{ fontSize: 12, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <FilterBar>
+        <FilterGroup label="Search">
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: COLORS.neutral }} />
+            <input placeholder="Search…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: 220, paddingLeft: 32 }} />
+          </div>
+        </FilterGroup>
+        <FilterGroup label="Status">
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...inputStyle, width: 150 }}>
+            <option value="">All</option>
+            {["Scheduled","Completed","Cancelled"].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </FilterGroup>
+        <FilterGroup label="Type">
+          <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, width: 130 }}>
+            <option value="">All Types</option>
+            {["Call","Email","Meeting"].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </FilterGroup>
+        <button onClick={() => { setFilterStatus(""); setFilterType(""); setSearchTerm(""); }} style={{ ...inputStyle, width: "auto", background: COLORS.bg, cursor: "pointer", color: COLORS.neutral, marginTop: 16 }}>✕ Clear</button>
+      </FilterBar>
+
+      <TableCard title="All Follow Ups" count={filtered.length}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>{["Lead","Title","Type","Status","Assigned","Scheduled","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? <NoData cols={7} /> :
+              filtered.map(f => (
+                <tr key={f.id}>
+                  <Td style={{ fontWeight: 600 }}>{f.lead || f.lead_name || "—"}</Td>
+                  <Td>{f.title}</Td>
+                  <Td><StatusBadge status={f.type} /></Td>
+                  <Td><StatusBadge status={f.status} /></Td>
+                  <Td>{f.assigned || "—"}</Td>
+                  <Td style={{ fontSize: 12, color: COLORS.neutral }}>{f.start ? new Date(f.start).toLocaleString() : "—"}</Td>
+                  <Td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {f.status === "Scheduled" && <button onClick={() => handleComplete(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.success, padding: "4px 6px" }} title="Mark Complete"><CheckCircle2 size={15} /></button>}
+                      <button onClick={() => handleDelete(f.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </TableCard>
+
+      <Modal title="Add Follow Up" open={showModal} onClose={() => { setShowModal(false); setFormData(blankForm); }}>
+        <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Lead</label>
+            <input list="fuLeads" value={formData.lead} onChange={e => setFormData({ ...formData, lead: e.target.value })} style={inputStyle} placeholder="Select a lead" />
+            <datalist id="fuLeads">{leads.map(l => <option key={l.id} value={l.name} />)}</datalist>
+          </div>
+          <div>
+            <label style={labelStyle}>Title *</label>
+            <input value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} style={inputStyle} placeholder="Follow-up title" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Type</label>
+              <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} style={inputStyle}>
+                {["Call","Email","Meeting"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Assigned To</label>
+              <select value={formData.assigned} onChange={e => setFormData({ ...formData, assigned: e.target.value })} style={inputStyle}>
+                {USERS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Start Time</label>
+              <input type="datetime-local" value={formData.start} onChange={e => setFormData({ ...formData, start: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>End Time</label>
+              <input type="datetime-local" value={formData.end} onChange={e => setFormData({ ...formData, end: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <textarea value={formData.desc} onChange={e => setFormData({ ...formData, desc: e.target.value })} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => { setShowModal(false); setFormData(blankForm); }} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>Save Follow Up</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAMPAIGNS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const CampaignsPage = ({ campaigns, onAddCampaign, onDeleteCampaign, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ name: "", type: "Email", status: "Draft", by: USERS[0], recipients: "" });
+
+  const filtered = useMemo(() =>
+    campaigns.filter(c => {
+      const q = searchTerm.toLowerCase();
+      return !q || [c.name, c.type, c.status].some(v => (v || "").toLowerCase().includes(q));
+    }), [campaigns, searchTerm]);
+
+  const handleSave = async () => {
+    if (!formData.name) { alert("Campaign name is required"); return; }
+    setLoading(true);
+    try { await onAddCampaign({ ...formData, recipients: Number(formData.recipients) || 0 }); setShowModal(false); setFormData({ name: "", type: "Email", status: "Draft", by: USERS[0], recipients: "" }); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this campaign?")) return;
+    setLoading(true);
+    try { await onDeleteCampaign(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Campaigns</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Manage your marketing campaigns</p>
+        </div>
+        <Button icon={Plus} onClick={() => setShowModal(true)}>New Campaign</Button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+        {[["Total", campaigns.length, COLORS.primary], ["Active", campaigns.filter(c => c.status === "Active").length, COLORS.success], ["Draft", campaigns.filter(c => c.status === "Draft").length, COLORS.neutral]].map(([label, val, color]) => (
+          <div key={label} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderLeft: `4px solid ${color}`, borderRadius: 10, padding: 20 }}>
+            <div style={{ fontSize: 12, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <TableCard title="All Campaigns" count={filtered.length} searchVal={searchTerm} onSearch={setSearchTerm}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>{["Name","Type","Status","Created By","Recipients","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? <NoData cols={6} /> :
+              filtered.map(c => (
+                <tr key={c.id}>
+                  <Td style={{ fontWeight: 600 }}>{c.name}</Td>
+                  <Td><StatusBadge status={c.type} /></Td>
+                  <Td><StatusBadge status={c.status} /></Td>
+                  <Td>{c.by || c.created_by || "—"}</Td>
+                  <Td>{c.recipients || 0}</Td>
+                  <Td><button onClick={() => handleDelete(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button></Td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </TableCard>
+
+      <Modal title="New Campaign" open={showModal} onClose={() => setShowModal(false)}>
+        <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Campaign Name *</label>
+            <input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} style={inputStyle} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Type</label>
+              <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} style={inputStyle}>
+                {["Email","SMS","WhatsApp","Social Media"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Status</label>
+              <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} style={inputStyle}>
+                {["Draft","Active","Inactive"].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Created By</label>
+              <select value={formData.by} onChange={e => setFormData({ ...formData, by: e.target.value })} style={inputStyle}>
+                {USERS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Recipients</label>
+              <input type="number" value={formData.recipients} onChange={e => setFormData({ ...formData, recipients: e.target.value })} style={inputStyle} placeholder="0" />
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => setShowModal(false)} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>Create Campaign</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEMPLATES PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const TemplatesPage = ({ templates, onAddTemplate, onDeleteTemplate, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ name: "", subject: "", description: "", status: "Active" });
+
+  const filtered = useMemo(() =>
+    templates.filter(t => {
+      const q = searchTerm.toLowerCase();
+      return !q || [t.name, t.subject].some(v => (v || "").toLowerCase().includes(q));
+    }), [templates, searchTerm]);
+
+  const handleSave = async () => {
+    if (!formData.name || !formData.subject) { alert("Name and Subject are required"); return; }
+    setLoading(true);
+    try { await onAddTemplate(formData); setShowModal(false); setFormData({ name: "", subject: "", description: "", status: "Active" }); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this template?")) return;
+    setLoading(true);
+    try { await onDeleteTemplate(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Templates</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Manage email and message templates</p>
+        </div>
+        <Button icon={Plus} onClick={() => setShowModal(true)}>New Template</Button>
+      </div>
+
+      <TableCard title="All Templates" count={filtered.length} searchVal={searchTerm} onSearch={setSearchTerm}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>{["Name","Subject","Status","Last Updated","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? <NoData cols={5} /> :
+              filtered.map(t => (
+                <tr key={t.id}>
+                  <Td style={{ fontWeight: 600 }}>{t.name}</Td>
+                  <Td>{t.subject}</Td>
+                  <Td><StatusBadge status={t.status} /></Td>
+                  <Td style={{ fontSize: 12, color: COLORS.neutral }}>{t.lastUpdated || t.last_updated || (t.updated_at ? new Date(t.updated_at).toLocaleDateString() : "—")}</Td>
+                  <Td><button onClick={() => handleDelete(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button></Td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </TableCard>
+
+      <Modal title="New Template" open={showModal} onClose={() => setShowModal(false)}>
+        <div style={{ display: "grid", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Template Name *</label>
+            <input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Subject *</label>
+            <input value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Content / Description</label>
+            <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={4} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+          <div>
+            <label style={labelStyle}>Status</label>
+            <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} style={inputStyle}>
+              {["Active","Inactive"].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => setShowModal(false)} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>Save Template</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTACTS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const ContactsPage = ({ contacts, onAddContact, onDeleteContact, onRefresh }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ firstName: "", lastName: "", email: "", mobile: "", dept: "", active: true });
+
+  const filtered = useMemo(() =>
+    contacts.filter(c => {
+      const q = searchTerm.toLowerCase();
+      return !q || [c.firstName, c.first_name, c.lastName, c.last_name, c.email, c.mobile].some(v => (v || "").toLowerCase().includes(q));
+    }), [contacts, searchTerm]);
+
+  const handleSave = async () => {
+    if (!formData.email) { alert("Email is required"); return; }
+    setLoading(true);
+    try { await onAddContact(formData); setShowModal(false); setFormData({ firstName: "", lastName: "", email: "", mobile: "", dept: "", active: true }); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this contact?")) return;
+    setLoading(true);
+    try { await onDeleteContact(id); onRefresh(); }
+    catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Contacts</h1>
+          <p style={{ fontSize: 14, color: COLORS.neutral, margin: 0 }}>Manage customer contacts and logins</p>
+        </div>
+        <Button icon={Plus} onClick={() => setShowModal(true)}>Add Contact</Button>
+      </div>
+
+      <TableCard title="All Contacts" count={filtered.length} searchVal={searchTerm} onSearch={setSearchTerm}
+        onExport={() => exportCSV([["First Name","Last Name","Email","Mobile","Department","Active"], ...filtered.map(c => [c.firstName||c.first_name, c.lastName||c.last_name, c.email, c.mobile, c.dept, c.active])], "contacts.csv")}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead><tr>{["Name","Email","Mobile","Department","Status","Actions"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length === 0 ? <NoData cols={6} /> :
+              filtered.map(c => (
+                <tr key={c.id}>
+                  <Td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Avatar name={`${c.firstName || c.first_name} ${c.lastName || c.last_name}`} />
+                      <span style={{ fontWeight: 600 }}>{c.firstName || c.first_name} {c.lastName || c.last_name}</span>
+                    </div>
+                  </Td>
+                  <Td style={{ color: COLORS.secondary }}>{c.email}</Td>
+                  <Td>{c.mobile || "—"}</Td>
+                  <Td>{c.dept || "—"}</Td>
+                  <Td><StatusBadge status={c.active || c.is_active ? "Active" : "Inactive"} /></Td>
+                  <Td><button onClick={() => handleDelete(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.danger, padding: "4px 6px" }}><Trash2 size={15} /></button></Td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </TableCard>
+
+      <Modal title="Add Contact" open={showModal} onClose={() => setShowModal(false)}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          {[["First Name", "firstName", "text"], ["Last Name", "lastName", "text"], ["Email *", "email", "email"], ["Mobile", "mobile", "text"], ["Department", "dept", "text"]].map(([lbl, key, type]) => (
+            <div key={key}>
+              <label style={labelStyle}>{lbl}</label>
+              <input type={type} value={formData[key]} onChange={e => setFormData({ ...formData, [key]: e.target.value })} style={inputStyle} />
+            </div>
+          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 20 }}>
+            <input type="checkbox" id="activeCheck" checked={formData.active} onChange={e => setFormData({ ...formData, active: e.target.checked })} />
+            <label htmlFor="activeCheck" style={{ fontSize: 13, fontWeight: 500 }}>Active</label>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={() => setShowModal(false)} disabled={loading}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>Save Contact</Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REPORTS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const ReportsPage = ({ leads, proposals }) => {
+  const stageData   = STAGES.map(s => ({ stage: s, count: leads.filter(l => l.stage === s).length, value: leads.filter(l => l.stage === s).reduce((sum, l) => sum + (l.value || 0), 0) }));
+  const sourceData  = SOURCES.map(s => ({ source: s, count: leads.filter(l => l.source === s).length })).filter(s => s.count > 0);
+  const userLeads   = USERS.map(u => ({ name: u, leads: leads.filter(l => l.assigned === u).length, proposals: proposals.filter(p => (p.sentBy || p.sent_by) === u).length }));
+  const totalValue  = proposals.reduce((s, p) => s + (p.value || 0), 0);
+  const wonValue    = proposals.filter(p => p.status === "Accepted").reduce((s, p) => s + (p.value || 0), 0);
+  const winRate     = proposals.length ? ((proposals.filter(p => p.status === "Accepted").length / proposals.length) * 100).toFixed(1) : 0;
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Reports</h1>
+      <p style={{ fontSize: 14, color: COLORS.neutral, margin: "0 0 24px 0" }}>Analytics and performance overview</p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 32 }}>
+        <KPICard icon={Users}    label="Total Leads"    value={leads.length}          color={COLORS.primary} />
+        <KPICard icon={FileText} label="Total Pipeline" value={formatCurrency(totalValue)}   color={COLORS.secondary} />
+        <KPICard icon={Check}    label="Won Value"      value={formatCurrency(wonValue)}      color={COLORS.success} />
+        <KPICard icon={TrendingUp} label="Win Rate"     value={`${winRate}%`}                color={COLORS.info} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+        {/* Stage Breakdown */}
+        <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Leads by Stage</h3>
+          </div>
+          <div style={{ padding: 20 }}>
+            {stageData.map(s => {
+              const pct = leads.length ? (s.count / leads.length) * 100 : 0;
+              const color = { New: COLORS.neutral, Contacted: COLORS.info, Qualified: COLORS.purple, Proposal: COLORS.warning }[s.stage];
+              return (
+                <div key={s.stage} style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{s.stage}</span>
+                    <span style={{ fontSize: 13, color: COLORS.neutral }}>{s.count} leads · {formatCurrency(s.value)}</span>
+                  </div>
+                  <div style={{ height: 8, background: COLORS.border, borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.5s" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Team Performance */}
+        <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Team Performance</h3>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead><tr>{["Member","Leads","Proposals"].map(h => <Th key={h}>{h}</Th>)}</tr></thead>
+            <tbody>
+              {userLeads.map(u => (
+                <tr key={u.name}>
+                  <Td><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={u.name} /><span style={{ fontWeight: 600 }}>{u.name}</span></div></Td>
+                  <Td style={{ fontWeight: 700, color: COLORS.primary }}>{u.leads}</Td>
+                  <Td style={{ fontWeight: 700, color: COLORS.secondary }}>{u.proposals}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Source Breakdown */}
+      <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bg }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Leads by Source</h3>
+        </div>
+        <div style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+          {sourceData.length === 0 ? <p style={{ color: COLORS.neutral, fontSize: 13 }}>No data yet</p> :
+            sourceData.map(s => (
+              <div key={s.source} style={{ background: COLORS.bg, borderRadius: 8, padding: 16, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ fontSize: 12, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }}>{s.source}</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: COLORS.primary }}>{s.count}</div>
+                <div style={{ fontSize: 11, color: COLORS.neutral, marginTop: 4 }}>{leads.length ? ((s.count / leads.length) * 100).toFixed(1) : 0}% of total</div>
               </div>
             ))}
-            <div style={s.formGrid(2)}>
-              <FF label="Order Request Prefix">
-                <input style={s.input} placeholder="e.g. ORQ-" value={settings.prefix} onChange={(e) => setSettings({ ...settings, prefix: e.target.value })} />
-              </FF>
-              <FF label="Default Assigned User">
-                <select style={s.select} value={settings.defaultUser} onChange={(e) => setSettings({ ...settings, defaultUser: e.target.value })}>
-                  {["Ms Dharshiha C","Er Sarath Raj","Mr Leejin"].map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </FF>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOURCES PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const SourcesPage = ({ leads }) => {
+  const sourceStats = SOURCES.map(s => ({
+    source: s,
+    count: leads.filter(l => l.source === s).length,
+    value: leads.filter(l => l.source === s).reduce((sum, l) => sum + (l.value || 0), 0),
+    converted: leads.filter(l => l.source === s && l.converted).length,
+  }));
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>Sources</h1>
+      <p style={{ fontSize: 14, color: COLORS.neutral, margin: "0 0 24px 0" }}>Track where your leads are coming from</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+        {sourceStats.map(s => {
+          const convRate = s.count ? ((s.converted / s.count) * 100).toFixed(0) : 0;
+          return (
+            <div key={s.source} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{s.source}</div>
+                <div style={{ background: COLORS.primary + "15", color: COLORS.primary, borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{s.count} leads</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>Pipeline Value</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.secondary }}>{formatCurrency(s.value)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: COLORS.neutral, fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>Conversion</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.success }}>{convRate}%</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, height: 6, background: COLORS.border, borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${convRate}%`, background: COLORS.success, borderRadius: 3 }} />
+              </div>
             </div>
-            <div style={{ marginTop: 20 }}>
-              <button style={s.btn("teal")} onClick={() => alert("Settings saved!")}>✓ Save Settings</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SETTINGS PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+const SettingsPage = () => {
+  const [saved, setSaved] = useState(false);
+  const [settings, setSettings] = useState({ company: "Manodtechnologies", currency: "INR", defaultAssigned: USERS[0], defaultStage: "New", defaultSource: "Website" });
+
+  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px 0" }}>CRM Settings</h1>
+      <p style={{ fontSize: 14, color: COLORS.neutral, margin: "0 0 24px 0" }}>Configure your CRM preferences</p>
+      <div style={{ maxWidth: 600, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 28 }}>
+        <div style={{ display: "grid", gap: 20 }}>
+          <div>
+            <label style={labelStyle}>Company Name</label>
+            <input value={settings.company} onChange={e => setSettings({ ...settings, company: e.target.value })} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Default Assigned User</label>
+            <select value={settings.defaultAssigned} onChange={e => setSettings({ ...settings, defaultAssigned: e.target.value })} style={inputStyle}>
+              {USERS.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Default Stage</label>
+              <select value={settings.defaultStage} onChange={e => setSettings({ ...settings, defaultStage: e.target.value })} style={inputStyle}>
+                {STAGES.map(o => <option key={o}>{o}</option>)}
+              </select>
             </div>
+            <div>
+              <label style={labelStyle}>Default Source</label>
+              <select value={settings.defaultSource} onChange={e => setSettings({ ...settings, defaultSource: e.target.value })} style={inputStyle}>
+                {SOURCES.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 8 }}>
+            {saved && <span style={{ color: COLORS.success, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={16} /> Saved!</span>}
+            <Button onClick={handleSave}>Save Settings</Button>
           </div>
         </div>
       </div>
     </div>
   );
-}
+};
 
-/* ─────────────────────────────────────────────
-   ROUTES EXPORT
-───────────────────────────────────────────── */
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN CRM MODULE
+// ═══════════════════════════════════════════════════════════════════════════
 export function CRMRoutes() {
+  const [activeTab, setActiveTab]   = useState("dashboard");
+  const [leads, setLeads]           = useState([]);
+  const [proposals, setProposals]   = useState([]);
+  const [followups, setFollowups]   = useState([]);
+  const [campaigns, setCampaigns]   = useState([]);
+  const [templates, setTemplates]   = useState([]);
+  const [contacts, setContacts]     = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState(null);
+
+  // ── Fetch all data ──────────────────────────────────────────
+  const fetchAll = async () => {
+    setLoading(true); setError(null);
+    try {
+      const [lR, pR, fR, cR, tR, ctR] = await Promise.all([
+        crmAPI.fetchLeads(), crmAPI.fetchProposals(), crmAPI.fetchFollowups(),
+        crmAPI.fetchCampaigns(), crmAPI.fetchTemplates(), crmAPI.fetchContacts(),
+      ]);
+      setLeads(lR.leads || []);
+      setProposals(pR.proposals || []);
+      setFollowups(fR.followups || []);
+      setCampaigns(cR.campaigns || []);
+      setTemplates(tR.templates || []);
+      setContacts(ctR.contacts || []);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load CRM data. Make sure the backend is running on port 5000.");
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const handleRefresh = async () => {
+    try {
+      const [lR, pR] = await Promise.all([crmAPI.fetchLeads(), crmAPI.fetchProposals()]);
+      setLeads(lR.leads || []);
+      setProposals(pR.proposals || []);
+    } catch (err) { console.error(err); }
+  };
+
+  // ── Lead handlers ───────────────────────────────────────────
+  const handleAddLead = async (data) => {
+    const res = await crmAPI.createLead({ name: data.name, mobile: data.phone || data.mobile, email: data.email, company: data.company, source: data.source, stage: data.stage, assigned: data.assigned, notes: data.notes });
+    setLeads(prev => [res.lead, ...prev]);
+  };
+
+  const handleEditLead = async (id, data) => {
+    const res = await crmAPI.updateLead(id, { name: data.name, mobile: data.phone || data.mobile, email: data.email, company: data.company, source: data.source, stage: data.stage, assigned: data.assigned, notes: data.notes });
+    setLeads(prev => prev.map(l => l.id === id ? res.lead : l));
+  };
+
+  const handleDeleteLead = async (id) => {
+    await crmAPI.deleteLead(id);
+    setLeads(prev => prev.filter(l => l.id !== id));
+  };
+
+  const handleConvertLead = async (id) => {
+    const res = await crmAPI.convertLead(id);
+    setLeads(prev => prev.map(l => l.id === id ? res.lead : l));
+  };
+
+  // ── Proposal handlers ───────────────────────────────────────
+  const handleAddProposal = async (data) => {
+    const res = await crmAPI.createProposal({ lead: data.lead, subject: data.subject, sentBy: data.sentBy, value: data.value, status: data.status });
+    setProposals(prev => [res.proposal, ...prev]);
+  };
+
+  const handleDeleteProposal = async (id) => {
+    await crmAPI.deleteProposal(id);
+    setProposals(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleProposalStatus = async (id, status) => {
+    const res = await crmAPI.updateProposal(id, { status });
+    setProposals(prev => prev.map(p => p.id === id ? res.proposal : p));
+  };
+
+  // ── Follow-up handlers ──────────────────────────────────────
+  const handleAddFollowup = async (data) => {
+    const res = await crmAPI.createFollowup(data);
+    setFollowups(prev => [res.followup, ...prev]);
+  };
+
+  const handleDeleteFollowup = async (id) => {
+    await crmAPI.deleteFollowup(id);
+    setFollowups(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleMarkComplete = async (id) => {
+    const res = await crmAPI.updateFollowup(id, { status: "Completed" });
+    setFollowups(prev => prev.map(f => f.id === id ? res.followup : f));
+  };
+
+  // ── Campaign handlers ───────────────────────────────────────
+  const handleAddCampaign = async (data) => {
+    const res = await crmAPI.createCampaign(data);
+    setCampaigns(prev => [res.campaign, ...prev]);
+  };
+
+  const handleDeleteCampaign = async (id) => {
+    // no delete endpoint in routes yet — just remove from state
+    setCampaigns(prev => prev.filter(c => c.id !== id));
+  };
+
+  // ── Template handlers ───────────────────────────────────────
+  const handleAddTemplate = async (data) => {
+    const res = await crmAPI.createTemplate(data);
+    setTemplates(prev => [res.template, ...prev]);
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    await crmAPI.deleteTemplate(id);
+    setTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
+  // ── Contact handlers ────────────────────────────────────────
+  const handleAddContact = async (data) => {
+    const res = await crmAPI.createContact(data);
+    setContacts(prev => [res.contact, ...prev]);
+  };
+
+  const handleDeleteContact = async (id) => {
+    await crmAPI.deleteContact(id);
+    setContacts(prev => prev.filter(c => c.id !== id));
+  };
+
+  const counts = {
+    leads:     leads.filter(l => !l.converted).length,
+    proposals: proposals.filter(p => p.status === "Sent" || p.status === "Viewed").length,
+  };
+
+  if (loading) {
+    return (
+      <div style={{ background: COLORS.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ width: 48, height: 48, border: `4px solid ${COLORS.border}`, borderTop: `4px solid ${COLORS.primary}`, borderRadius: "50%", animation: "spin 1s linear infinite", margin: "0 auto 16px" }} />
+          <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.primary }}>Loading CRM…</div>
+          {error && <div style={{ fontSize: 13, color: COLORS.danger, marginTop: 8, maxWidth: 400 }}>{error}</div>}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Routes>
-      <Route path="/"                   element={<CRMDashboard />} />
-      <Route path="/leads"              element={<LeadsPage />} />
-      <Route path="/follow-ups"         element={<FollowUpsPage />} />
-      <Route path="/campaigns"          element={<CampaignsPage />} />
-      <Route path="/campaigns/create"   element={<CampaignCreate />} />
-      <Route path="/contacts-login"     element={<ContactsLoginPage />} />
-      <Route path="/commissions"        element={<CommissionsPage />} />
-      <Route path="/reports"            element={<CRMReportsPage />} />
-      <Route path="/proposal-template"  element={<ProposalTemplatePage />} />
-      <Route path="/proposals"          element={<ProposalsPage />} />
-      <Route path="/sources"            element={<SourcesPage />} />
-      <Route path="/life-stage"         element={<LifeStagePage />} />
-      <Route path="/followup-category"  element={<FollowupCategoryPage />} />
-      <Route path="/settings"           element={<CRMSettings />} />
-    </Routes>
+    <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
+      <CRMNav activeTab={activeTab} onTabChange={setActiveTab} counts={counts} />
+
+      {activeTab === "dashboard" && <CRMDashboard leads={leads} proposals={proposals} followups={followups} />}
+      {activeTab === "leads"     && <LeadsPage leads={leads} onAddLead={handleAddLead} onEditLead={handleEditLead} onDeleteLead={handleDeleteLead} onConvertLead={handleConvertLead} onRefresh={handleRefresh} />}
+      {activeTab === "proposals" && <ProposalsPage proposals={proposals} leads={leads} onAddProposal={handleAddProposal} onDeleteProposal={handleDeleteProposal} onStatusChange={handleProposalStatus} onRefresh={handleRefresh} />}
+      {activeTab === "followups" && <FollowUpsPage followups={followups} leads={leads} onAddFollowup={handleAddFollowup} onDeleteFollowup={handleDeleteFollowup} onMarkComplete={handleMarkComplete} onRefresh={fetchAll} />}
+      {activeTab === "campaigns" && <CampaignsPage campaigns={campaigns} onAddCampaign={handleAddCampaign} onDeleteCampaign={handleDeleteCampaign} onRefresh={fetchAll} />}
+      {activeTab === "templates" && <TemplatesPage templates={templates} onAddTemplate={handleAddTemplate} onDeleteTemplate={handleDeleteTemplate} onRefresh={fetchAll} />}
+      {activeTab === "contacts"  && <ContactsPage contacts={contacts} onAddContact={handleAddContact} onDeleteContact={handleDeleteContact} onRefresh={fetchAll} />}
+      {activeTab === "reports"   && <ReportsPage leads={leads} proposals={proposals} />}
+      {activeTab === "sources"   && <SourcesPage leads={leads} />}
+      {activeTab === "settings"  && <SettingsPage />}
+    </div>
   );
 }

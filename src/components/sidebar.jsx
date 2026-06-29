@@ -179,7 +179,23 @@ const navItems = [
   },
 
   // ── CRM ─────────────────────────────────────────────────────────────────
-  { label: "CRM", icon: HeartHandshake, path: "/crm", feature: FEATURES.CRM },
+
+  
+  {
+    label: "CRM", icon: HeartHandshake, path: "/crm", feature: FEATURES.CRM,
+    children: [
+      { label: "Dashboard",  path: "/crm" },
+      { label: "Leads",      path: "/crm/leads" },
+      { label: "Follow Ups", path: "/crm/follow-ups" },
+      { label: "Campaigns",  path: "/crm/campaigns" },
+      { label: "Proposals",  path: "/crm/proposals" },
+      { label: "Templates",  path: "/crm/templates" },
+      { label: "Contacts",   path: "/crm/contacts-login" },
+      { label: "Reports",    path: "/crm/reports" },
+      { label: "Sources",    path: "/crm/sources" },
+      { label: "Settings",   path: "/crm/settings" },
+    ],
+  },
 
   // ── HRM ─────────────────────────────────────────────────────────────────
   {

@@ -178,7 +178,7 @@ function AppLayout() {
           <Route path="/purchase-return"        element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
           <Route path="/purchase-return/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
 
-          {/* Sell */}
+          {/* Sell */} 
           <Route path="/sells"               element={<FeatureRoute feature={FEATURES.SELL}><AllSales /></FeatureRoute>} />
           <Route path="/sells/create"        element={<FeatureRoute feature={FEATURES.SELL}><AddSale /></FeatureRoute>} />
           <Route path="/sells/drafts"        element={<FeatureRoute feature={FEATURES.SELL}><ListDrafts /></FeatureRoute>} />

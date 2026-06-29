@@ -342,6 +342,8 @@ export function ListExpenses() {
     { label: "Payment Status", value: (e) => e.payment_status },
     { label: "Tax", value: (e) => e.tax_amount },
     { label: "Total amount", value: (e) => e.total_amount },
+    { label: "Refund Amount", value: (e) => e.refund_amount || 0 },
+    { label: "Net Expense", value: (e) => e.net_expense ?? (parseFloat(e.total_amount || 0) - parseFloat(e.refund_amount || 0)) },
     { label: "Payment due", value: (e) => e.payment_due },
     { label: "Expense for", value: (e) => e.expense_for },
     { label: "Note", value: (e) => e.description },
@@ -374,7 +376,7 @@ export function ListExpenses() {
   const paidCount = expenses.filter((e) => e.payment_status === "paid").length;
   const dueCount = expenses.filter((e) => e.payment_status !== "paid").length;
   const refundRows = expenses.filter((e) => e.is_refund);
-  const refundTotal = refundRows.reduce((s, e) => s + parseFloat(e.total_amount || 0), 0);
+  const refundTotal = refundRows.reduce((s, e) => s + parseFloat(e.refund_amount || 0), 0);
   // "Amount paid" = total billed minus whatever is still due — correct even for partial payments
   const amountPaid = expenses.reduce((s, e) => s + (parseFloat(e.total_amount || 0) - parseFloat(e.payment_due || 0)), 0);
 
@@ -451,16 +453,16 @@ export function ListExpenses() {
           <table style={styles.table}>
             <thead>
               <tr>
-                {["Date", "Reference No", "Category", "Sub category", "Location", "Payment Status", "Tax", "Total amount", "Payment due", "Expense for", "Note", "Action"].map((h) => (
+                {["Date", "Reference No", "Category", "Sub category", "Location", "Payment Status", "Tax", "Total amount", "Refund", "Net Expense", "Payment due", "Expense for", "Note", "Action"].map((h) => (
                   <th key={h} style={styles.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={12} style={{ ...styles.td, textAlign: "center", padding: 30 }}>Loading...</td></tr>
+                <tr><td colSpan={14} style={{ ...styles.td, textAlign: "center", padding: 30 }}>Loading...</td></tr>
               ) : expenses.length === 0 ? (
-                <tr><td colSpan={12} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>No expenses found</td></tr>
+                <tr><td colSpan={14} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>No expenses found</td></tr>
               ) : expenses.map((e, i) => (
                 <tr key={e.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
                   <td style={styles.td}>{e.expense_date ? new Date(e.expense_date).toLocaleDateString("en-GB") : "—"}</td>
@@ -477,6 +479,14 @@ export function ListExpenses() {
                   </td>
                   <td style={styles.td}>{money(e.tax_amount)}</td>
                   <td style={styles.td}><strong>{money(e.total_amount)}</strong></td>
+                  <td style={styles.td}>
+                    {e.is_refund ? <span style={{ color: T.danger, fontWeight: 600 }}>-{money(e.refund_amount)}</span> : <span style={{ color: T.textMuted }}>—</span>}
+                  </td>
+                  <td style={styles.td}>
+                    <strong style={{ color: e.is_refund ? T.primary : T.textMain }}>
+                      {money(e.net_expense ?? (parseFloat(e.total_amount || 0) - parseFloat(e.refund_amount || 0)))}
+                    </strong>
+                  </td>
                   <td style={styles.td}>{money(e.payment_due)}</td>
                   <td style={styles.td}>{e.expense_for || "—"}</td>
                   <td style={styles.td}>{e.description || ""}</td>
@@ -495,6 +505,8 @@ export function ListExpenses() {
                 <tr style={{ background: "#f0f4f1" }}>
                   <td colSpan={7} style={{ ...styles.td, fontWeight: 700, textAlign: "right" }}>Total:</td>
                   <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.total)}</td>
+                  <td style={{ ...styles.td, fontWeight: 700, color: T.danger }}>-{money(refundTotal)}</td>
+                  <td style={{ ...styles.td, fontWeight: 700, color: T.primary }}>{money(totals.total - refundTotal)}</td>
                   <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.due)}</td>
                   <td colSpan={3} style={styles.td}></td>
                 </tr>
