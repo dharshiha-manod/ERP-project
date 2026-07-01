@@ -31,12 +31,11 @@ import Contacts, {
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
 import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
-// ↓ CHANGED: added EditExpense, ViewExpense to the Expenses import
 import { ListExpenses, AddExpense, EditExpense, ViewExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 import NotificationTemplates from "./pages/NotificationTemplates";
 import { HRMRoutes, EssentialsRoutes } from "./pages/HRM";
 import { CRMRoutes } from "./pages/CRM";
-import Settings from "./pages/settings";
+import Settings from "./pages/Settings";
 import {
   ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport,
   CustomerGroupsReport, StockReport, StockAdjustmentReport, TrendingProductsReport,
@@ -120,9 +119,14 @@ function AppLayout() {
         marginTop: "60px",
         flex: 1,
         minHeight: "calc(100vh - 60px)",
+        maxHeight: "calc(100vh - 60px)",
+        overflowY: "auto",
+        overflowX: "hidden",
         background: "var(--manod-page-bg, #f0f4f1)",
-        padding: "24px 32px",
+        padding: 0,
         transition: "background 0.3s ease",
+        display: "flex",
+        flexDirection: "column",
       }}>
         <Routes>
           {/* Dashboard */}
@@ -158,11 +162,6 @@ function AppLayout() {
           <Route path="/brands"              element={<FeatureRoute feature={FEATURES.PRODUCTS}><Brands /></FeatureRoute>} />
           <Route path="/warranties"          element={<FeatureRoute feature={FEATURES.PRODUCTS}><Warranties /></FeatureRoute>} />
 
-          {/* ── MANUFACTURING ─────────────────────────────────────────────
-           *  Single route, single component.
-           *  The ?tab= query param switches the active tab inside Manufacturing.jsx.
-           *  Sidebar links use /manufacturing?tab=<key> — they all land here.
-           * ──────────────────────────────────────────────────────────── */}
           <Route
             path="/manufacturing"
             element={
@@ -178,7 +177,7 @@ function AppLayout() {
           <Route path="/purchase-return"        element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
           <Route path="/purchase-return/create" element={<FeatureRoute feature={FEATURES.PURCHASES}><PurchaseReturn /></FeatureRoute>} />
 
-          {/* Sell */} 
+          {/* Sell */}
           <Route path="/sells"               element={<FeatureRoute feature={FEATURES.SELL}><AllSales /></FeatureRoute>} />
           <Route path="/sells/create"        element={<FeatureRoute feature={FEATURES.SELL}><AddSale /></FeatureRoute>} />
           <Route path="/sells/drafts"        element={<FeatureRoute feature={FEATURES.SELL}><ListDrafts /></FeatureRoute>} />
@@ -203,8 +202,6 @@ function AppLayout() {
           {/* Expenses */}
           <Route path="/expenses"           element={<FeatureRoute feature={FEATURES.EXPENSES}><ListExpenses /></FeatureRoute>} />
           <Route path="/expenses/create"    element={<FeatureRoute feature={FEATURES.EXPENSES}><AddExpense /></FeatureRoute>} />
-          {/* ↓ NEW: view + edit routes — these were missing, which is why
-                 clicking the 👁 / ✏️ buttons on List Expenses showed a blank page */}
           <Route path="/expenses/:id"       element={<FeatureRoute feature={FEATURES.EXPENSES}><ViewExpense /></FeatureRoute>} />
           <Route path="/expenses/:id/edit"  element={<FeatureRoute feature={FEATURES.EXPENSES}><EditExpense /></FeatureRoute>} />
           <Route path="/import-expenses"    element={<FeatureRoute feature={FEATURES.EXPENSES}><ImportExpenses /></FeatureRoute>} />

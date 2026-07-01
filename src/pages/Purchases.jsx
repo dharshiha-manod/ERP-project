@@ -73,7 +73,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
   const [showProdDrop,setShowProdDrop]=useState(false);
   const [searchingProd,setSearchingProd]=useState(false);
   const [items,setItems]=useState([]);
-  const [form,setForm]=useState({refNo:"",invoiceNo:"",location:LOCS[0],purchStatus:"Ordered",payTerm:"",taxLabel:"None",discType:"None",discAmt:"0",shipping:"0",payMethod:"Cash",payAmt:"0",payNote:""});
+  const [form,setForm]=useState({refNo:"",invoiceNo:"",location:LOCS[0],purchStatus:"Ordered",payTerm:"",taxLabel:"None",discType:"None",discAmt:"0",shipping:"0",payMethod:"Cash",payAmt:"0",payNote:"",notes:""});
   const [docFile,setDocFile]=useState(null);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -84,7 +84,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
 
   useEffect(()=>{
     if(!editData)return;
-    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:editData.discount_type||"None",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.payment_note||""});
+    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:editData.discount_type||"None",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.payment_note||"",notes:editData.notes||""});
     if(editData.supplier_name){setSupSearch(editData.supplier_name);setSelSup({id:editData.supplier_id,name:editData.supplier_name});}
     if(Array.isArray(editData.items)){setItems(editData.items.map(i=>({id:i.product_id||null,name:i.product_name||i.name||"",sku:i.product_sku||i.sku||"",qty:parseFloat(i.quantity)||1,unitCost:parseFloat(i.unit_cost)||0,discPct:parseFloat(i.discount_pct)||0,marginPct:parseFloat(i.margin_pct)||0,lineTotal:parseFloat(i.line_total)||0,sellingPrice:parseFloat(i.selling_price)||0})));}
   },[editData]);
@@ -103,10 +103,10 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
   const updItem=(i,field,val)=>{setItems(prev=>{const arr=[...prev];const it={...arr[i],[field]:parseFloat(val)||0};const qty=field==="qty"?parseFloat(val)||0:it.qty;const cost=field==="unitCost"?parseFloat(val)||0:it.unitCost;const disc=field==="discPct"?parseFloat(val)||0:it.discPct;const margin=field==="marginPct"?parseFloat(val)||0:it.marginPct;const cxd=cost*(1-disc/100);it.lineTotal=+(qty*cxd).toFixed(2);it.sellingPrice=+(cxd*(1+margin/100)).toFixed(2);arr[i]=it;return arr;});};
 
   const sub=items.reduce((s,i)=>s+i.lineTotal,0);
-  const discVal=form.discType==="Percentage"?sub*(parseFloat(form.discAmt)||0)/100:parseFloat(form.discAmt)||0;
-  const tax=(sub-discVal)*(TXRT[form.taxLabel]||0);
+  const discVal=+(form.discType==="Percentage"?sub*(parseFloat(form.discAmt)||0)/100:parseFloat(form.discAmt)||0).toFixed(2);
+  const tax=+((sub-discVal)*(TXRT[form.taxLabel]||0)).toFixed(2);
   const ship=parseFloat(form.shipping)||0;
-  const grand=sub-discVal+tax+ship;
+  const grand=+((sub-discVal+tax+ship).toFixed(2));
 
   const submit=async()=>{
     if(!selSup){showToast("Please select a supplier","error");return;}
@@ -114,7 +114,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
     setSaving(true);
     try{
       const paid=parseFloat(form.payAmt)||0;
-      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_amount:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
+      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_amount:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),notes:form.payNote||null,shipping_details:null,notes:form.payNote||null,shipping_details:null,payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
       if(isEdit){await apiFetch("PUT",`/purchases/${editData.id}`,body);showToast("Purchase updated!","success");}
       else{await apiFetch("POST","/purchases",body);showToast("Purchase created!","success");}
       setTimeout(()=>onSubmit(),1200);
@@ -205,6 +205,12 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
           <div><label style={LB}>Payment Method</label><select value={form.payMethod} onChange={e=>set("payMethod",e.target.value)} style={INP}>{PMTS.map(m=><option key={m}>{m}</option>)}</select></div>
           <div><label style={LB}>Payment Note</label><input value={form.payNote} onChange={e=>set("payNote",e.target.value)} style={INP} placeholder="Optional"/></div>
         </div>
+        <div style={{marginTop:12,padding:"10px 14px",background:"#f9fafb",borderRadius:8,fontSize:13,color:"#374151",display:"flex",gap:24,flexWrap:"wrap"}}>
+          <span>Grand Total: <b style={{color:"#15803d"}}>{fmtINR(grand)}</b></span>
+          <span>Amount Paid: <b style={{color:"#2563eb"}}>{fmtINR(parseFloat(form.payAmt)||0)}</b></span>
+          <span>Payment Due: <b style={{color:Math.max(0,grand-(parseFloat(form.payAmt)||0))>0?"#dc2626":"#16a34a"}}>{fmtINR(Math.max(0,grand-(parseFloat(form.payAmt)||0)))}</b></span>
+          <span>Status: <b>{(parseFloat(form.payAmt)||0)>=grand&&grand>0?"Paid":(parseFloat(form.payAmt)||0)>0?"Partial":"Due"}</b></span>
+        </div>
       </div>
 
       <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:28}}>
@@ -248,12 +254,12 @@ export default function Purchases(){
     setLoading(true);
     try{
       const p=new URLSearchParams({page,limit:showEntries});
-      const s=ov.search!==undefined?ov.search:search;
-      const sup=ov.fSup!==undefined?ov.fSup:fSup;
-      const ps=ov.fPS!==undefined?ov.fPS:fPS;
-      const pay=ov.fPay!==undefined?ov.fPay:fPay;
-      const fr=ov.fFrom!==undefined?ov.fFrom:fFrom;
-      const to=ov.fTo!==undefined?ov.fTo:fTo;
+      const s="search" in ov?ov.search:search;
+      const sup="fSup" in ov?ov.fSup:fSup;
+      const ps="fPS" in ov?ov.fPS:fPS;
+      const pay="fPay" in ov?ov.fPay:fPay;
+      const fr="fFrom" in ov?ov.fFrom:fFrom;
+      const to="fTo" in ov?ov.fTo:fTo;
       if(s)p.set("search",s);
       if(sup)p.set("supplier_id",sup);
       if(ps)p.set("purchase_status",ps);
@@ -312,10 +318,14 @@ export default function Purchases(){
   );
 
   const statCards=[
-    {label:"TOTAL PURCHASES",value:total,sub:`${purchases.filter(r=>r.purchase_status==="Received").length} received`,color:"#15803d"},
-    {label:"TOTAL VALUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.grand_total||0),0)),sub:`${purchases.length} records`,color:"#1d4ed8"},
-    {label:"RECEIVED",value:purchases.filter(r=>r.purchase_status==="Received").length,sub:"fully received",color:"#7c3aed"},
-    {label:"PAYMENT DUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.payment_due||0),0)),sub:`${purchases.filter(r=>r.payment_status==="Due").length} pending`,color:"#b91c1c"},
+    {label:"TOTAL PURCHASES",value:total,sub:`${purchases.filter(r=>r.purchase_status==="Received").length} received`,color:"#15803d",
+      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);load({fPS:"",fPay:"",fSup:"",fFrom:"",fTo:""});}},
+    {label:"TOTAL VALUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.grand_total||0),0)),sub:`${purchases.length} records`,color:"#1d4ed8",
+      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);load({fPS:"",fPay:"",fSup:"",fFrom:"",fTo:""});}},
+    {label:"RECEIVED",value:purchases.filter(r=>r.purchase_status==="Received").length,sub:"fully received",color:"#7c3aed",
+      onClick:()=>{setFPS("Received");setFPay("");setPage(1);load({fPS:"Received",fPay:"",fSup:fSup,fFrom:fFrom,fTo:fTo});}},
+    {label:"PAYMENT DUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.payment_due||0),0)),sub:`${purchases.filter(r=>r.payment_status==="Due").length} pending`,color:"#b91c1c",
+      onClick:()=>{setFPS("");setFPay("Due");setPage(1);load({fPS:"",fPay:"Due",fSup:fSup,fFrom:fFrom,fTo:fTo});}},
   ];
 
   return(
@@ -333,10 +343,12 @@ export default function Purchases(){
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Stats - clickable to filter */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:20}}>
-        {statCards.map(({label,value,sub,color})=>(
-          <div key={label} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px #0001",borderLeft:`4px solid ${color}`}}>
+        {statCards.map(({label,value,sub,color,onClick})=>(
+          <div key={label} onClick={onClick} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px #0001",borderLeft:`4px solid ${color}`,cursor:onClick?"pointer":"default",transition:"box-shadow .15s"}}
+            onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 16px #0002";}}
+            onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 1px 4px #0001";}}>
             <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",letterSpacing:1}}>{label}</div>
             <div style={{fontSize:24,fontWeight:800,color:"#111827",margin:"6px 0 2px"}}>{value}</div>
             <div style={{fontSize:12,color:"#9ca3af"}}>{sub}</div>

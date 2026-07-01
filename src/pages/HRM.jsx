@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, Routes, Route, useLocation, useNavigate } from "react-router-dom";
-
+import Essentials from "./Essentials";
 /* ═══════════════════════════════════════════════════════════
    API HELPER  (added — does not change any UI)
 ═══════════════════════════════════════════════════════════ */
@@ -176,15 +176,21 @@ const AutoIdField = ({ label, value }) => (
 );
 
 /* ─── HRMTable — NOW WITH WORKING EXPORT BUTTONS ─── */
-function HRMTable({ columns, rows, setRows, extraActions, exportFilename }) {
+function HRMTable({ columns, rows, setRows, extraActions, onApiDelete }) {
   const [editIdx,  setEditIdx]  = useState(null);
   const [editVals, setEditVals] = useState([]);
 
   const startEdit  = (i) => { setEditIdx(i); setEditVals([...rows[i]]); };
   const saveEdit   = () => { setRows(r => r.map((row, i) => i === editIdx ? editVals : row)); setEditIdx(null); };
   const cancelEdit = () => setEditIdx(null);
-  const delRow     = (i) => setRows(r => r.filter((_, j) => j !== i));
-
+  const delRow     = async (i) => {
+    if (!window.confirm("Delete this record? This cannot be undone.")) return;
+    if (onApiDelete) {
+      await onApiDelete(i, rows[i]);
+    } else {
+      setRows(r => r.filter((_, j) => j !== i));
+    }
+  };
   return (
     <div style={{ overflowX:"auto" }}>
       <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
@@ -430,18 +436,20 @@ function LeaveType() {
     ["LT-005","Paternity Leave", "15","None"],
   ]);
   const [modal, setModal] = useState(false);
-  const [form, setForm]   = useState({ type:"", maxCount:"", interval:"None" });
+  const [form, setForm] = useState({ type:"", maxCount:"", interval:"None" });
 
-  // Load from API on mount
+  // ── Load from DB on mount ──
   useEffect(() => {
-    hrmFetch("GET","/hrm/leave-types").then(d=>{
-      if (d.leaveTypes?.length) {
-        setRows(d.leaveTypes.map(lt=>[`LT-${String(lt.id).padStart(3,"0")}`, lt.name, String(lt.max_count), lt.interval]));
-      }
-    }).catch(()=>{}); // silently fall back to static data if API not ready
+    hrmFetch("GET", "/hrm/leave-types").then(d => {
+      if (d.leaveTypes?.length)
+        setRows(d.leaveTypes.map(lt => [
+          `LT-${String(lt.id).padStart(3,"0")}`,
+          lt.name, String(lt.max_count), lt.interval, lt.id  // id at index 4
+        ]));
+    }).catch(() => {});
   }, []);
 
-  const newId = () => genId("LT-", rows, 0);
+  const newId = () => `LT-${String(rows.length + 1).padStart(3,"0")}`;
   const save = async () => {
     if (!form.type) return;
     try {
@@ -1445,16 +1453,5 @@ export function HRMRoutes() {
 }
 
 export function EssentialsRoutes() {
-  return (
-    <Routes>
-      <Route path="/"               element={<EssLayout><EssentialsDashboard /></EssLayout>} />
-      <Route path="/todo"           element={<EssLayout><EssTodoPage /></EssLayout>} />
-      <Route path="/document"       element={<EssLayout><EssDocumentPage /></EssLayout>} />
-      <Route path="/memos"          element={<EssLayout><EssMemosPage /></EssLayout>} />
-      <Route path="/reminders"      element={<EssLayout><EssRemindersPage /></EssLayout>} />
-      <Route path="/messages"       element={<EssLayout><EssMessagesPage /></EssLayout>} />
-      <Route path="/knowledge-base" element={<EssLayout><EssKnowledgePage /></EssLayout>} />
-      <Route path="/settings"       element={<EssLayout><EssentialsSettingsPage /></EssLayout>} />
-    </Routes>
-  );
+  return <Essentials />;
 }

@@ -52,7 +52,7 @@ const styles = {
     justifyContent: "space-between",
     flexWrap: "wrap",
     gap: 10,
-    padding: "14px 20px 10px",
+    padding: "16px 24px 10px",
     flexShrink: 0,
     width: "100%",
     minWidth: 0,
@@ -540,7 +540,12 @@ function ExpenseFormPage({ mode = "create" }) {
     location: "Manodtechnologies (BL0001)",
     category: "", sub_category: "", expense_number: "",
     expense_date: new Date().toISOString().slice(0, 10),
-    expense_for: "", contact_id: "", tax_amount: 0, total_amount: "",
+    expense_for: "",
+    tax_type: "amount",   // "amount" | "percent"
+    tax_value: "",        // raw user input
+    base_amount: "",      // before-tax amount user enters
+    amount_paid: "",      // for partial
+    payment_method: "Cash",
     description: "", payment_status: "due",
     attachment_url: "", attachment_name: "",
     refund_amount: "", refund_date: new Date().toISOString().slice(0, 10),
@@ -548,6 +553,15 @@ function ExpenseFormPage({ mode = "create" }) {
     interval: "", intervalUnit: "Days", repetitions: "",
   });
   const fileRef = useRef();
+
+  // Derived: compute tax rupees and grand total from base_amount + tax_value + tax_type
+  const baseAmt   = parseFloat(form.base_amount) || 0;
+  const taxVal    = parseFloat(form.tax_value) || 0;
+  const taxRupees = form.tax_type === "percent" ? +(baseAmt * taxVal / 100).toFixed(2) : taxVal;
+  const grandTotal = +(baseAmt + taxRupees).toFixed(2);
+  const balanceDue = form.payment_status === "partial"
+    ? Math.max(0, grandTotal - (parseFloat(form.amount_paid) || 0))
+    : form.payment_status === "paid" ? 0 : grandTotal;
 
   const loadCategories = () => {
     expensesAPI.categories.list().then((d) => setCategories(d.categories || [])).catch(() => {});
@@ -572,6 +586,13 @@ function ExpenseFormPage({ mode = "create" }) {
           try { refundDateStr = new Date(e.refund_date).toISOString().slice(0, 10); }
           catch { refundDateStr = String(e.refund_date).slice(0, 10); }
         }
+        const storedTotal = parseFloat(e.total_amount) || 0;
+        const storedTax   = parseFloat(e.tax_amount) || 0;
+        const storedBase  = +(storedTotal - storedTax).toFixed(2);
+        // amount_paid derived from total - payment_due (not from the stored column which may be wrong)
+        const storedDue   = parseFloat(e.payment_due) || 0;
+        const derivedPaid = +(storedTotal - storedDue).toFixed(2);
+
         setForm({
           location: e.location || "Manodtechnologies (BL0001)",
           category: e.category_name || "",
@@ -579,9 +600,11 @@ function ExpenseFormPage({ mode = "create" }) {
           expense_number: e.expense_number || "",
           expense_date: dateStr,
           expense_for: e.expense_for || "",
-          contact_id: e.contact_id || "",
-          tax_amount: e.tax_amount || 0,
-          total_amount: e.total_amount || "",
+          tax_type: "amount",
+          tax_value: String(storedTax),
+          base_amount: String(storedBase),
+          amount_paid: e.payment_status === "partial" ? String(derivedPaid) : "",
+          payment_method: e.payment_method || "Cash",
           description: e.description || "",
           payment_status: e.payment_status || "due",
           attachment_url: e.attachment_url || "",
@@ -621,23 +644,35 @@ function ExpenseFormPage({ mode = "create" }) {
     e.preventDefault();
     if (readOnly) return;
     if (!form.total_amount) { setError("Total amount is required"); return; }
-
-    // ── Refund validation — mirrors the backend rules exactly ──────────────
-    if (isRefund) {
-      const refundAmt = parseFloat(form.refund_amount);
-      if (form.refund_amount === "" || isNaN(refundAmt)) {
-        setError("Refund amount is required when \"Is refund?\" is checked");
-        return;
+    if (form.payment_status === "partial") {
+      if (form.amount_paid === "" || isNaN(parseFloat(form.amount_paid))) {
+        setError("Amount paid is required for Partial payment status"); return;
       }
-      if (refundAmt <= 0) {
-        setError("Refund amount must be greater than 0");
-        return;
+      if (parseFloat(form.amount_paid) <= 0) {
+        setError("Amount paid must be greater than 0"); return;
       }
-      if (refundAmt > parseFloat(form.total_amount)) {
-        setError("Refund amount cannot be greater than the original expense amount");
-        return;
+      if (parseFloat(form.amount_paid) >= parseFloat(form.total_amount)) {
+        setError("Amount paid must be less than total for Partial status — use Paid instead"); return;
       }
     }
+    if (isRefund) {
+      const refundAmt = parseFloat(form.refund_amount);
+      if (form.refund_amount === "" || isNaN(refundAmt)) { setError("Refund amount is required when \"Is refund?\" is checked"); return; }
+      if (refundAmt <= 0) { setError("Refund amount must be greater than 0"); return; }
+      if (refundAmt > parseFloat(form.total_amount)) { setError("Refund amount cannot be greater than the original expense amount"); return; }
+    }
+
+    // Compute actual tax rupee amount
+    const totalVal = parseFloat(form.total_amount) || 0;
+    const taxVal = parseFloat(form.tax_value) || 0;
+    const computedTax = form.tax_type === "percent"
+      ? Math.round(totalVal * taxVal / 100 * 100) / 100
+      : taxVal;
+
+    // Compute payment_due
+    let paymentDue = totalVal;
+    if (form.payment_status === "paid") paymentDue = 0;
+    else if (form.payment_status === "partial") paymentDue = totalVal - (parseFloat(form.amount_paid) || 0);
 
     setSaving(true);
     setError("");
@@ -651,6 +686,11 @@ function ExpenseFormPage({ mode = "create" }) {
         sub_category_id,
         category_name: form.category || null,
         sub_category_name: form.sub_category || null,
+        tax_amount: computedTax,
+        amount_paid: form.payment_status === "partial" ? parseFloat(form.amount_paid) : (form.payment_status === "paid" ? totalVal : 0),
+        payment_method: form.payment_method,
+        payment_due: paymentDue,
+        contact_id: null,
         is_refund: isRefund,
         refund_amount: isRefund ? form.refund_amount : null,
         refund_date: isRefund ? form.refund_date : null,
@@ -756,6 +796,7 @@ function ExpenseFormPage({ mode = "create" }) {
             </div>
           </div>
 
+          {/* Tax + Total row */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
             <div>
               <label style={styles.label}>Attach Document:</label>
@@ -778,24 +819,98 @@ function ExpenseFormPage({ mode = "create" }) {
                   }}
                 />
                 <button type="button" style={{ ...styles.btnPrimary, padding: "8px 12px" }} onClick={() => fileRef.current.click()} disabled={readOnly}>📁 Browse..</button>
-                {form.attachment_name && (
-                  <span style={{ fontSize: 12, color: T.textSub }}>{form.attachment_name}</span>
-                )}
+                {form.attachment_name && <span style={{ fontSize: 12, color: T.textSub }}>{form.attachment_name}</span>}
                 {!form.attachment_name && form.attachment_url && (
                   <a href={form.attachment_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.primary }}>📎 View attachment</a>
                 )}
               </div>
               <span style={{ fontSize: 11, color: T.textMuted }}>Max 5MB — .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</span>
             </div>
+
+            {/* Tax — toggle between fixed amount and percentage */}
             <div>
-              <label style={styles.label}>Tax amount:</label>
-              <input style={styles.input} type="number" value={form.tax_amount} onChange={(e) => setForm({ ...form, tax_amount: e.target.value })} disabled={readOnly} />
+              <label style={styles.label}>
+                Tax:
+                <span style={{ marginLeft: 10, display: "inline-flex", gap: 0, border: `1px solid ${T.border}`, borderRadius: 6, overflow: "hidden", verticalAlign: "middle" }}>
+                  {["amount", "percent"].map((t) => (
+                    <button
+                      key={t} type="button"
+                      onClick={() => setForm((f) => ({ ...f, tax_type: t, tax_value: "" }))}
+                      style={{
+                        padding: "2px 10px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
+                        background: form.tax_type === t ? T.primary : "#f6faf7",
+                        color: form.tax_type === t ? "#fff" : T.textSub,
+                      }}
+                    >{t === "amount" ? "₹" : "%"}</button>
+                  ))}
+                </span>
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  style={styles.input} type="number" min="0" step="0.01"
+                  placeholder={form.tax_type === "percent" ? "e.g. 18" : "0.00"}
+                  value={form.tax_value}
+                  onChange={(e) => setForm({ ...form, tax_value: e.target.value })}
+                  disabled={readOnly}
+                />
+                <span style={{ fontSize: 12, color: T.textMuted, whiteSpace: "nowrap" }}>
+                  {form.tax_type === "percent" && form.tax_value && form.total_amount
+                    ? `= ${money(parseFloat(form.total_amount || 0) * parseFloat(form.tax_value || 0) / 100)}`
+                    : ""}
+                </span>
+              </div>
             </div>
+
             <div>
               <label style={styles.label}>Total amount:*</label>
-              <input style={styles.input} type="number" placeholder="Total amount" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: e.target.value })} required />
+              <input style={styles.input} type="number" placeholder="Total amount" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: e.target.value })} required disabled={readOnly} />
             </div>
           </div>
+
+          {/* Partial payment fields — only shown when payment_status = partial */}
+          {form.payment_status === "partial" && (
+            <div style={{
+              marginBottom: 16, padding: 14, borderRadius: 10,
+              background: "#fffbeb", border: "1px solid #fde68a",
+              display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16,
+            }}>
+              <div>
+                <label style={styles.label}>Amount Paid:*
+                  <span style={{ fontWeight: 400, color: T.textMuted, marginLeft: 6, fontSize: 11 }}>
+                    {form.total_amount ? `(Max: ${money(form.total_amount)})` : ""}
+                  </span>
+                </label>
+                <input
+                  style={styles.input} type="number" min="0.01" step="0.01"
+                  placeholder="How much was paid?"
+                  value={form.amount_paid}
+                  onChange={(e) => setForm({ ...form, amount_paid: e.target.value })}
+                  required={form.payment_status === "partial"}
+                  disabled={readOnly}
+                />
+                {form.amount_paid && form.total_amount && (
+                  <span style={{ fontSize: 11, color: T.warn }}>
+                    Balance due: {money(Math.max(0, parseFloat(form.total_amount) - parseFloat(form.amount_paid || 0)))}
+                  </span>
+                )}
+              </div>
+              <div>
+                <label style={styles.label}>Payment Method:</label>
+                <select
+                  style={styles.select}
+                  value={form.payment_method}
+                  onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
+                  disabled={readOnly}
+                >
+                  <option>Cash</option>
+                  <option>Bank Transfer</option>
+                  <option>UPI</option>
+                  <option>Card</option>
+                  <option>Cheque</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
