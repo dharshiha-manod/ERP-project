@@ -241,14 +241,15 @@ export default function PurchaseReturn(){
   const [search,setSearch]=useState("");
   const [showEntries,setShowEntries]=useState(25);
   const [page,setPage]=useState(1);
-  const [suppliers,setSuppliers]=useState([]);
+ const [suppliers,setSuppliers]=useState([]);
   const [fSup,setFSup]=useState("");
   const [fFrom,setFFrom]=useState("");
   const [fTo,setFTo]=useState("");
+  const [fPayStatus,setFPayStatus]=useState("");
+  const [reloadTick,setReloadTick]=useState(0);
 
   useEffect(()=>{fetch(`${BASE_URL}/contacts?contactType=Suppliers&limit=500`,{headers:authHeaders()}).then(r=>r.json()).then(d=>setSuppliers((d.contacts||[]).map(c=>({id:c.id,name:(c.name||c.business_name||"").trim()||`#${c.id}`})))).catch(()=>{});},[]);
-
-  const load=useCallback(async(ov={})=>{
+const load=useCallback(async(ov={})=>{
     setLoading(true);
     try{
       const p=new URLSearchParams({page,limit:showEntries});
@@ -256,16 +257,18 @@ export default function PurchaseReturn(){
       const sup=ov.fSup!==undefined?ov.fSup:fSup;
       const fr=ov.fFrom!==undefined?ov.fFrom:fFrom;
       const to=ov.fTo!==undefined?ov.fTo:fTo;
+      const ps=ov.fPayStatus!==undefined?ov.fPayStatus:fPayStatus;
       if(s)p.set("search",s);
       if(sup)p.set("supplier_id",sup);
       if(fr)p.set("date_from",fr);
       if(to)p.set("date_to",to);
+      if(ps)p.set("payment_status",ps);
       const data=await apiFetch("GET",`/purchase-returns?${p}`);
       setReturns(data.returns||data.purchaseReturns||[]);
       setTotal(data.total||0);
     }catch{setReturns([]);setTotal(0);}
     finally{setLoading(false);}
-  },[page,showEntries,search,fSup,fFrom,fTo]);
+  },[page,showEntries,search,fSup,fFrom,fTo,fPayStatus,reloadTick]);
 
   useEffect(()=>{if(view==="list")load();},[view,load]);
   useEffect(()=>setPage(1),[search,showEntries]);
@@ -282,7 +285,7 @@ export default function PurchaseReturn(){
     setView("edit");
   };
 
-  const clearF=()=>{setFSup("");setFFrom("");setFTo("");setPage(1);load({fSup:"",fFrom:"",fTo:""});};
+ const clearF=()=>{setFSup("");setFFrom("");setFTo("");setFPayStatus("");setPage(1);setReloadTick(t=>t+1);};
   const pages=Math.ceil(total/showEntries)||1;
 
   if(view==="add"||view==="edit") return <ReturnForm editData={view==="edit"?editData:null} onSubmit={()=>{setView("list");load();showToast(view==="edit"?"Updated!":"Added!","success");}} onCancel={()=>{setView("list");setEditData(null);}}/>;
@@ -311,11 +314,17 @@ export default function PurchaseReturn(){
     </div>
   );
 
-  const statCards=[
-    {label:"TOTAL RETURNS",value:total,sub:`${returns.length} records`,color:"#15803d"},
-    {label:"TOTAL VALUE",value:fmtINR(returns.reduce((s,r)=>s+parseFloat(r.total_amount||0),0)),sub:"returned value",color:"#7c3aed"},
-    {label:"PAID",value:returns.filter(r=>r.payment_status==="Paid").length,sub:"fully paid",color:"#1d4ed8"},
-    {label:"PAYMENT DUE",value:fmtINR(returns.reduce((s,r)=>s+parseFloat(r.payment_due||0),0)),sub:`${returns.filter(r=>r.payment_status==="Due").length} pending`,color:"#b91c1c"},
+const statCards=[
+    {label:"TOTAL RETURNS",value:total,sub:`${returns.length} records`,color:"#15803d",
+      onClick:()=>{setFSup("");setFFrom("");setFTo("");setFPayStatus("");setPage(1);}},
+    {label:"TOTAL VALUE",value:fmtINR(returns.reduce((s,r)=>s+parseFloat(r.total_amount||0),0)),sub:"returned value",color:"#7c3aed",
+      onClick:()=>{setFSup("");setFFrom("");setFTo("");setFPayStatus("");setPage(1);}},
+    {label:"PAID",value:returns.filter(r=>r.payment_status==="Paid").length,sub:"fully paid",color:"#1d4ed8",
+      onClick:()=>{setFPayStatus("Paid");setPage(1);}},
+    {label:"PARTIAL",value:returns.filter(r=>r.payment_status==="Partial").length,sub:"partially paid",color:"#c2410c",
+      onClick:()=>{setFPayStatus("Partial");setPage(1);}},
+    {label:"PAYMENT DUE",value:fmtINR(returns.reduce((s,r)=>s+parseFloat(r.payment_due||0),0)),sub:`${returns.filter(r=>r.payment_status==="Due").length} pending`,color:"#b91c1c",
+      onClick:()=>{setFPayStatus("Due");setPage(1);}},
   ];
 
   return(
@@ -332,9 +341,11 @@ export default function PurchaseReturn(){
       </div>
 
       {/* Stats */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:20}}>
-        {statCards.map(({label,value,sub,color})=>(
-          <div key={label} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px #0001",borderLeft:`4px solid ${color}`}}>
+   <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:16,marginBottom:20}}>
+        {statCards.map(({label,value,sub,color,onClick})=>(
+          <div key={label} onClick={onClick} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px #0001",borderLeft:`4px solid ${color}`,cursor:onClick?"pointer":"default",transition:"box-shadow .15s"}}
+            onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 16px #0002";}}
+            onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 1px 4px #0001";}}>
             <div style={{fontSize:11,fontWeight:700,color:"#9ca3af",letterSpacing:1}}>{label}</div>
             <div style={{fontSize:24,fontWeight:800,color:"#111827",margin:"6px 0 2px"}}>{value}</div>
             <div style={{fontSize:12,color:"#9ca3af"}}>{sub}</div>
@@ -349,7 +360,8 @@ export default function PurchaseReturn(){
         <span style={{fontSize:12,color:"#9ca3af"}}>to</span>
         <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={FI}/>
         <select value={fSup} onChange={e=>setFSup(e.target.value)} style={FI}><option value="">All Suppliers</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-        <button onClick={()=>{setPage(1);load();}} style={GN}>Apply</button>
+        <select value={fPayStatus} onChange={e=>{setFPayStatus(e.target.value);}} style={{border:"1px solid #d1d5db",borderRadius:7,padding:"7px 10px",fontSize:13,color:"#374151",background:"#fff"}}><option value="">All Payment Status</option><option>Paid</option><option>Due</option><option>Partial</option></select>
+    <button onClick={()=>{setPage(1);setReloadTick(t=>t+1);}} style={GN}>Apply</button>
         <button onClick={clearF} style={BG}>Clear</button>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Essentials from "./Essentials";
+import * as hrmAPI from "../api/hrmAPI";
 /* ═══════════════════════════════════════════════════════════
    API HELPER  (added — does not change any UI)
 ═══════════════════════════════════════════════════════════ */
@@ -175,18 +176,41 @@ const AutoIdField = ({ label, value }) => (
   </div>
 );
 
-/* ─── HRMTable — NOW WITH WORKING EXPORT BUTTONS ─── */
-function HRMTable({ columns, rows, setRows, extraActions, onApiDelete }) {
-  const [editIdx,  setEditIdx]  = useState(null);
-  const [editVals, setEditVals] = useState([]);
+/* ─── HRMTable — NOW WITH WORKING EXPORT BUTTONS + REAL EDIT/DELETE ─── */
+function HRMTable({ columns, rows, setRows, extraActions, onApiDelete, onApiEdit, onEditClick, exportFilename, columnEditors }) {
+  injectStyles();
+const [editIdx,  setEditIdx]  = useState(null);
+  const [editVals, setEditVals] = useState([]);  const [busy, setBusy] = useState(false);
+  const [viewRow, setViewRow] = useState(null);
 
   const startEdit  = (i) => { setEditIdx(i); setEditVals([...rows[i]]); };
-  const saveEdit   = () => { setRows(r => r.map((row, i) => i === editIdx ? editVals : row)); setEditIdx(null); };
+  const saveEdit   = async () => {
+    if (onApiEdit) {
+      setBusy(true);
+      try {
+        await onApiEdit(editIdx, editVals);
+      } catch (e) {
+        alert(e.message || "Failed to save changes");
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      setRows(r => r.map((row, i) => i === editIdx ? editVals : row));
+    }
+    setEditIdx(null);
+  };
   const cancelEdit = () => setEditIdx(null);
   const delRow     = async (i) => {
     if (!window.confirm("Delete this record? This cannot be undone.")) return;
     if (onApiDelete) {
-      await onApiDelete(i, rows[i]);
+      setBusy(true);
+      try {
+        await onApiDelete(i, rows[i]);
+      } catch (e) {
+        alert(e.message || "Failed to delete");
+      } finally {
+        setBusy(false);
+      }
     } else {
       setRows(r => r.filter((_, j) => j !== i));
     }
@@ -207,7 +231,7 @@ function HRMTable({ columns, rows, setRows, extraActions, onApiDelete }) {
         <thead>
           <tr style={{ background:`linear-gradient(90deg,${G.green}18,${G.green2}0e)` }}>
             {columns.map(c => <th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", whiteSpace:"nowrap" }}>{c}</th>)}
-            <th style={{ padding:"10px 14px", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em" }}>Actions</th>
+            <th style={{ padding:"10px 14px", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", textAlign:"center", width:130 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -217,32 +241,64 @@ function HRMTable({ columns, rows, setRows, extraActions, onApiDelete }) {
               <tr key={i} style={{ background:i%2===0?G.white:G.rowHov, transition:"background .12s" }}
                 onMouseEnter={e=>e.currentTarget.style.background=G.greenBg}
                 onMouseLeave={e=>e.currentTarget.style.background=i%2===0?G.white:G.rowHov}>
-                {row.map((cell, j) => (
+               {row.map((cell, j) => (
                   <td key={j} style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>
                     {editIdx === i
-                      ? <input value={editVals[j]??""} onChange={e=>setEditVals(v=>v.map((x,k)=>k===j?e.target.value:x))} style={{ width:"100%", padding:"5px 8px", border:`1px solid ${G.green}`, borderRadius:5, fontSize:13, minWidth:60, outline:"none" }} />
+                      ? (columnEditors && columnEditors[j]
+                          ? (
+                            <select
+                              value={editVals[j] ?? ""}
+                              onChange={e=>setEditVals(v=>v.map((x,k)=>k===j?e.target.value:x))}
+                              style={{ width:"100%", padding:"5px 8px", border:`1px solid ${G.green}`, borderRadius:5, fontSize:13, outline:"none", background:"#fff" }}
+                            >
+                              {columnEditors[j].map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                          )
+                          : <input value={editVals[j]??""} onChange={e=>setEditVals(v=>v.map((x,k)=>k===j?e.target.value:x))} style={{ width:"100%", padding:"5px 8px", border:`1px solid ${G.green}`, borderRadius:5, fontSize:13, minWidth:60, outline:"none" }} />
+                        )
                       : cell}
                   </td>
                 ))}
-                <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>
-                  <div style={{ display:"flex", gap:6 }}>
-                    {editIdx === i ? (
-                      <><GreenBtn onClick={saveEdit} style={{ padding:"5px 14px", fontSize:12, borderRadius:6 }}>💾 Save</GreenBtn><DarkBtn onClick={cancelEdit} style={{ padding:"5px 12px", fontSize:12 }}>Cancel</DarkBtn></>
-                    ) : (
-                      <><button onClick={()=>startEdit(i)} style={{ padding:"5px 12px", background:G.blueBg, color:G.blue, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>✎ Edit</button><RedBtn onClick={()=>delRow(i)}>🗑 Delete</RedBtn></>
-                    )}
-                    {extraActions && extraActions(i)}
+           <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, textAlign:"center" }}>
+                  <div style={{ display:"flex", gap:6, justifyContent:"center" }}>
+{editIdx === i ? (
+  <><GreenBtn onClick={saveEdit} style={{ padding:"5px 14px", fontSize:12, borderRadius:6, opacity:busy?0.6:1, pointerEvents:busy?"none":"auto" }}>💾 Save</GreenBtn><DarkBtn onClick={cancelEdit} style={{ padding:"5px 12px", fontSize:12 }}>Cancel</DarkBtn></>
+) : (
+  <>
+    <button title="View" onClick={()=>setViewRow(row)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#0ea5e9", fontSize:16 }}>
+      <i className="ti ti-eye"></i>
+    </button>
+   <button title="Edit" onClick={()=>onEditClick ? onEditClick(i) : startEdit(i)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#d97706", fontSize:16 }}>
+      <i className="ti ti-pencil"></i>
+    </button>
+    <button title="Delete" onClick={()=>delRow(i)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#dc2626", fontSize:16 }}>
+      <i className="ti ti-trash"></i>
+    </button>
+  </>
+)}                   {extraActions && extraActions(i)}
                   </div>
                 </td>
               </tr>
             ))}
         </tbody>
       </table>
-      <div style={{ marginTop:10, fontSize:13, color:G.muted }}>Showing {rows.length} of {rows.length} entries</div>
+    <div style={{ marginTop:10, fontSize:13, color:G.muted }}>Showing {rows.length} of {rows.length} entries</div>
+      {viewRow && (
+        <Modal title="Record Details" onClose={()=>setViewRow(null)} width={440}>
+          {columns.map((col, idx) => (
+            <div key={col} style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:`1px solid ${G.border}` }}>
+              <span style={{ fontSize:13, fontWeight:600, color:G.muted }}>{col}</span>
+              <span style={{ fontSize:13, fontWeight:700, color:G.text }}>{viewRow[idx]}</span>
+            </div>
+          ))}
+          <div style={{ display:"flex", justifyContent:"flex-end", marginTop:16 }}>
+            <DarkBtn onClick={()=>setViewRow(null)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
-
 /* ══════════════════════════════════════════
    HRM NAV (original)
 ══════════════════════════════════════════ */
@@ -328,9 +384,48 @@ function MiniBar({ value, max, color }) {
 function HRMDashboard() {
   const navigate = useNavigate();
   const today = new Date().toLocaleDateString("en-IN",{ weekday:"long", day:"2-digit", month:"short", year:"numeric" });
-  const presentEmps = ALL_EMPLOYEES.filter(e=>e.status==="Present");
-  const onLeaveEmps = ALL_EMPLOYEES.filter(e=>e.status==="On Leave");
-  const absentEmps  = ALL_EMPLOYEES.filter(e=>e.status==="Absent");
+
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const [todayAtt, setTodayAtt] = useState([]);
+  const [attLoading, setAttLoading] = useState(true);
+
+  const [leaveRecs, setLeaveRecs] = useState([]);
+  const [leaveLoading, setLeaveLoading] = useState(true);
+
+  const [targets, setTargets] = useState([]);
+  const [targetsLoading, setTargetsLoading] = useState(true);
+
+  const load = async () => {
+    setStatsLoading(true); setAttLoading(true); setLeaveLoading(true); setTargetsLoading(true);
+    try {
+      const [s, a, l, t] = await Promise.all([
+        hrmAPI.getDashboardStats(),
+        hrmAPI.getAttendance(),   // defaults to today's records
+        hrmAPI.getLeaves(),
+        hrmAPI.getSalesTargets(),
+      ]);
+      setStats(s.stats || null);
+      setTodayAtt(a.attendance || []);
+      setLeaveRecs(l.leaves || []);
+      setTargets(t.targets || []);
+    } catch (e) { console.error(e); }
+    setStatsLoading(false); setAttLoading(false); setLeaveLoading(false); setTargetsLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const att = stats?.attendance || { present:0, late:0, absent:0, on_leave:0 };
+  const leaves = stats?.leaves || { total:0, pending:0, approved:0 };
+  const payroll = stats?.payroll || { total_payrolls:0, paid:0, pending:0, total_payout:0 };
+
+  const pendingLeaveRows = leaveRecs
+    .filter(l => l.status === "Pending")
+    .map(l => [l.reference_no, l.leave_type_name, l.employee_name, `${l.start_date?.slice(0,10)} – ${l.end_date?.slice(0,10)}`, l.reason, l.status]);
+
+  const presentAttRows = todayAtt.filter(a=>a.status==="Present").map(a=>[a.employee_name, a.attendance_date?.slice(0,10), a.clock_in||"—", a.clock_out||"—"]);
+  const lateAttRows    = todayAtt.filter(a=>a.status==="Late").map(a=>[a.employee_name, a.attendance_date?.slice(0,10), a.clock_in||"—", a.clock_out||"—"]);
+  const absentAttRows  = todayAtt.filter(a=>a.status==="Absent").map(a=>[a.employee_name, a.attendance_date?.slice(0,10)]);
 
   return (
     <div style={{ fontFamily:"'Inter','Segoe UI',sans-serif" }}>
@@ -339,68 +434,89 @@ function HRMDashboard() {
         <div><h2 style={{ margin:0, fontSize:22, fontWeight:700, color:G.text }}>HR Dashboard</h2><p style={{ margin:0, fontSize:13, color:G.muted, marginTop:2 }}>{today}</p></div>
         <GreenBtn onClick={()=>navigate("/hrm/payroll")} style={{ fontSize:14, padding:"10px 24px" }}>💰 Run Payroll</GreenBtn>
       </div>
-      <KpiRow cards={[
-        { label:"Total Employees",  value:ALL_EMPLOYEES.length.toString(), accent:true, large:true, modalData:{ columns:["Name","Department","Designation","Status"], rows:ALL_EMPLOYEES.map(e=>[e.name,e.dept,e.desig,e.status]) } },
-        { label:"Present Today",    value:presentEmps.length.toString(),  color:G.green, modalData:{ columns:["Name","Department","Clock In","Clock Out"], rows:presentEmps.map(e=>[e.name,e.dept,e.clockIn,e.clockOut]) } },
-        { label:"On Leave Today",   value:onLeaveEmps.length.toString(),  color:G.amber, modalData:{ columns:["Name","Department","Designation"], rows:onLeaveEmps.map(e=>[e.name,e.dept,e.desig]) } },
-        { label:"Absent Today",     value:absentEmps.length.toString(),   color:G.red,   modalData:{ columns:["Name","Department","Designation"], rows:absentEmps.map(e=>[e.name,e.dept,e.desig]) } },
-        { label:"Pending Leaves",   value:PENDING_LEAVES.length.toString(), color:G.blue, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:PENDING_LEAVES } },
-        { label:"This Month Payroll", value:"₹4.2L", color:G.text },
-      ]} />
+
+      {statsLoading ? (
+        <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading dashboard…</div>
+      ) : (
+        <KpiRow cards={[
+          { label:"Present Today", value:String(att.present), accent:true, large:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:presentAttRows } },
+          { label:"Late Today",    value:String(att.late),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:lateAttRows } },
+          { label:"Absent Today",  value:String(att.absent),  color:G.red,   modalData:{ columns:["Employee","Date"], rows:absentAttRows } },
+          { label:"On Leave Today",value:String(att.on_leave),color:G.blue },
+          { label:"Pending Leaves",value:String(leaves.pending), color:G.blue, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:pendingLeaveRows } },
+          { label:"Total Payroll Payout", value:`₹${Number(payroll.total_payout||0).toLocaleString("en-IN")}`, color:G.text },
+        ]} />
+      )}
+
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:18, marginBottom:18 }}>
         <Card>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
             <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>📅 Today's Attendance</h4>
             <Link to="/hrm/attendance" style={{ fontSize:12, color:G.green, textDecoration:"none", fontWeight:600 }}>View all →</Link>
           </div>
-          {ALL_EMPLOYEES.slice(0,4).map((a,i)=>(
+          {attLoading ? <div style={{ color:G.muted, fontSize:13 }}>Loading…</div> :
+           todayAtt.length===0 ? <NoData /> :
+           todayAtt.slice(0,4).map((a,i)=>(
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:i<3?`1px solid ${G.border}`:"none" }}>
-              <div><div style={{ fontWeight:600, fontSize:13, color:G.text }}>{a.name}</div><div style={{ fontSize:11, color:G.muted }}>{a.clockIn} → {a.clockOut}</div></div>
+              <div><div style={{ fontWeight:600, fontSize:13, color:G.text }}>{a.employee_name}</div><div style={{ fontSize:11, color:G.muted }}>{a.clock_in||"—"} → {a.clock_out||"—"}</div></div>
               <StatusPill text={a.status} />
             </div>
           ))}
         </Card>
+
         <Card>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
             <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>🌿 Leave Requests</h4>
             <Link to="/hrm/leave" style={{ fontSize:12, color:G.green, textDecoration:"none", fontWeight:600 }}>View all →</Link>
           </div>
-          {LEAVE_DATA.map((l,i)=>(
-            <div key={i} style={{ padding:"8px 0", borderBottom:i<LEAVE_DATA.length-1?`1px solid ${G.border}`:"none" }}>
+          {leaveLoading ? <div style={{ color:G.muted, fontSize:13 }}>Loading…</div> :
+           leaveRecs.length===0 ? <NoData /> :
+           leaveRecs.slice(0,4).map((l,i)=>(
+            <div key={i} style={{ padding:"8px 0", borderBottom:i<3?`1px solid ${G.border}`:"none" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ fontWeight:600, fontSize:13, color:G.text }}>{l.emp}</span><StatusPill text={l.status} />
+                <span style={{ fontWeight:600, fontSize:13, color:G.text }}>{l.employee_name}</span><StatusPill text={l.status} />
               </div>
-              <div style={{ fontSize:11, color:G.muted, marginTop:2 }}>{l.type} · {l.from}–{l.to} ({l.days}d)</div>
+              <div style={{ fontSize:11, color:G.muted, marginTop:2 }}>{l.leave_type_name} · {l.start_date?.slice(0,10)}–{l.end_date?.slice(0,10)}</div>
             </div>
           ))}
         </Card>
+
         <Card>
-          <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:G.text }}>🎂 Birthdays this Month</h4>
-          {BIRTHDAY_DATA.map((b,i)=>(
-            <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"8px 0", borderBottom:i<BIRTHDAY_DATA.length-1?`1px solid ${G.border}`:"none" }}>
-              <div style={{ width:36, height:36, borderRadius:"50%", background:`linear-gradient(135deg,${G.green},${G.green2})`, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, fontSize:14, flexShrink:0 }}>{b.name[0]}</div>
-              <div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13, color:G.text }}>{b.name}</div><div style={{ fontSize:11, color:G.muted }}>{b.dept}</div></div>
-              <span style={{ fontSize:12, fontWeight:700, color:G.green, background:G.greenBg, padding:"3px 10px", borderRadius:20 }}>{b.date}</span>
-            </div>
-          ))}
+          <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:G.text }}>💰 Payroll Overview</h4>
+          <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${G.border}` }}>
+            <span style={{ fontSize:13, color:G.text }}>Total Payrolls</span><span style={{ fontWeight:700, fontSize:13 }}>{payroll.total_payrolls}</span>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${G.border}` }}>
+            <span style={{ fontSize:13, color:G.text }}>Paid</span><span style={{ fontWeight:700, fontSize:13, color:G.green }}>{payroll.paid}</span>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 0" }}>
+            <span style={{ fontSize:13, color:G.text }}>Pending</span><span style={{ fontWeight:700, fontSize:13, color:G.amber }}>{payroll.pending}</span>
+          </div>
         </Card>
       </div>
+
       <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:18 }}>
         <Card>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-            <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>🎯 Sales Targets – June 2026</h4>
+            <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>🎯 Sales Targets</h4>
             <Link to="/hrm/sales-targets" style={{ fontSize:12, color:G.green, textDecoration:"none", fontWeight:600 }}>Manage →</Link>
           </div>
-          {SALES_TARGET_DATA.map((s,i)=>(
-            <div key={i} style={{ marginBottom:14 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
-                <span style={{ fontSize:13, fontWeight:600, color:G.text }}>{s.rep}</span>
-                <span style={{ fontSize:12, fontWeight:700, color:s.pct>=100?G.green:G.amber }}>{s.achieved} / {s.target}</span>
+          {targetsLoading ? <div style={{ color:G.muted, fontSize:13 }}>Loading…</div> :
+           targets.length===0 ? <NoData /> :
+           targets.slice(0,5).map((t,i)=>{
+            const achieved = Number(t.achieved_amount||0), target = Number(t.target_amount||0);
+            const pct = target ? Math.round((achieved/target)*100) : 0;
+            return (
+              <div key={i} style={{ marginBottom:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+                  <span style={{ fontSize:13, fontWeight:600, color:G.text }}>{t.employee_name}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:pct>=100?G.green:G.amber }}>₹{achieved.toLocaleString("en-IN")} / ₹{target.toLocaleString("en-IN")}</span>
+                </div>
+                <MiniBar value={pct} max={120} color={pct>=100?G.green2:"#ef5350"} />
+                <div style={{ fontSize:11, color:G.muted, marginTop:3 }}>Commission: {t.commission_pct||0}%</div>
               </div>
-              <MiniBar value={s.pct} max={120} color={s.pct>=100?G.green2:"#ef5350"} />
-              <div style={{ fontSize:11, color:G.muted, marginTop:3 }}>Commission: {s.commission}</div>
-            </div>
-          ))}
+            );
+          })}
         </Card>
         <Card>
           <h4 style={{ margin:"0 0 16px", fontSize:14, fontWeight:700, color:G.text }}>⚡ Quick Actions</h4>
@@ -423,43 +539,49 @@ function HRMDashboard() {
     </div>
   );
 }
-
 /* ══════════════════════════════════════════
    LEAVE TYPE — API connected, original UI
 ══════════════════════════════════════════ */
 function LeaveType() {
-  const [rows, setRows] = useState([
-    ["LT-001","Sick Leave",      "12","Current financial year"],
-    ["LT-002","Casual Leave",    "8", "Current month"],
-    ["LT-003","Annual Leave",    "20","Current financial year"],
-    ["LT-004","Maternity Leave", "90","None"],
-    ["LT-005","Paternity Leave", "15","None"],
-  ]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ type:"", maxCount:"", interval:"None" });
 
-  // ── Load from DB on mount ──
-  useEffect(() => {
-    hrmFetch("GET", "/hrm/leave-types").then(d => {
-      if (d.leaveTypes?.length)
-        setRows(d.leaveTypes.map(lt => [
-          `LT-${String(lt.id).padStart(3,"0")}`,
-          lt.name, String(lt.max_count), lt.interval, lt.id  // id at index 4
-        ]));
-    }).catch(() => {});
-  }, []);
+  const rows = records.map(lt => [
+    `LT-${String(lt.id).padStart(3,"0")}`,
+    lt.name, String(lt.max_count), lt.interval,
+  ]);
 
-  const newId = () => `LT-${String(rows.length + 1).padStart(3,"0")}`;
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await hrmAPI.getLeaveTypes();
+      setRecords(d.leaveTypes || []);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const newId = () => `LT-${String(records.length + 1).padStart(3,"0")}`;
   const save = async () => {
     if (!form.type) return;
     try {
-      await hrmFetch("POST","/hrm/leave-types",{ name:form.type, max_count:parseInt(form.maxCount)||0, interval:form.interval });
-      const d = await hrmFetch("GET","/hrm/leave-types");
-      if (d.leaveTypes?.length) setRows(d.leaveTypes.map(lt=>[`LT-${String(lt.id).padStart(3,"0")}`,lt.name,String(lt.max_count),lt.interval]));
-    } catch { // fallback: add locally
-      setRows(r=>[...r,[newId(),form.type,form.maxCount||"—",form.interval]]);
-    }
+      await hrmAPI.createLeaveType({ name:form.type, max_count:parseInt(form.maxCount)||0, interval:form.interval });
+      await load();
+    } catch (e) { alert(e.message); }
     setModal(false); setForm({ type:"", maxCount:"", interval:"None" });
+  };
+
+  const apiDelete = async (i) => {
+    const rec = records[i];
+    await hrmAPI.deleteLeaveType(rec.id);
+    await load();
+  };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updateLeaveType(rec.id, { name:vals[1], max_count:parseInt(vals[2])||0, interval:vals[3] });
+    await load();
   };
 
   return (
@@ -474,7 +596,10 @@ function LeaveType() {
         { label:"Max Annual Leave", value:"20 days", color:G.green },
         { label:"Max Sick Leave",   value:"12 days", color:G.blue  },
       ]} />
-      <Card><HRMTable columns={["ID","Leave Type","Max Count","Interval"]} rows={rows} setRows={setRows} exportFilename="leave-types" /></Card>
+      <Card>
+        {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+          <HRMTable columns={["ID","Leave Type","Max Count","Interval"]} rows={rows} exportFilename="leave-types" onApiDelete={apiDelete} onApiEdit={apiEdit} />}
+      </Card>
       {modal && (
         <Modal title="Add Leave Type" onClose={()=>setModal(false)}>
           <AutoIdField label="Leave Type ID" value={newId()} />
@@ -502,39 +627,78 @@ function LeaveType() {
    LEAVE — API connected, original UI
 ══════════════════════════════════════════ */
 function Leave() {
-  const [rows, setRows] = useState([
-    ["LEV-2026-001","Sick Leave",  "Priya S.", "08-Jun – 09-Jun","Fever",        "Approved"],
-    ["LEV-2026-002","Casual Leave","Rahul M.", "13-Jun – 13-Jun","Personal work","Pending" ],
-    ["LEV-2026-003","Annual Leave","Ananya K.","20-Jun – 24-Jun","Vacation",     "Approved"],
-  ]);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form,  setForm]  = useState({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  const loadLeaveTypes = async () => {
+    try {
+      const d = await hrmAPI.getLeaveTypes();
+      setLeaveTypes(d.leaveTypes || []);
+    } catch (e) { console.error(e); }
+  };
+  
 
-  useEffect(()=>{
-    hrmFetch("GET","/hrm/leaves").then(d=>{
-      if (d.leaves?.length) setRows(d.leaves.map(l=>[l.reference_no, l.leave_type_name, l.employee_name, `${l.start_date?.slice(0,10)} – ${l.end_date?.slice(0,10)}`, l.reason, l.status]));
-    }).catch(()=>{});
-  },[]);
+  const rows = records.map(l => [
+    l.reference_no, l.leave_type_name, l.employee_name,
+    `${l.start_date?.slice(0,10)} – ${l.end_date?.slice(0,10)}`, l.reason, l.status,
+  ]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await hrmAPI.getLeaves();
+      setRecords(d.leaves || []);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); loadLeaveTypes(); }, []);
 
   const newId = () => {
-    const nums = rows.map(r=>parseInt(r[0].replace("LEV-2026-",""))||0);
+    const nums = records.map(r=>parseInt((r.reference_no||"").replace("LEV-2026-",""))||0);
     const next = nums.length>0?Math.max(...nums)+1:1;
     return `LEV-2026-${String(next).padStart(3,"0")}`;
   };
   const save = async () => {
     if (!form.leaveType||!form.startDate||!form.endDate) return;
     try {
-      await hrmFetch("POST","/hrm/leaves",{ employee_name:form.employee||"Self", leave_type_name:form.leaveType, start_date:form.startDate, end_date:form.endDate, reason:form.reason });
-      const d = await hrmFetch("GET","/hrm/leaves");
-      if (d.leaves?.length) setRows(d.leaves.map(l=>[l.reference_no,l.leave_type_name,l.employee_name,`${l.start_date?.slice(0,10)} – ${l.end_date?.slice(0,10)}`,l.reason,l.status]));
-    } catch {
-      setRows(r=>[...r,[newId(),form.leaveType,form.employee||"Self",`${form.startDate} – ${form.endDate}`,form.reason,"Pending"]]);
-    }
+      await hrmAPI.createLeave({ employee_name:form.employee||"Self", leave_type_name:form.leaveType, start_date:form.startDate, end_date:form.endDate, reason:form.reason });
+      await load();
+    } catch (e) { alert(e.message); }
     setModal(false); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
+  };
+
+const apiDelete = async (i) => {
+    const rec = records[i];
+    await hrmAPI.deleteLeave(rec.id);
+    await load();
+  };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    const [startPart, endPart] = String(vals[3]||"").split("–").map(s=>s.trim());
+    await hrmAPI.updateLeave(rec.id, {
+      leave_type_name:vals[1], employee_name:vals[2],
+      start_date:startPart||rec.start_date, end_date:endPart||rec.end_date,
+      reason:vals[4], status:vals[5],
+    });
+    await load();
+  };
+  const approveLeave = async (i) => {
+    if (!window.confirm("Approve this leave request?")) return;
+    try { await hrmAPI.updateLeaveStatus(records[i].id, "Approved"); await load(); }
+    catch (e) { alert(e.message); }
+  };
+  const rejectLeave = async (i) => {
+    if (!window.confirm("Reject this leave request?")) return;
+    try { await hrmAPI.updateLeaveStatus(records[i].id, "Rejected"); await load(); }
+    catch (e) { alert(e.message); }
   };
 
   const approved = rows.filter(r=>r[5]==="Approved");
   const pending  = rows.filter(r=>r[5]==="Pending");
+  const rejected = rows.filter(r=>r[5]==="Rejected");
+  const leaveTypeOptions = leaveTypes.length ? leaveTypes.map(lt=>lt.name) : ["Vacation","Sick Leave","Casual Leave","Health issue"];
 
   return (
     <div>
@@ -547,8 +711,25 @@ function Leave() {
         { label:"Total Leaves", value:rows.length.toString(), accent:true, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows } },
         { label:"Approved", value:approved.length.toString(), color:G.green, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:approved } },
         { label:"Pending",  value:pending.length.toString(),  color:G.amber, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:pending } },
+        { label:"Rejected", value:rejected.length.toString(), color:G.red,   modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:rejected } },
       ]} />
-      <Card><HRMTable columns={["Ref No","Leave Type","Employee","Date","Reason","Status"]} rows={rows} setRows={setRows} exportFilename="leaves" /></Card>
+     <Card>
+        {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+          <HRMTable
+            columns={["Ref No","Leave Type","Employee","Date","Reason","Status"]}
+            rows={rows}
+            exportFilename="leaves"
+            onApiDelete={apiDelete}
+            onApiEdit={apiEdit}
+            columnEditors={{ 1: leaveTypeOptions, 5: ["Pending","Approved","Rejected"] }}
+            extraActions={(i) => rows[i][5] === "Pending" ? (
+              <>
+                <button onClick={()=>approveLeave(i)} style={{ padding:"5px 12px", background:G.greenBg, color:G.green, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>✓ Approve</button>
+                <button onClick={()=>rejectLeave(i)} style={{ padding:"5px 12px", background:G.redBg, color:G.red, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>✕ Reject</button>
+              </>
+            ) : null}
+          />}
+      </Card>
       {modal && (
         <Modal title="Apply Leave" onClose={()=>setModal(false)}>
           <AutoIdField label="Reference No." value={newId()} />
@@ -556,7 +737,9 @@ function Leave() {
           <Field label="Leave Type" required>
             <FSelect value={form.leaveType} onChange={e=>setForm(f=>({...f,leaveType:e.target.value}))}>
               <option value="">Please Select</option>
-              <option>Sick Leave</option><option>Casual Leave</option><option>Annual Leave</option><option>Maternity Leave</option>
+              {leaveTypes.length === 0
+                ? <option value="" disabled>No leave types added yet — add one in Leave Type tab</option>
+                : leaveTypes.map(lt => <option key={lt.id} value={lt.name}>{lt.name}</option>)}
             </FSelect>
           </Field>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
@@ -577,6 +760,16 @@ function Leave() {
    ATTENDANCE (original UI + working CSV/PDF/Print)
 ══════════════════════════════════════════ */
 function fmtDate(d) { return d.toLocaleDateString("en-IN",{ day:"2-digit", month:"2-digit", year:"numeric" }); }
+function toISODate(dateVal) {
+  if (!dateVal) return null;
+  const d = new Date(dateVal);
+  if (isNaN(d)) return String(dateVal).slice(0,10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function normalize(str) { return String(str||"").trim().toLowerCase(); }
 function getDateRange(filter,customFrom,customTo) {
   const now=new Date(); const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   if (filter==="Today") return {from:today,to:today};
@@ -589,63 +782,146 @@ function getDateRange(filter,customFrom,customTo) {
   return null;
 }
 function parseIndianDate(str) { if(!str) return null; const p=str.split("/"); if(p.length!==3) return null; return new Date(+p[2],+p[1]-1,+p[0]); }
-function buildAttendanceData() {
-  const now=new Date(); const today=new Date(now.getFullYear(),now.getMonth(),now.getDate()); const rows=[];
-  for (let dayOffset=0;dayOffset<14;dayOffset++) {
-    const d=new Date(today); d.setDate(today.getDate()-dayOffset);
-    const dateStr=fmtDate(d); const isWeekend=d.getDay()===0||d.getDay()===6;
-    ALL_EMPLOYEES.forEach(emp=>{
-      if(isWeekend) return;
-      const hash=(emp.name.charCodeAt(0)+dayOffset)%10;
-      let status,clockIn,clockOut;
-      if(emp.status==="On Leave"&&dayOffset<3){status="On Leave";clockIn="—";clockOut="—";}
-      else if(hash===0){status="Absent";clockIn="—";clockOut="—";}
-      else if(hash===1){status="Late";clockIn="10:15 AM";clockOut="06:30 PM";}
-      else{status="Present";clockIn=emp.clockIn!=="—"?emp.clockIn:"09:05 AM";clockOut=emp.clockOut!=="—"?emp.clockOut:"06:10 PM";}
-      rows.push([emp.name,dateStr,clockIn,clockOut,status,emp.dept]);
-    });
-  }
-  return rows;
-}
-const ALL_ATTENDANCE_DATA = buildAttendanceData();
-
 function Attendance() {
-  const [tab,setTab]=useState("Shifts");
-  const [dateFilter,setDateFilter]=useState("Today");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
+  const initialTab = params.get("tab") || "All Attendance";
+  const [tab,_setTab]=useState(initialTab);
+  const setTab = (t) => {
+    _setTab(t);
+    const p = new URLSearchParams(location.search);
+    p.set("tab", t);
+    navigate({ pathname: location.pathname, search: p.toString() }, { replace: true });
+  };
+  const [dateFilter,setDateFilter]=useState("All");
   const [customFrom,setCustomFrom]=useState("");
   const [customTo,setCustomTo]=useState("");
-  const [empFilter,setEmpFilter]=useState("All");
-  const [statusFilter,setStatusFilter]=useState("All");
-  const [shifts,setShifts]=useState([
-    ["SHF-001","Day Shift",  "Fixed shift",    "09:00","18:00","Sun"],
-    ["SHF-002","Night Shift","Fixed shift",    "21:00","06:00","Sun"],
-    ["SHF-003","Flex Shift", "Flexible shift", "08:00","20:00","—"],
-  ]);
-  const [allAtt,setAllAtt]=useState(ALL_ATTENDANCE_DATA);
+const [empFilter,setEmpFilter]=useState("All");
+const [shiftFilter,setShiftFilter]=useState("");
+  const [byDateInput,setByDateInput]=useState(new Date().toISOString().split("T")[0]);
+  const [byDateFilter,setByDateFilter]=useState(new Date().toISOString().split("T")[0]);
+const [statusFilter,setStatusFilter]=useState("All");
+  const [empSearch,setEmpSearch]=useState("");
+  const [shiftRecords,setShiftRecords]=useState([]);
+  const [shiftsLoading,setShiftsLoading]=useState(true);
+  const shifts = shiftRecords.map(s=>[s.id_display, s.name, s.shift_type, s.start_time, s.end_time, s.holiday_day||"—"]);
+  const [departments,setDepartments]=useState([]);
+  const loadDepartments = async () => {
+    try { const d = await hrmAPI.getDepartments(); setDepartments(d.departments||[]); } catch(e){ console.error(e); }
+  };
+
+  const [attRecords,setAttRecords]=useState([]);
+  const [attLoading,setAttLoading]=useState(true);
+
   const [clockInModal,setClockInModal]=useState(false);
   const [addShiftModal,setAddShiftModal]=useState(false);
+  const [addAttModal,setAddAttModal]=useState(false);
+  const [editingAttId,setEditingAttId]=useState(null);
+  const [viewAttRecord,setViewAttRecord]=useState(null);
+  const [attForm,setAttForm]=useState({ employee:"", date:new Date().toISOString().split("T")[0], status:"Present", clockIn:"", clockOut:"", department:"", shiftName:"" });
   const [clockNote,setClockNote]=useState("");
   const [shiftForm,setShiftForm]=useState({ name:"", type:"Fixed shift", start:"", end:"", holiday:"" });
-  const newShiftId = ()=>genId("SHF-",shifts,0);
+  const loadShifts = async () => {
+    
+    setShiftsLoading(true);
+    try {
+      const d = await hrmAPI.getShifts();
+      const list = (d.shifts||[]).map(s => ({ ...s, id_display: `SHF-${String(s.id).padStart(3,"0")}` }));
+      setShiftRecords(list);
+    } catch(e){ console.error(e); }
+    setShiftsLoading(false);
+  };
+  const loadAttendance = async () => {
+    setAttLoading(true);
+    try {
+      const d = await hrmAPI.getAttendance("?date_filter=All");
+      setAttRecords(d.attendance||[]);
+    } catch(e){ console.error(e); }
+    setAttLoading(false);
+  };
+const attApiDelete = async (id) => {
+    if (!window.confirm("Delete this attendance record? This cannot be undone.")) return;
+    try { await hrmAPI.deleteAttendanceRecord(id); await loadAttendance(); }
+    catch(e){ alert(e.message); }
+  };
+ const viewAtt = (row) => {
+    const recId = row[6];
+    const fullRecord = attRecords.find(a=>a.id===recId);
+    if (!fullRecord) { alert("Could not find this record — please refresh and try again."); return; }
+    setViewAttRecord(fullRecord);
+  };
+  const openEditAtt = (row) => {
+    const recId = row[6];
+    const fullRecord = attRecords.find(a=>a.id===recId);
+    if (!fullRecord) { alert("Could not find this record — please refresh and try again."); return; }
+    setEditingAttId(recId);
+    setAttForm({
+      employee: fullRecord.employee_name || row[0],
+      date: fullRecord.attendance_date ? String(fullRecord.attendance_date).slice(0,10) : "",
+      status: fullRecord.status || row[4],
+      clockIn: fullRecord.clock_in || "",
+      clockOut: fullRecord.clock_out || "",
+      department: fullRecord.department || "",
+      shiftName: fullRecord.shift_name || "",
+    });
+    setAddAttModal(true);
+  };
+  useEffect(() => { loadShifts(); loadAttendance(); loadDepartments(); }, []);
+
+  const newShiftId = ()=>`SHF-${String(shiftRecords.length+1).padStart(3,"0")}`;
   const saveShift = async ()=>{
     if(!shiftForm.name||!shiftForm.start||!shiftForm.end) return;
-    try { await hrmFetch("POST","/hrm/shifts",{ name:shiftForm.name, shift_type:shiftForm.type, start_time:shiftForm.start, end_time:shiftForm.end, holiday_day:shiftForm.holiday||null }); } catch {}
-    setShifts(s=>[...s,[newShiftId(),shiftForm.name,shiftForm.type,shiftForm.start,shiftForm.end,shiftForm.holiday||"—"]]);
+    try {
+      await hrmAPI.createShift({ name:shiftForm.name, shift_type:shiftForm.type, start_time:shiftForm.start, end_time:shiftForm.end, holiday_day:shiftForm.holiday||null });
+      await loadShifts();
+    } catch(e){ alert(e.message); }
     setAddShiftModal(false); setShiftForm({ name:"", type:"Fixed shift", start:"", end:"", holiday:"" });
   };
-  const filteredAtt=(()=>{
+  const shiftApiDelete = async (i) => {
+    const rec = shiftRecords[i];
+    await hrmAPI.deleteShift(rec.id);
+    await loadShifts();
+  };
+  const shiftApiEdit = async (i, vals) => {
+    const rec = shiftRecords[i];
+    await hrmAPI.updateShift(rec.id, { name:vals[1], shift_type:vals[2], start_time:vals[3], end_time:vals[4], holiday_day:vals[5]==="—"?null:vals[5] });
+    await loadShifts();
+  };
+
+  // Build display rows for attendance table straight from DB records
+  
+const allAtt = attRecords.map(a => [
+    a.employee_name, a.attendance_date ? fmtDate(new Date(a.attendance_date)) : "", a.clock_in||"—", a.clock_out||"—", a.status, a.department||"—", a.id, a.shift_name||"—",
+  ]);
+const byDateRows = attRecords
+    .filter(a => toISODate(a.attendance_date) === byDateFilter)
+    .map(a => [a.employee_name, a.status, a.clock_in||"—", a.clock_out||"—", a.department||"—"]);
+const byShiftRows = attRecords
+    .filter(a => shiftFilter && normalize(a.shift_name) === normalize(shiftFilter))
+    .map(a => [a.employee_name, a.attendance_date ? fmtDate(new Date(a.attendance_date)) : "", a.clock_in||"—", a.clock_out||"—", a.status]);
+ const filteredAtt=(()=>{
     let rows=allAtt;
     const range=getDateRange(dateFilter,customFrom,customTo);
     if(range) rows=rows.filter(r=>{ const d=parseIndianDate(r[1]); if(!d) return false; return d>=range.from&&d<=range.to; });
     if(empFilter!=="All") rows=rows.filter(r=>r[0]===empFilter);
     if(statusFilter!=="All") rows=rows.filter(r=>r[4]===statusFilter);
+    if(empSearch.trim()) {
+      const q = normalize(empSearch);
+      rows = rows.filter(r =>
+        normalize(r[0]).includes(q) ||   // Employee
+        normalize(r[5]).includes(q) ||   // Department
+        normalize(r[7]).includes(q)      // Shift
+      );
+    }
     return rows;
   })();
-  const todayStr=fmtDate(new Date());
+ const todayStr=fmtDate(new Date());
   const todayRows=allAtt.filter(r=>r[1]===todayStr);
   const presentToday=todayRows.filter(r=>r[4]==="Present");
   const lateToday=todayRows.filter(r=>r[4]==="Late");
   const absentToday=todayRows.filter(r=>r[4]==="Absent");
+  const onLeaveToday=todayRows.filter(r=>r[4]==="On Leave");
   const uniqueEmps=[...new Set(allAtt.map(r=>r[0]))].sort();
   const filterLabel=(()=>{ const range=getDateRange(dateFilter,customFrom,customTo); if(!range) return "All Records"; const from=fmtDate(range.from); const to=fmtDate(range.to); return from===to?from:`${from} → ${to}`; })();
 
@@ -654,16 +930,23 @@ function Attendance() {
       <HRMNav />
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
         <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Attendance</h2>
-        <GreenBtn onClick={()=>setClockInModal(true)}>⬇ Clock In</GreenBtn>
+     <div style={{ display:"flex", gap:10 }}>
+         <GreenBtn onClick={()=>{
+            setEditingAttId(null);
+            setAttForm({ employee:"", date:new Date().toISOString().split("T")[0], status:"Present", clockIn:"", clockOut:"", department:"", shiftName:"" });
+            setAddAttModal(true);
+          }}>+ Add Attendance</GreenBtn>
+          <GreenBtn onClick={()=>setClockInModal(true)}>⬇ Clock In</GreenBtn>
+        </div>
       </div>
-      <KpiRow cards={[
-        { label:"Present Today", value:presentToday.length.toString(), accent:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:presentToday } },
-        { label:"Late Today",    value:lateToday.length.toString(),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:lateToday } },
-        { label:"Absent Today",  value:absentToday.length.toString(),  color:G.red,   modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:absentToday } },
-        { label:"Total Shifts",  value:shifts.length.toString(),       color:G.blue,  modalData:{ columns:["ID","Name","Type","Start","End","Holiday"], rows:shifts } },
+     <KpiRow cards={[
+        { label:"Present Today",  value:presentToday.length.toString(), accent:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:presentToday } },
+        { label:"Late Today",     value:lateToday.length.toString(),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:lateToday } },
+        { label:"Absent Today",   value:absentToday.length.toString(),  color:G.red,   modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:absentToday } },
+        { label:"On Leave Today", value:onLeaveToday.length.toString(), color:G.blue,  modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:onLeaveToday } },
       ]} />
       <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
-        {["Shifts","All Attendance","By Shift","By Date"].map(t=>(
+       {["All Attendance","Shifts","By Shift","By Date"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?G.green:G.muted, borderBottom:tab===t?`3px solid ${G.green}`:"3px solid transparent", fontSize:13 }}>{t}</button>
         ))}
       </div>
@@ -671,56 +954,60 @@ function Attendance() {
       {tab==="Shifts" && (
         <Card>
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><GreenBtn onClick={()=>setAddShiftModal(true)}>+ Add Shift</GreenBtn></div>
-          <HRMTable columns={["ID","Name","Type","Start","End","Holiday"]} rows={shifts} setRows={setShifts} exportFilename="shifts"
-            extraActions={i=><button style={{ padding:"5px 10px", background:G.greenBg, color:G.green, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>Assign Users</button>}
-          />
+          {shiftsLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+            <HRMTable columns={["ID","Name","Type","Start","End","Holiday"]} rows={shifts} exportFilename="shifts" onApiDelete={shiftApiDelete} onApiEdit={shiftApiEdit}
+             extraActions={i=><button style={{ padding:"0 12px", height:30, background:G.greenBg, color:G.green, border:"none", borderRadius:8, cursor:"pointer", fontWeight:700, fontSize:12 }}>Assign Users</button>}
+            />}
         </Card>
       )}
 
       {tab==="All Attendance" && (
         <div>
-          <Card style={{ marginBottom:16, padding:16 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-              <span style={{ fontSize:13, fontWeight:700, color:G.green }}>▼ Filter Attendance</span>
-              {dateFilter!=="All" && <span style={{ fontSize:11, background:G.greenBg, color:G.green, padding:"3px 10px", borderRadius:20, fontWeight:700 }}>📅 {filterLabel}</span>}
-            </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))", gap:12 }}>
-              <div>
-                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Date Range</label>
-                <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
+          <Card style={{ marginBottom:16, padding:"16px 20px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:G.muted }}>
+                Show
+                <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
                   {["All","Today","Yesterday","This Week","Last Week","This Month","Last Month","Custom"].map(o=><option key={o}>{o}</option>)}
                 </select>
+                entries
               </div>
-              <div>
-                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Employee</label>
-                <select value={empFilter} onChange={e=>setEmpFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
-                  <option>All</option>{uniqueEmps.map(n=><option key={n}>{n}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>Status</label>
-                <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe" }}>
-                  {["All","Present","Late","Absent","On Leave"].map(o=><option key={o}>{o}</option>)}
-                </select>
-              </div>
+
+              <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe", minWidth:110 }}>
+                {["All","Present","Late","Absent","On Leave"].map(o=><option key={o}>{o}</option>)}
+              </select>
+
+              <select value={empFilter} onChange={e=>setEmpFilter(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe", minWidth:110 }}>
+                <option>All</option>{uniqueEmps.map(n=><option key={n}>{n}</option>)}
+              </select>
+
               {dateFilter==="Custom" && (
                 <>
-                  <div><label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>From Date</label><input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} /></div>
-                  <div><label style={{ display:"block", fontSize:12, fontWeight:600, color:G.muted, marginBottom:5 }}>To Date</label><input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{ width:"100%", padding:"8px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} /></div>
+                  <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} />
+                  <span style={{ fontSize:13, color:G.muted }}>to</span>
+                  <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text }} />
                 </>
               )}
-              <div style={{ display:"flex", alignItems:"flex-end" }}>
-                <button onClick={()=>{ setDateFilter("Today"); setEmpFilter("All"); setStatusFilter("All"); setCustomFrom(""); setCustomTo(""); }} style={{ padding:"8px 18px", background:G.redBg, color:G.red, border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700 }}>✕ Reset</button>
+
+              <div style={{ position:"relative", flex:1, minWidth:220 }}>
+                <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:G.muted, fontSize:14 }}>🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search ..."
+                  value={empSearch || ""}
+                  onChange={e=>setEmpSearch && setEmpSearch(e.target.value)}
+                  style={{ width:"100%", padding:"7px 12px 7px 34px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, boxSizing:"border-box" }}
+                />
               </div>
+
+              {(dateFilter!=="All" || empFilter!=="All" || statusFilter!=="All") && (
+                <button onClick={()=>{ setDateFilter("All"); setEmpFilter("All"); setStatusFilter("All"); setCustomFrom(""); setCustomTo(""); }} style={{ padding:"7px 16px", background:G.redBg, color:G.red, border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700 }}>✕ Reset</button>
+              )}
             </div>
           </Card>
-          <div style={{ display:"flex", gap:12, marginBottom:12, flexWrap:"wrap" }}>
-            {[{ label:"Showing",value:filteredAtt.length+" records",color:G.text,bg:"#f5f5f5" },{ label:"Present",value:filteredAtt.filter(r=>r[4]==="Present").length,color:G.green,bg:G.greenBg },{ label:"Late",value:filteredAtt.filter(r=>r[4]==="Late").length,color:G.amber,bg:G.amberBg },{ label:"Absent",value:filteredAtt.filter(r=>r[4]==="Absent").length,color:G.red,bg:G.redBg }].map(s=>(
-              <div key={s.label} style={{ background:s.bg, borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:700, color:s.color, display:"flex", alignItems:"center", gap:6 }}>{s.label}: <span style={{ fontSize:14 }}>{s.value}</span></div>
-            ))}
-          </div>
           <Card>
-            {filteredAtt.length===0 ? (
+            {attLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+            filteredAtt.length===0 ? (
               <div style={{ textAlign:"center", padding:"40px 0", color:G.muted }}>
                 <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
                 <div style={{ fontSize:15, fontWeight:600 }}>No attendance records found</div>
@@ -728,14 +1015,14 @@ function Attendance() {
               </div>
             ) : (
               <div style={{ overflowX:"auto" }}>
-                <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-                  <button onClick={()=>doExportCSV(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department"],"attendance")} style={{ padding:"6px 14px", border:`1px solid ${G.green}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.green }}>📄 CSV</button>
-                  <button onClick={()=>doExportCSV(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department"],"attendance")} style={{ padding:"6px 14px", border:`1px solid ${G.blue}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.blue }}>📊 Excel</button>
-                  <button onClick={()=>doExportPDF(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department"],"Attendance Report")} style={{ padding:"6px 14px", border:`1px solid ${G.red}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.red }}>🖨 PDF</button>
+<div style={{ display:"flex", gap:8, marginBottom:14 }}>
+                  <button onClick={()=>doExportCSV(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department","Shift"],"attendance")} style={{ padding:"6px 14px", border:`1px solid ${G.green}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.green }}>📄 CSV</button>
+                  <button onClick={()=>doExportCSV(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department","Shift"],"attendance")} style={{ padding:"6px 14px", border:`1px solid ${G.blue}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.blue }}>📊 Excel</button>
+                  <button onClick={()=>doExportPDF(filteredAtt,["Employee","Date","Clock In","Clock Out","Status","Department","Shift"],"Attendance Report")} style={{ padding:"6px 14px", border:`1px solid ${G.red}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.red }}>🖨 PDF</button>
                   <button onClick={()=>window.print()} style={{ padding:"6px 14px", border:`1px solid ${G.muted}`, borderRadius:7, background:G.white, fontSize:12, fontWeight:600, cursor:"pointer", color:G.muted }}>🖨 Print</button>
                 </div>
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
-                  <thead><tr style={{ background:G.greenBg }}>{["Employee","Date","Clock In","Clock Out","Status","Department"].map(c=>(<th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", whiteSpace:"nowrap" }}>{c}</th>))}</tr></thead>
+    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+              <thead><tr style={{ background:G.greenBg }}>{["Employee","Date","Clock In","Clock Out","Status","Department","Shift"].map(c=>(<th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", whiteSpace:"nowrap" }}>{c}</th>))}<th style={{ padding:"10px 14px", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em", textAlign:"center", width:130 }}>Actions</th></tr></thead>
                   <tbody>
                     {filteredAtt.map((row,i)=>{
                       const statusColors={ Present:{bg:G.greenBg,color:G.green},Late:{bg:G.amberBg,color:G.amber},Absent:{bg:G.redBg,color:G.red},"On Leave":{bg:G.blueBg,color:G.blue} };
@@ -747,7 +1034,21 @@ function Attendance() {
                           <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[2]}</td>
                           <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[3]}</td>
                           <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}><span style={{ background:sc.bg, color:sc.color, borderRadius:20, padding:"3px 12px", fontSize:12, fontWeight:700 }}>{row[4]}</span></td>
-                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{row[5]}</td>
+                         <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{row[5]}</td>
+                          <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{row[7]}</td>
+                <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, textAlign:"center" }}>
+                            <div style={{ display:"flex", gap:6, justifyContent:"center" }}>
+                              <button title="View" onClick={()=>viewAtt(row)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#0ea5e9", fontSize:16 }}>
+                                <i className="ti ti-eye"></i>
+                              </button>
+                              <button title="Edit" onClick={()=>openEditAtt(row)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#d97706", fontSize:16 }}>
+                                <i className="ti ti-pencil"></i>
+                              </button>
+                              <button title="Delete" onClick={()=>attApiDelete(row[6])} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#dc2626", fontSize:16 }}>
+                                <i className="ti ti-trash"></i>
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -759,9 +1060,73 @@ function Attendance() {
           </Card>
         </div>
       )}
-
-      {tab==="By Shift" && (<Card><div style={{ marginBottom:14 }}><label style={{ fontWeight:600, fontSize:13, color:G.text, marginRight:10 }}>Select Shift:</label><select style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }}>{shifts.map(s=><option key={s[0]}>{s[1]}</option>)}</select></div><NoData /></Card>)}
-      {tab==="By Date" && (<Card><div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:12 }}><label style={{ fontWeight:600, fontSize:13, color:G.text }}>Select Date:</label><input type="date" defaultValue={new Date().toISOString().split("T")[0]} style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }} /><GreenBtn style={{ padding:"8px 18px", fontSize:12 }}>View</GreenBtn></div><NoData /></Card>)}
+{tab==="By Shift" && (
+  <Card>
+    <div style={{ marginBottom:14 }}>
+      <label style={{ fontWeight:600, fontSize:13, color:G.text, marginRight:10 }}>Select Shift:</label>
+      <select
+        value={shiftFilter}
+        onChange={e=>setShiftFilter(e.target.value)}
+        style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }}
+      >
+        <option value="">Please Select</option>
+        {shiftRecords.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+      </select>
+    </div>
+    {!shiftFilter ? (
+      <div style={{ textAlign:"center", padding:32, color:G.muted }}>Please select a shift to view its attendance.</div>
+    ) : byShiftRows.length===0 ? (
+      <NoData />
+    ) : (
+      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+        <thead><tr style={{ background:G.greenBg }}>{["Employee","Date","Clock In","Clock Out","Status"].map(c=>(<th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase" }}>{c}</th>))}</tr></thead>
+        <tbody>
+          {byShiftRows.map((row,i)=>(
+            <tr key={i} style={{ background:i%2===0?G.white:G.rowHov }}>
+              <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[0]}</td>
+              <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[1]}</td>
+              <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[2]}</td>
+              <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[3]}</td>
+              <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}><StatusPill text={row[4]} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </Card>
+)}
+     {tab==="By Date" && (
+        <Card>
+          <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+            <label style={{ fontWeight:600, fontSize:13, color:G.text }}>Select Date:</label>
+            <input
+              type="date"
+              value={byDateInput}
+              onChange={e=>setByDateInput(e.target.value)}
+              style={{ padding:"8px 12px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif" }}
+            />
+            <GreenBtn onClick={()=>setByDateFilter(byDateInput)} style={{ padding:"8px 18px", fontSize:12 }}>View</GreenBtn>
+          </div>
+          {byDateRows.length===0 ? (
+            <NoData />
+          ) : (
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+              <thead><tr style={{ background:G.greenBg }}>{["Employee","Status","Clock In","Clock Out","Department"].map(c=>(<th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase" }}>{c}</th>))}</tr></thead>
+              <tbody>
+                {byDateRows.map((row,i)=>(
+                  <tr key={i} style={{ background:i%2===0?G.white:G.rowHov }}>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[0]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}><StatusPill text={row[1]} /></td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[2]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[3]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>{row[4]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
 
       {clockInModal && (
         <Modal title="Clock In" onClose={()=>setClockInModal(false)} width={420}>
@@ -769,12 +1134,94 @@ function Attendance() {
           <Field label="Clock In Note"><FTextarea value={clockNote} onChange={e=>setClockNote(e.target.value)} placeholder="Optional note..." /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
-              const now=new Date();
-              try { await hrmFetch("POST","/hrm/attendance/clock-in",{ note:clockNote }); } catch {}
-              setAllAtt(a=>[...a,["Admin",fmtDate(now),now.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),"—","Present","Admin"]]);
+              try {
+                await hrmAPI.clockIn({ note:clockNote });
+                await loadAttendance();
+              } catch(e){ alert(e.message); }
               setClockInModal(false); setClockNote("");
             }}>Submit</GreenBtn>
             <DarkBtn onClick={()=>setClockInModal(false)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+    {viewAttRecord && (
+        <Modal title="Attendance Details" onClose={()=>setViewAttRecord(null)} width={440}>
+          {[
+            { label:"Employee", value: viewAttRecord.employee_name || "—" },
+            { label:"Date", value: viewAttRecord.attendance_date ? String(viewAttRecord.attendance_date).slice(0,10) : "—" },
+            { label:"Status", value: viewAttRecord.status || "—" },
+            { label:"Clock In", value: viewAttRecord.clock_in || "—" },
+            { label:"Clock Out", value: viewAttRecord.clock_out || "—" },
+            { label:"Department", value: viewAttRecord.department || "—" },
+            { label:"Shift", value: viewAttRecord.shift_name || "—" },
+            { label:"Note", value: viewAttRecord.note || "—" },
+          ].map(f => (
+            <div key={f.label} style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:`1px solid ${G.border}` }}>
+              <span style={{ fontSize:13, fontWeight:600, color:G.muted }}>{f.label}</span>
+              <span style={{ fontSize:13, fontWeight:700, color:G.text }}>{f.value}</span>
+            </div>
+          ))}
+          <div style={{ display:"flex", justifyContent:"flex-end", marginTop:16 }}>
+            <DarkBtn onClick={()=>setViewAttRecord(null)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {addAttModal && (
+     <Modal title={editingAttId ? "Edit Attendance" : "Add Attendance"} onClose={()=>{setAddAttModal(false); setEditingAttId(null);}} width={480}>
+          <Field label="Employee" required><FInput value={attForm.employee} onChange={e=>setAttForm(f=>({...f,employee:e.target.value}))} placeholder="Employee name" /></Field>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Date" required><FInput type="date" value={attForm.date} onChange={e=>setAttForm(f=>({...f,date:e.target.value}))} /></Field>
+            <Field label="Status" required>
+              <FSelect value={attForm.status} onChange={e=>setAttForm(f=>({...f,status:e.target.value}))}>
+                <option>Present</option><option>Late</option><option>Absent</option><option>On Leave</option>
+              </FSelect>
+            </Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Clock In"><FInput type="time" value={attForm.clockIn} onChange={e=>setAttForm(f=>({...f,clockIn:e.target.value}))} /></Field>
+            <Field label="Clock Out"><FInput type="time" value={attForm.clockOut} onChange={e=>setAttForm(f=>({...f,clockOut:e.target.value}))} /></Field>
+          </div>
+        <Field label="Department">
+            <FSelect value={attForm.department} onChange={e=>setAttForm(f=>({...f,department:e.target.value}))}>
+              <option value="">Please Select</option>
+              {departments.length === 0
+                ? <option value="" disabled>No departments added yet</option>
+                : departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Shift" required>
+            <FSelect value={attForm.shiftName} onChange={e=>setAttForm(f=>({...f,shiftName:e.target.value}))}>
+              <option value="">Please Select</option>
+              {shiftRecords.length === 0
+                ? <option value="" disabled>No shifts added yet</option>
+                : shiftRecords.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </FSelect>
+          </Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={async()=>{
+              if(!attForm.employee||!attForm.date) return;
+              try {
+               if (editingAttId) {
+                  await hrmAPI.updateAttendanceRecord(editingAttId, {
+                    employee_name:attForm.employee, attendance_date:attForm.date, status:attForm.status,
+                    clock_in:attForm.clockIn||null, clock_out:attForm.clockOut||null, department:attForm.department||null,
+                    shift_name:attForm.shiftName||null,
+                  });
+                } else {
+                  await hrmAPI.createAttendanceRecord({
+                    employee_name:attForm.employee, attendance_date:attForm.date, status:attForm.status,
+                    clock_in:attForm.clockIn||null, clock_out:attForm.clockOut||null, department:attForm.department||null,
+                    shift_name:attForm.shiftName||null,
+                  });
+                }
+        await loadAttendance();
+        setDateFilter("All");
+                alert(`Attendance record ${editingAttId ? "updated" : "saved"} successfully!\n\nIf you don't see it in the table, check your Date Range / Employee / Status filters — the record's date might not match "Today."`);
+              } catch(e){ alert(e.message); }
+              setAddAttModal(false); setEditingAttId(null);
+              setAttForm({ employee:"", date:new Date().toISOString().split("T")[0], status:"Present", clockIn:"", clockOut:"", department:"" });
+            }}>{editingAttId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setAddAttModal(false); setEditingAttId(null);}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -788,7 +1235,7 @@ function Attendance() {
             <Field label="End"   required><FInput type="time" value={shiftForm.end}   onChange={e=>setShiftForm(f=>({...f,end:e.target.value}))} /></Field>
           </div>
           <Field label="Holiday"><FInput value={shiftForm.holiday} onChange={e=>setShiftForm(f=>({...f,holiday:e.target.value}))} placeholder="e.g. Sun" /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}><GreenBtn onClick={saveShift}>Save</GreenBtn><DarkBtn onClick={()=>setAddShiftModal(false)}>Close</DarkBtn></div>
+         <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}><GreenBtn onClick={saveShift}>Save</GreenBtn><DarkBtn onClick={()=>setAddShiftModal(false)}>Close</DarkBtn></div>
         </Modal>
       )}
     </div>
@@ -801,24 +1248,130 @@ function Attendance() {
 function Payroll() {
   const [tab,setTab]=useState("All Payrolls");
   const [modal,setModal]=useState(false);
-  const [rows,setRows]=useState([
-    ["PAY-2026-001","Priya S.", "HR",   "Executive","May 2026","₹42,000","Paid"   ],
-    ["PAY-2026-002","Rahul M.", "Sales","Manager",  "May 2026","₹65,000","Paid"   ],
-    ["PAY-2026-003","Ananya K.","Ops",  "Analyst",  "May 2026","₹38,500","Pending"],
-  ]);
-  const [form,setForm]=useState({ employee:"", month:"" });
-  const [payComp,setPayComp]=useState([
-    ["PC-001","Basic Salary","Earning",  "₹35,000","01-Jun-26"],
-    ["PC-002","HRA",         "Earning",  "₹14,000","01-Jun-26"],
-    ["PC-003","PF Deduction","Deduction","₹4,200", "01-Jun-26"],
-    ["PC-004","Tax (TDS)",   "Deduction","₹3,800", "01-Jun-26"],
-  ]);
-  const [compModal,setCompModal]=useState(false);
+
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const rows = records.map(p => [p.reference_no, p.employee_name, p.department||"—", p.designation||"—", p.month_year, `₹${Number(p.net_salary||0).toLocaleString("en-IN")}`, p.status]);
+
+const [form,setForm]=useState({ employee:"", month:"", department:"", designation:"" });
+  const [editModal,setEditModal]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [editForm,setEditForm]=useState({ employee:"", department:"", designation:"", month:"", amount:"", status:"Pending" });
+  const [departments,setDepartments]=useState([]);
+  const [designations,setDesignations]=useState([]);
+  const [compRecords,setCompRecords]=useState([]);
+  const [compLoading,setCompLoading]=useState(true);
+  const payComp = compRecords.map(c => [`PC-${String(c.id).padStart(3,"0")}`, c.description, c.component_type, `₹${Number(c.amount||0).toLocaleString("en-IN")}`, c.applicable_from ? String(c.applicable_from).slice(0,10) : "—"]);
+
+ const [compModal,setCompModal]=useState(false);
   const [compForm,setCompForm]=useState({ desc:"", type:"Earning", amount:"", date:"" });
-  const newPayId=()=>{ const nums=rows.map(r=>parseInt(r[0].replace("PAY-2026-",""))||0); const next=nums.length>0?Math.max(...nums)+1:1; return `PAY-2026-${String(next).padStart(3,"0")}`; };
-  const newCompId=()=>genId("PC-",payComp,0);
+  const [compSaving,setCompSaving]=useState(false);
+
+  const [groupRecords,setGroupRecords]=useState([]);
+  const [groupsLoading,setGroupsLoading]=useState(true);
+  const groupRows = groupRecords.map(g => [`PG-${String(g.id).padStart(3,"0")}`, g.name, g.pay_schedule||"—", g.employee_count!=null?String(g.employee_count):"0", g.description||"—"]);
+  const [groupModal,setGroupModal]=useState(false);
+  const [groupForm,setGroupForm]=useState({ name:"", schedule:"Monthly", employees:"", desc:"" });
+
+  const loadPayroll = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getPayrolls(); setRecords(d.payrolls||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  const loadComponents = async () => {
+    setCompLoading(true);
+    try { const d = await hrmAPI.getPayComponents(); setCompRecords(d.components||[]); } catch(e){ console.error(e); }
+    setCompLoading(false);
+  };
+const loadDeptDesig = async () => {
+    try {
+      const d = await hrmAPI.getDepartments();
+      setDepartments(d.departments||[]);
+      const g = await hrmAPI.getDesignations();
+      setDesignations(g.designations||[]);
+    } catch(e){ console.error(e); }
+  };
+  const loadGroups = async () => {
+    setGroupsLoading(true);
+    try { const d = await hrmAPI.getPayrollGroups(); setGroupRecords(d.groups||[]); } catch(e){ console.error(e); }
+    setGroupsLoading(false);
+  };
+  useEffect(() => { loadPayroll(); loadComponents(); loadDeptDesig(); loadGroups(); }, []);
+
+  const newGroupId=()=>`PG-${String(groupRecords.length+1).padStart(3,"0")}`;
+  const saveGroup = async () => {
+    if(!groupForm.name) return;
+    try {
+      await hrmAPI.createPayrollGroup({
+        name: groupForm.name,
+        pay_schedule: groupForm.schedule,
+        employee_count: parseInt(groupForm.employees)||0,
+        description: groupForm.desc,
+      });
+      await loadGroups();
+    } catch(e){ alert(e.message); }
+    setGroupModal(false); setGroupForm({ name:"", schedule:"Monthly", employees:"", desc:"" });
+  };
+  const groupApiDelete = async (i) => { await hrmAPI.deletePayrollGroup(groupRecords[i].id); await loadGroups(); };
+  const groupApiEdit = async (i, vals) => {
+    const rec = groupRecords[i];
+    await hrmAPI.updatePayrollGroup(rec.id, {
+      name: vals[1], pay_schedule: vals[2], employee_count: parseInt(vals[3])||0, description: vals[4],
+    });
+    await loadGroups();
+  };
+
+  const newPayId=()=>{ const nums=records.map(r=>parseInt((r.reference_no||"").replace("PAY-2026-",""))||0); const next=nums.length>0?Math.max(...nums)+1:1; return `PAY-2026-${String(next).padStart(3,"0")}`; };
+  const newCompId=()=>`PC-${String(compRecords.length+1).padStart(3,"0")}`;
   const paid=rows.filter(r=>r[6]==="Paid");
   const pending=rows.filter(r=>r[6]==="Pending");
+
+  const payrollApiDelete = async (i) => { await hrmAPI.deletePayroll(records[i].id); await loadPayroll(); };
+ const payrollApiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updatePayroll(rec.id, {
+      employee_name:vals[1], department:vals[2], designation:vals[3], month_year:vals[4],
+      net_salary: parseFloat(String(vals[5]).replace(/[₹,]/g,""))||0, status:vals[6],
+    });
+    await loadPayroll();
+  };
+  const openEditPayroll = (i) => {
+    const rec = records[i];
+    setEditingId(rec.id);
+    setEditForm({
+      employee: rec.employee_name || "",
+      department: rec.department || "",
+      designation: rec.designation || "",
+      month: rec.month_year || "",
+      amount: String(rec.net_salary || ""),
+      status: rec.status || "Pending",
+    });
+    setEditModal(true);
+  };
+  const saveEditPayroll = async () => {
+    try {
+      await hrmAPI.updatePayroll(editingId, {
+        employee_name: editForm.employee,
+        department: editForm.department,
+        designation: editForm.designation,
+        month_year: editForm.month,
+        net_salary: parseFloat(editForm.amount) || 0,
+        status: editForm.status,
+      });
+      await loadPayroll();
+    } catch(e) { alert(e.message); }
+    setEditModal(false); setEditingId(null);
+  };
+  const compApiDelete = async (i) => { await hrmAPI.deletePayComponent(compRecords[i].id); await loadComponents(); };
+  const compApiEdit = async (i, vals) => {
+    const rec = compRecords[i];
+    await hrmAPI.updatePayComponent(rec.id, {
+      description:vals[1], component_type:vals[2],
+      amount: parseFloat(String(vals[3]).replace(/[₹,]/g,""))||0,
+      applicable_from: vals[4]==="—"?null:vals[4],
+    });
+    await loadComponents();
+  };
 
   return (
     <div>
@@ -829,35 +1382,113 @@ function Payroll() {
       </div>
       <KpiRow cards={[
         { label:"Total Payrolls", value:rows.length.toString(), accent:true, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows } },
-        { label:"Total Payout",  value:"₹1,45,500", color:G.green },
+        { label:"Total Payout",  value:`₹${rows.reduce((s,r)=>s+ (parseFloat(String(r[5]).replace(/[₹,]/g,""))||0),0).toLocaleString("en-IN")}`, color:G.green },
         { label:"Paid",    value:paid.length.toString(),    color:G.green, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows:paid } },
         { label:"Pending", value:pending.length.toString(), color:G.amber, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows:pending } },
       ]} />
       <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
         {["All Payrolls","Payroll Groups","Pay Components"].map(t=>(<button key={t} onClick={()=>setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?G.green:G.muted, borderBottom:tab===t?`3px solid ${G.green}`:"3px solid transparent", fontSize:13 }}>{t}</button>))}
       </div>
-      {tab==="All Payrolls" && <Card><HRMTable columns={["Ref No","Employee","Dept","Designation","Month","Amount","Status"]} rows={rows} setRows={setRows} exportFilename="payroll" /></Card>}
-      {tab==="Payroll Groups" && <Card><NoData /></Card>}
+{tab==="All Payrolls" && <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable
+          columns={["Ref No","Employee","Department","Designation","Month","Amount","Status"]}
+          rows={rows}
+          exportFilename="payroll"
+          onApiDelete={payrollApiDelete}
+          onEditClick={openEditPayroll}
+        />}</Card>}
+      {tab==="Payroll Groups" && (
+        <Card>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
+            <GreenBtn onClick={()=>setGroupModal(true)}>+ Add Group</GreenBtn>
+          </div>
+          {groupsLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+            <HRMTable
+              columns={["ID","Group Name","Pay Schedule","Employees","Description"]}
+              rows={groupRows}
+              exportFilename="payroll-groups"
+              onApiDelete={groupApiDelete}
+              onApiEdit={groupApiEdit}
+              columnEditors={{ 2: ["Monthly","Bi-weekly","Weekly"] }}
+            />}
+        </Card>
+      )}
       {tab==="Pay Components" && (
         <Card>
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><GreenBtn onClick={()=>setCompModal(true)}>+ Add Component</GreenBtn></div>
-          <HRMTable columns={["ID","Description","Type","Amount","Applicable From"]} rows={payComp} setRows={setPayComp} exportFilename="pay-components" />
+          {compLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+            <HRMTable columns={["ID","Description","Type","Amount","Applicable From"]} rows={payComp} exportFilename="pay-components" onApiDelete={compApiDelete} onApiEdit={compApiEdit} />}
         </Card>
       )}
       {modal && (
         <Modal title="Add Payroll" onClose={()=>setModal(false)}>
           <AutoIdField label="Payroll Ref No." value={newPayId()} />
-          <Field label="Employee" required><FInput value={form.employee} onChange={e=>setForm(f=>({...f,employee:e.target.value}))} placeholder="Employee name" /></Field>
+<Field label="Employee" required><FInput value={form.employee} onChange={e=>setForm(f=>({...f,employee:e.target.value}))} placeholder="Employee name" /></Field>
+          <Field label="Department">
+            <FSelect value={form.department} onChange={e=>setForm(f=>({...f,department:e.target.value}))}>
+              <option value="">Please Select</option>
+              {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Designation">
+            <FSelect value={form.designation} onChange={e=>setForm(f=>({...f,designation:e.target.value}))}>
+              <option value="">Please Select</option>
+              {designations.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
           <Field label="Month / Year" required><FInput type="month" value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
               if(form.employee&&form.month){
-                try { await hrmFetch("POST","/hrm/payroll",{ employee_name:form.employee, month_year:form.month }); } catch {}
-                setRows(r=>[...r,[newPayId(),form.employee,"—","—",form.month,"₹0","Pending"]]);
-                setModal(false); setForm({ employee:"", month:"" });
+          try {
+                  await hrmAPI.createPayroll({ employee_name:form.employee, month_year:form.month, department:form.department, designation:form.designation });
+                  await loadPayroll();
+                } catch(e){ alert(e.message); }
+                setModal(false); setForm({ employee:"", month:"", department:"", designation:"" });
               }
             }}>Save</GreenBtn>
             <DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {groupModal && (
+        <Modal title="Add Payroll Group" onClose={()=>setGroupModal(false)}>
+          <AutoIdField label="Group ID" value={newGroupId()} />
+          <Field label="Group Name" required><FInput value={groupForm.name} onChange={e=>setGroupForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Monthly Staff" /></Field>
+          <Field label="Pay Schedule"><FSelect value={groupForm.schedule} onChange={e=>setGroupForm(f=>({...f,schedule:e.target.value}))}><option>Monthly</option><option>Bi-weekly</option><option>Weekly</option></FSelect></Field>
+          <Field label="Number of Employees"><FInput type="number" value={groupForm.employees} onChange={e=>setGroupForm(f=>({...f,employees:e.target.value}))} placeholder="e.g. 12" /></Field>
+          <Field label="Description"><FTextarea value={groupForm.desc} onChange={e=>setGroupForm(f=>({...f,desc:e.target.value}))} placeholder="Brief description" /></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={saveGroup}>Save</GreenBtn>
+            <DarkBtn onClick={()=>setGroupModal(false)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {editModal && (
+        <Modal title="Edit Payroll" onClose={()=>{setEditModal(false); setEditingId(null);}}>
+          <Field label="Employee" required><FInput value={editForm.employee} onChange={e=>setEditForm(f=>({...f,employee:e.target.value}))} placeholder="Employee name" /></Field>
+          <Field label="Department">
+            <FSelect value={editForm.department} onChange={e=>setEditForm(f=>({...f,department:e.target.value}))}>
+              <option value="">Please Select</option>
+              {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Designation">
+            <FSelect value={editForm.designation} onChange={e=>setEditForm(f=>({...f,designation:e.target.value}))}>
+              <option value="">Please Select</option>
+              {designations.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Month / Year" required><FInput type="month" value={editForm.month} onChange={e=>setEditForm(f=>({...f,month:e.target.value}))} /></Field>
+          <Field label="Amount"><FInput type="number" value={editForm.amount} onChange={e=>setEditForm(f=>({...f,amount:e.target.value}))} placeholder="0" /></Field>
+          <Field label="Status">
+            <FSelect value={editForm.status} onChange={e=>setEditForm(f=>({...f,status:e.target.value}))}>
+              <option>Pending</option><option>Paid</option>
+            </FSelect>
+          </Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={saveEditPayroll}>Save</GreenBtn>
+            <DarkBtn onClick={()=>{setEditModal(false); setEditingId(null);}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -868,17 +1499,23 @@ function Payroll() {
           <Field label="Type"><FSelect value={compForm.type} onChange={e=>setCompForm(f=>({...f,type:e.target.value}))}><option>Earning</option><option>Deduction</option></FSelect></Field>
           <Field label="Amount"><FInput type="text" value={compForm.amount} onChange={e=>setCompForm(f=>({...f,amount:e.target.value}))} placeholder="₹0" /></Field>
           <Field label="Applicable Date"><FInput type="date" value={compForm.date} onChange={e=>setCompForm(f=>({...f,date:e.target.value}))} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <GreenBtn onClick={async()=>{
-              if(compForm.desc){
-                try { await hrmFetch("POST","/hrm/pay-components",{ description:compForm.desc, component_type:compForm.type, amount:parseFloat(compForm.amount)||0, applicable_from:compForm.date||null }); } catch {}
-                setPayComp(p=>[...p,[newCompId(),compForm.desc,compForm.type,compForm.amount,compForm.date]]);
-                setCompModal(false); setCompForm({ desc:"", type:"Earning", amount:"", date:"" });
-              }
-            }}>Save</GreenBtn>
+<div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn
+              onClick={async()=>{
+                if(compForm.desc && !compSaving){
+                  setCompSaving(true);
+                  try {
+                    await hrmAPI.createPayComponent({ description:compForm.desc, component_type:compForm.type, amount:parseFloat(compForm.amount)||0, applicable_from:compForm.date||null });
+                    await loadComponents();
+                  } catch(e){ alert(e.message); }
+                  setCompSaving(false);
+                  setCompModal(false); setCompForm({ desc:"", type:"Earning", amount:"", date:"" });
+                }
+              }}
+              style={{ opacity:compSaving?0.6:1, pointerEvents:compSaving?"none":"auto" }}
+            >{compSaving ? "Saving..." : "Save"}</GreenBtn>
             <DarkBtn onClick={()=>setCompModal(false)}>Close</DarkBtn>
-          </div>
-        </Modal>
+          </div>        </Modal>
       )}
     </div>
   );
@@ -890,23 +1527,36 @@ function MyPayrolls() { return (<div><HRMNav /><h2 style={{ marginBottom:16, fon
    HOLIDAY (original UI + API save + exports)
 ══════════════════════════════════════════ */
 function Holiday() {
-  const [rows,setRows]=useState([
-    ["HOL-001","Eid Al-Adha",      "27-May-26","28-May-26","2 days","All Locations"],
-    ["HOL-002","Independence Day", "15-Aug-26","15-Aug-26","1 day", "All Locations"],
-    ["HOL-003","Diwali",           "20-Oct-26","21-Oct-26","2 days","All Locations"],
-    ["HOL-004","Christmas",        "25-Dec-26","25-Dec-26","1 day", "All Locations"],
-  ]);
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const rows = records.map(h => [`HOL-${String(h.id).padStart(3,"0")}`, h.name, h.start_date?String(h.start_date).slice(0,10):"", h.end_date?String(h.end_date).slice(0,10):"", h.duration, h.location]);
+
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
-  const newId=()=>genId("HOL-",rows,0);
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getHolidays(); setRecords(d.holidays||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const newId=()=>`HOL-${String(records.length+1).padStart(3,"0")}`;
   const save=async()=>{
     if(!form.name||!form.startDate||!form.endDate) return;
-    const s=new Date(form.startDate),e=new Date(form.endDate);
-    const days=Math.max(1,Math.round((e-s)/86400000)+1);
-    try { await hrmFetch("POST","/hrm/holidays",{ name:form.name, start_date:form.startDate, end_date:form.endDate, location:form.location, note:form.note }); } catch {}
-    setRows(r=>[...r,[newId(),form.name,form.startDate,form.endDate,`${days} day${days>1?"s":""}`,form.location]]);
+    try {
+      await hrmAPI.createHoliday({ name:form.name, start_date:form.startDate, end_date:form.endDate, location:form.location, note:form.note });
+      await load();
+    } catch(e){ alert(e.message); }
     setModal(false); setForm({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
   };
+  const apiDelete = async (i) => { await hrmAPI.deleteHoliday(records[i].id); await load(); };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updateHoliday(rec.id, { name:vals[1], start_date:vals[2], end_date:vals[3], location:vals[5] });
+    await load();
+  };
+
   return (
     <div>
       <HRMNav />
@@ -916,10 +1566,11 @@ function Holiday() {
       </div>
       <KpiRow cards={[
         { label:"Total Holidays", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Name","Start","End","Duration","Location"], rows } },
-        { label:"This Quarter", value:"2", color:G.green },
-        { label:"Total Days Off", value:rows.reduce((s,r)=>s+parseInt(r[4]),0).toString(), color:G.blue },
+        { label:"This Quarter", value:String(rows.length), color:G.green },
+        { label:"Total Days Off", value:rows.reduce((s,r)=>s+(parseInt(r[4])||0),0).toString(), color:G.blue },
       ]} />
-      <Card><HRMTable columns={["ID","Name","Start","End","Duration","Location"]} rows={rows} setRows={setRows} exportFilename="holidays" /></Card>
+      <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable columns={["ID","Name","Start","End","Duration","Location"]} rows={rows} exportFilename="holidays" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
       {modal && (
         <Modal title="Add Holiday" onClose={()=>setModal(false)}>
           <AutoIdField label="Holiday ID" value={newId()} />
@@ -941,17 +1592,30 @@ function Holiday() {
    DEPARTMENTS (original UI + API + exports)
 ══════════════════════════════════════════ */
 function Departments() {
-  const [rows,setRows]=useState([
-    ["DEPT-001","Sales",            "DEPT-SALES","Handles all outbound and inbound sales"    ],
-    ["DEPT-002","Digital Marketing","DEPT-MKTG", "Online marketing and brand strategy"       ],
-    ["DEPT-003","Operations",       "DEPT-OPS",  "Warehouse and logistics management"        ],
-    ["DEPT-004","Human Resources",  "DEPT-HR",   "Recruitment, payroll and employee welfare" ],
-    ["DEPT-005","Finance",          "DEPT-FIN",  "Accounts, billing and financial planning"  ],
-  ]);
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const rows = records.map(d => [`DEPT-${String(d.id).padStart(3,"0")}`, d.name, d.dept_code, d.description||"—"]);
+
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({ dept:"", desc:"" });
-  const newId=()=>genId("DEPT-",rows,0);
-  const newDeptId=(name)=>name?`DEPT-${name.slice(0,4).toUpperCase().replace(/\s/g,"")}`:genId("DEPT-",rows,2);
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getDepartments(); setRecords(d.departments||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const newId=()=>`DEPT-${String(records.length+1).padStart(3,"0")}`;
+  const newDeptId=(name)=>name?`DEPT-${name.slice(0,4).toUpperCase().replace(/\s/g,"")}`:"Auto-generated from name";
+
+  const apiDelete = async (i) => { await hrmAPI.deleteDepartment(records[i].id); await load(); };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updateDepartment(rec.id, { name:vals[1], description:vals[3] });
+    await load();
+  };
+
   return (
     <div>
       <HRMNav />
@@ -963,7 +1627,8 @@ function Departments() {
         { label:"Total Departments", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Department","Dept Code","Description"], rows } },
         { label:"Active", value:rows.length.toString(), color:G.green },
       ]} />
-      <Card><HRMTable columns={["ID","Department","Dept Code","Description"]} rows={rows} setRows={setRows} exportFilename="departments" /></Card>
+      <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable columns={["ID","Department","Dept Code","Description"]} rows={rows} exportFilename="departments" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
       {modal && (
         <Modal title="Add Department" onClose={()=>setModal(false)}>
           <AutoIdField label="System ID"       value={newId()} />
@@ -973,8 +1638,10 @@ function Departments() {
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
               if(form.dept){
-                try { await hrmFetch("POST","/hrm/departments",{ name:form.dept, description:form.desc }); } catch {}
-                setRows(r=>[...r,[newId(),form.dept,newDeptId(form.dept),form.desc||"—"]]);
+                try {
+                  await hrmAPI.createDepartment({ name:form.dept, description:form.desc });
+                  await load();
+                } catch(e){ alert(e.message); }
                 setModal(false); setForm({ dept:"", desc:"" });
               }
             }}>Save</GreenBtn>
@@ -990,16 +1657,29 @@ function Departments() {
    DESIGNATIONS (original UI + API + exports)
 ══════════════════════════════════════════ */
 function Designations() {
-  const [rows,setRows]=useState([
-    ["DES-001","Sales Executive",   "Handles day-to-day customer sales and CRM"   ],
-    ["DES-002","Sales Manager",     "Manages sales team and targets"               ],
-    ["DES-003","HR Executive",      "Recruitment and employee onboarding"          ],
-    ["DES-004","Warehouse Analyst", "Stock management and audits"                  ],
-    ["DES-005","Finance Executive", "Invoicing and account reconciliation"         ],
-  ]);
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const rows = records.map(d => [`DES-${String(d.id).padStart(3,"0")}`, d.name, d.description||"—"]);
+
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({ desig:"", desc:"" });
-  const newId=()=>genId("DES-",rows,0);
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getDesignations(); setRecords(d.designations||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const newId=()=>`DES-${String(records.length+1).padStart(3,"0")}`;
+
+  const apiDelete = async (i) => { await hrmAPI.deleteDesignation(records[i].id); await load(); };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updateDesignation(rec.id, { name:vals[1], description:vals[2] });
+    await load();
+  };
+
   return (
     <div>
       <HRMNav />
@@ -1008,7 +1688,8 @@ function Designations() {
         <GreenBtn onClick={()=>setModal(true)}>+ Add Designation</GreenBtn>
       </div>
       <KpiRow cards={[{ label:"Total Designations", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Designation","Description"], rows } }]} />
-      <Card><HRMTable columns={["ID","Designation","Description"]} rows={rows} setRows={setRows} exportFilename="designations" /></Card>
+      <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable columns={["ID","Designation","Description"]} rows={rows} exportFilename="designations" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
       {modal && (
         <Modal title="Add Designation" onClose={()=>setModal(false)}>
           <AutoIdField label="Designation ID" value={newId()} />
@@ -1017,8 +1698,10 @@ function Designations() {
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
               if(form.desig){
-                try { await hrmFetch("POST","/hrm/designations",{ name:form.desig, description:form.desc }); } catch {}
-                setRows(r=>[...r,[newId(),form.desig,form.desc||"—"]]);
+                try {
+                  await hrmAPI.createDesignation({ name:form.desig, description:form.desc });
+                  await load();
+                } catch(e){ alert(e.message); }
                 setModal(false); setForm({ desig:"", desc:"" });
               }
             }}>Save</GreenBtn>
@@ -1034,15 +1717,35 @@ function Designations() {
    SALES TARGETS (original UI + API + exports)
 ══════════════════════════════════════════ */
 function SalesTargets() {
-  const [rows,setRows]=useState([
-    ["ST-001","Arjun Mehta","₹3,50,000","5%","Jun 2026"],
-    ["ST-002","Priya Singh","₹3,00,000","4%","Jun 2026"],
-    ["ST-003","Vikram Rao", "₹2,80,000","5%","Jun 2026"],
-    ["ST-004","Sneha Nair", "₹2,50,000","4%","Jun 2026"],
-  ]);
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const rows = records.map((t,i) => [`ST-${String(t.id).padStart(3,"0")}`, t.employee_name, `₹${Number(t.target_amount||0).toLocaleString("en-IN")}`, `${t.commission_pct||0}%`, t.month_year||"—"]);
+
   const [modal,setModal]=useState(false);
   const [form,setForm]=useState({ user:"", target:"", commission:"", month:"" });
-  const newId=()=>genId("ST-",rows,0);
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getSalesTargets(); setRecords(d.targets||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const newId=()=>`ST-${String(records.length+1).padStart(3,"0")}`;
+
+  const apiDelete = async (i) => { await hrmAPI.deleteSalesTarget(records[i].id); await load(); };
+  const apiEdit = async (i, vals) => {
+    const rec = records[i];
+    await hrmAPI.updateSalesTarget(rec.id, {
+      employee_name:vals[1],
+      target_amount: parseFloat(String(vals[2]).replace(/[₹,]/g,""))||0,
+      commission_pct: parseFloat(String(vals[3]).replace(/%/g,""))||0,
+      month_year:vals[4],
+      achieved_amount: rec.achieved_amount || 0,
+    });
+    await load();
+  };
+
   return (
     <div>
       <HRMNav />
@@ -1052,10 +1755,11 @@ function SalesTargets() {
       </div>
       <KpiRow cards={[
         { label:"Total Reps", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","User","Target Amount","Commission %","Month"], rows } },
-        { label:"Total Target",            value:"₹12,80,000", color:G.green },
-        { label:"Total Commission Budget", value:"₹57,600",    color:G.blue  },
+        { label:"Total Target",            value:`₹${records.reduce((s,r)=>s+Number(r.target_amount||0),0).toLocaleString("en-IN")}`, color:G.green },
+        { label:"Total Commission Budget", value:`₹${records.reduce((s,r)=>s+(Number(r.target_amount||0)*Number(r.commission_pct||0)/100),0).toLocaleString("en-IN")}`,    color:G.blue  },
       ]} />
-      <Card><HRMTable columns={["ID","User","Target Amount","Commission %","Month"]} rows={rows} setRows={setRows} exportFilename="sales-targets" /></Card>
+      <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable columns={["ID","User","Target Amount","Commission %","Month"]} rows={rows} exportFilename="sales-targets" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
       {modal && (
         <Modal title="Add Sales Target" onClose={()=>setModal(false)}>
           <AutoIdField label="Target ID" value={newId()} />
@@ -1066,8 +1770,10 @@ function SalesTargets() {
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
               if(form.user&&form.target){
-                try { await hrmFetch("POST","/hrm/sales-targets",{ employee_name:form.user, target_amount:parseFloat(form.target.replace(/[₹,]/g,""))||0, commission_pct:parseFloat(form.commission)||0, month_year:form.month }); } catch {}
-                setRows(r=>[...r,[newId(),form.user,form.target,`${form.commission}%`,form.month]]);
+                try {
+                  await hrmAPI.createSalesTarget({ employee_name:form.user, target_amount:parseFloat(form.target.replace(/[₹,]/g,""))||0, commission_pct:parseFloat(form.commission)||0, month_year:form.month });
+                  await load();
+                } catch(e){ alert(e.message); }
                 setModal(false); setForm({ user:"", target:"", commission:"", month:"" });
               }
             }}>Save</GreenBtn>

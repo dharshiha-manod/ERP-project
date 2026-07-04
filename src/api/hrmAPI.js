@@ -63,18 +63,28 @@ export const getAttendance      = (params='') => request('GET',   `/hrm/attendan
 export const getAttendanceStats = ()          => request('GET',   '/hrm/attendance/stats');
 export const clockIn            = (body)      => request('POST',  '/hrm/attendance/clock-in', body);
 export const clockOut           = (id)        => request('PATCH', `/hrm/attendance/${id}/clock-out`);
+export const createAttendanceRecord = (body)      => request('POST',   '/hrm/attendance', body);
+export const updateAttendanceRecord = (id,body)   => request('PUT',    `/hrm/attendance/${id}`, body);
+export const deleteAttendanceRecord = (id)        => request('DELETE', `/hrm/attendance/${id}`);
 
 // ── PAYROLL ──────────────────────────────────────────────────
 export const getPayrolls        = (params='') => request('GET',    `/hrm/payroll${params}`);
 export const createPayroll      = (body)      => request('POST',   '/hrm/payroll', body);
 export const updatePayroll      = (id,body)   => request('PUT',    `/hrm/payroll/${id}`, body);
 export const deletePayroll      = (id)        => request('DELETE', `/hrm/payroll/${id}`);
-
 // ── PAY COMPONENTS ───────────────────────────────────────────
 export const getPayComponents   = ()        => request('GET',    '/hrm/pay-components');
 export const createPayComponent = (body)    => request('POST',   '/hrm/pay-components', body);
 export const updatePayComponent = (id,body) => request('PUT',    `/hrm/pay-components/${id}`, body);
 export const deletePayComponent = (id)      => request('DELETE', `/hrm/pay-components/${id}`);
+
+// ── PAYROLL GROUPS ───────────────────────────────────────────
+export const getPayrollGroups    = ()        => request('GET',    '/hrm/payroll-groups');
+export const createPayrollGroup  = (body)    => request('POST',   '/hrm/payroll-groups', body);
+export const updatePayrollGroup  = (id,body) => request('PUT',    `/hrm/payroll-groups/${id}`, body);
+export const deletePayrollGroup  = (id)      => request('DELETE', `/hrm/payroll-groups/${id}`);
+
+// ── PAYROLL GROUPS ───────────────────────────────────────────
 
 // ── HOLIDAYS ─────────────────────────────────────────────────
 export const getHolidays        = ()        => request('GET',    '/hrm/holidays');

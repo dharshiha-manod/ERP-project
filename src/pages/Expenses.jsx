@@ -301,12 +301,11 @@ export function ListExpenses() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const searchTimer = useRef();
-
-  const load = useCallback(async (searchVal = search) => {
+const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await expensesAPI.list({ search: searchVal, limit: 100 });
+      const data = await expensesAPI.list({ limit: 500 });
       setExpenses(data.expenses || []);
       setTotals(data.totals || { total: 0, due: 0 });
     } catch (err) {
@@ -314,26 +313,22 @@ export function ListExpenses() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, []);
 
-  useEffect(() => { load(""); }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [load]);
 
   const handleSearch = (val) => {
     setSearch(val);
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => load(val), 350);
   };
-
-  const handleDelete = async (id) => {
+const handleDelete = async (id) => {
     if (!window.confirm("Delete this expense?")) return;
     try {
       await expensesAPI.remove(id);
-      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      load();
     } catch (err) {
       alert(err?.response?.data?.error || "Failed to delete expense");
     }
   };
-
   const columns = [
     { label: "Date", value: (e) => e.expense_date },
     { label: "Reference No", value: (e) => e.expense_number },
@@ -379,12 +374,52 @@ export function ListExpenses() {
   const refundTotal = refundRows.reduce((s, e) => s + parseFloat(e.refund_amount || 0), 0);
   // "Amount paid" = total billed minus whatever is still due — correct even for partial payments
   const amountPaid = expenses.reduce((s, e) => s + (parseFloat(e.total_amount || 0) - parseFloat(e.payment_due || 0)), 0);
+const totalDue = expenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0);
+
+  // ── Active KPI filter ──────────────────────────────────────────────────────
+  // null = show all; "paid" | "partial" | "due" | "refund" = filtered
+  const [kpiFilter, setKpiFilter] = useState(null);
+
+ const searchFiltered = search.trim() === "" ? expenses : expenses.filter((e) => {
+    const q = search.toLowerCase();
+    return (
+      (e.expense_number || "").toLowerCase().includes(q) ||
+      (e.category_name  || e.category || "").toLowerCase().includes(q) ||
+      (e.sub_category_name || "").toLowerCase().includes(q) ||
+      (e.expense_for    || "").toLowerCase().includes(q) ||
+      (e.location       || "").toLowerCase().includes(q) ||
+      (e.description    || "").toLowerCase().includes(q) ||
+      (e.payment_status || "").toLowerCase().includes(q) ||
+      (e.payment_method || "").toLowerCase().includes(q) ||
+      String(e.total_amount || "").includes(q) ||
+      String(e.tax_amount   || "").includes(q)
+    );
+  });
+
+  const filteredExpenses = kpiFilter === null ? searchFiltered
+    : kpiFilter === "refund"  ? searchFiltered.filter((e) => e.is_refund)
+    : kpiFilter === "paid"    ? searchFiltered.filter((e) => e.payment_status === "paid")
+    : kpiFilter === "due"     ? searchFiltered.filter((e) => e.payment_status === "due")
+    : kpiFilter === "partial" ? searchFiltered.filter((e) => e.payment_status === "partial")
+    : searchFiltered;
+
+  // KPI-scoped totals (recalc on filteredExpenses so footer row matches)
+  const filteredTotal  = filteredExpenses.reduce((s, e) => s + parseFloat(e.total_amount || 0), 0);
+  const filteredDue    = filteredExpenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0);
+  const filteredPaid   = filteredExpenses.reduce((s, e) => s + (parseFloat(e.total_amount || 0) - parseFloat(e.payment_due || 0)), 0);
+
+ const partialCount  = expenses.filter((e) => e.payment_status === "partial").length;
+  const partialAmount = expenses
+    .filter((e) => e.payment_status === "partial")
+    .reduce((s, e) => s + parseFloat(e.total_amount || 0), 0);
 
   const kpiCards = [
-    { label: "TOTAL EXPENSES", value: expenses.length, sub: `${paidCount} paid`, color: T.primary },
-    { label: "TOTAL AMOUNT", value: money(totals.total), sub: `${expenses.length} records`, color: "#2563eb" },
-    { label: "AMOUNT PAID", value: money(amountPaid), sub: `${dueCount} due`, color: "#16a34a" },
-    { label: "REFUNDS", value: money(refundTotal), sub: `${refundRows.length} refunded`, color: "#dc2626" },
+    { label: "TOTAL EXPENSES", value: expenses.length,     sub: `${paidCount} paid`,               color: T.primary,  filter: null },
+    { label: "TOTAL AMOUNT",   value: money(totals.total), sub: `${expenses.length} records`,       color: "#1a7a4a",  filter: null },
+    { label: "AMOUNT PAID",    value: money(amountPaid),   sub: `${paidCount} paid`,                color: "#16a34a",  filter: "paid" },
+    { label: "PARTIAL",        value: money(partialAmount),sub: `${partialCount} partial`,          color: "#7c3aed",  filter: "partial" },
+    { label: "PAYMENT DUE",    value: money(totalDue),     sub: `${dueCount} unpaid`,               color: "#dd6b20",  filter: "due" },
+    { label: "REFUNDS",        value: money(refundTotal),  sub: `${refundRows.length} refunded`,    color: "#dc2626",  filter: "refund" },
   ];
 
   return (
@@ -406,20 +441,33 @@ export function ListExpenses() {
 
       {/* ── KPI cards (Stock-Adjustment style) — fixed height, never affects scroll ── */}
       <div style={{
-        display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16,
+  display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12,
         margin: "0 20px 16px", flexShrink: 0,
       }}>
-        {kpiCards.map(({ label, value, sub, color }) => (
-          <div key={label} style={{
-            background: T.surface, borderRadius: 10, padding: "16px 20px",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)", borderLeft: `4px solid ${color}`,
-            minWidth: 0,
-          }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, letterSpacing: 0.6 }}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: T.textMain, margin: "6px 0 2px" }}>{value}</div>
-            <div style={{ fontSize: 12, color: T.textMuted }}>{sub}</div>
-          </div>
-        ))}
+     {kpiCards.map(({ label, value, sub, color, filter }) => {
+          const isActive = kpiFilter === filter;
+          return (
+            <div
+              key={label}
+              onClick={() => setKpiFilter(isActive ? null : filter)}
+              style={{
+                background: isActive ? color : T.surface,
+                borderRadius: 10, padding: "16px 20px",
+                boxShadow: isActive ? `0 4px 16px ${color}44` : "0 1px 4px rgba(0,0,0,0.06)",
+                borderLeft: `4px solid ${color}`,
+                minWidth: 0, cursor: filter !== null ? "pointer" : "default",
+                transition: "all 0.18s ease",
+                transform: isActive ? "translateY(-2px)" : "none",
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: isActive ? "rgba(255,255,255,0.8)" : T.textMuted }}>{label}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, margin: "6px 0 2px", color: isActive ? "#fff" : T.textMain }}>{value}</div>
+              <div style={{ fontSize: 12, color: isActive ? "rgba(255,255,255,0.75)" : T.textMuted }}>
+         
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* ── Card fills remaining height; only table body scrolls ── */}
@@ -461,10 +509,11 @@ export function ListExpenses() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={14} style={{ ...styles.td, textAlign: "center", padding: 30 }}>Loading...</td></tr>
-              ) : expenses.length === 0 ? (
-                <tr><td colSpan={14} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>No expenses found</td></tr>
-              ) : expenses.map((e, i) => (
-                <tr key={e.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
+              ) : filteredExpenses.length === 0 ? (
+                <tr><td colSpan={12} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>
+                  {kpiFilter ? `No "${kpiFilter}" expenses found — click the card again to clear filter` : "No expenses found"}
+                </td></tr>
+) : filteredExpenses.map((e, i) => (                <tr key={e.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
                   <td style={styles.td}>{e.expense_date ? new Date(e.expense_date).toLocaleDateString("en-GB") : "—"}</td>
                   <td style={styles.td}><strong>{e.expense_number}</strong></td>
                   <td style={styles.td}>{e.category_name || e.category || "—"}</td>
@@ -504,10 +553,11 @@ export function ListExpenses() {
               <tfoot>
                 <tr style={{ background: "#f0f4f1" }}>
                   <td colSpan={7} style={{ ...styles.td, fontWeight: 700, textAlign: "right" }}>Total:</td>
-                  <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.total)}</td>
+          <td style={{ ...styles.td, fontWeight: 700 }}>{money(filteredTotal)}</td>
+                  <td style={{ ...styles.td, fontWeight: 700 }}>{money(filteredDue)}</td> 
                   <td style={{ ...styles.td, fontWeight: 700, color: T.danger }}>-{money(refundTotal)}</td>
                   <td style={{ ...styles.td, fontWeight: 700, color: T.primary }}>{money(totals.total - refundTotal)}</td>
-                  <td style={{ ...styles.td, fontWeight: 700 }}>{money(totals.due)}</td>
+                  
                   <td colSpan={3} style={styles.td}></td>
                 </tr>
               </tfoot>
@@ -516,7 +566,12 @@ export function ListExpenses() {
         </div>
 
         <div style={{ padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: T.textSub, flexShrink: 0, borderTop: `1px solid ${T.border}` }}>
-          <span>Showing {expenses.length} of {expenses.length} entries</span>
+      <span>
+            Showing {filteredExpenses.length} of {expenses.length} entries
+            {kpiFilter && <span style={{ marginLeft: 8, color: T.primary, fontWeight: 600, fontSize: 11 }}>
+              [Filtered: {kpiFilter}]
+            </span>}
+          </span> 
         </div>
       </div>
     </div>
@@ -588,11 +643,11 @@ function ExpenseFormPage({ mode = "create" }) {
         }
         const storedTotal = parseFloat(e.total_amount) || 0;
         const storedTax   = parseFloat(e.tax_amount) || 0;
-        const storedBase  = +(storedTotal - storedTax).toFixed(2);
-        // amount_paid derived from total - payment_due (not from the stored column which may be wrong)
+        // Derive amount_paid from total - payment_due (DB amount_paid column is unreliable)
         const storedDue   = parseFloat(e.payment_due) || 0;
-        const derivedPaid = +(storedTotal - storedDue).toFixed(2);
-
+       const derivedPaid = e.payment_status === "partial"
+          ? Math.round((storedTotal - storedDue) * 100) / 100
+          : "";
         setForm({
           location: e.location || "Manodtechnologies (BL0001)",
           category: e.category_name || "",
@@ -602,8 +657,8 @@ function ExpenseFormPage({ mode = "create" }) {
           expense_for: e.expense_for || "",
           tax_type: "amount",
           tax_value: String(storedTax),
-          base_amount: String(storedBase),
-          amount_paid: e.payment_status === "partial" ? String(derivedPaid) : "",
+          total_amount: String(storedTotal),
+          amount_paid: derivedPaid === "" ? "" : String(Math.max(0, derivedPaid)),
           payment_method: e.payment_method || "Cash",
           description: e.description || "",
           payment_status: e.payment_status || "due",
@@ -644,35 +699,37 @@ function ExpenseFormPage({ mode = "create" }) {
     e.preventDefault();
     if (readOnly) return;
     if (!form.total_amount) { setError("Total amount is required"); return; }
+
+    const totalVal = parseFloat(form.total_amount) || 0;
+    const taxVal   = parseFloat(form.tax_value) || 0;
+    const computedTax = form.tax_type === "percent"
+      ? +(totalVal * taxVal / 100).toFixed(2)
+      : taxVal;
+
+    const amtPaid = parseFloat(form.amount_paid) || 0;
+
     if (form.payment_status === "partial") {
-      if (form.amount_paid === "" || isNaN(parseFloat(form.amount_paid))) {
-        setError("Amount paid is required for Partial payment status"); return;
-      }
-      if (parseFloat(form.amount_paid) <= 0) {
-        setError("Amount paid must be greater than 0"); return;
-      }
-      if (parseFloat(form.amount_paid) >= parseFloat(form.total_amount)) {
-        setError("Amount paid must be less than total for Partial status — use Paid instead"); return;
-      }
+      if (!form.amount_paid || isNaN(amtPaid)) { setError("Amount paid is required for Partial status"); return; }
+      if (amtPaid <= 0) { setError("Amount paid must be greater than 0"); return; }
+      if (amtPaid >= totalVal) { setError("Amount paid must be less than total — use Paid instead"); return; }
     }
     if (isRefund) {
       const refundAmt = parseFloat(form.refund_amount);
-      if (form.refund_amount === "" || isNaN(refundAmt)) { setError("Refund amount is required when \"Is refund?\" is checked"); return; }
-      if (refundAmt <= 0) { setError("Refund amount must be greater than 0"); return; }
-      if (refundAmt > parseFloat(form.total_amount)) { setError("Refund amount cannot be greater than the original expense amount"); return; }
+      if (!form.refund_amount || isNaN(refundAmt)) { setError("Refund amount is required"); return; }
+      if (refundAmt <= 0) { setError("Refund amount must be > 0"); return; }
+      if (refundAmt > totalVal) { setError("Refund cannot exceed total expense"); return; }
     }
 
-    // Compute actual tax rupee amount
-    const totalVal = parseFloat(form.total_amount) || 0;
-    const taxVal = parseFloat(form.tax_value) || 0;
-    const computedTax = form.tax_type === "percent"
-      ? Math.round(totalVal * taxVal / 100 * 100) / 100
-      : taxVal;
-
-    // Compute payment_due
-    let paymentDue = totalVal;
-    if (form.payment_status === "paid") paymentDue = 0;
-    else if (form.payment_status === "partial") paymentDue = totalVal - (parseFloat(form.amount_paid) || 0);
+    // Correct payment_due calculation
+    let finalAmountPaid = 0;
+    let finalPaymentDue = totalVal;
+    if (form.payment_status === "paid") {
+      finalAmountPaid = totalVal;
+      finalPaymentDue = 0;
+    } else if (form.payment_status === "partial") {
+      finalAmountPaid = amtPaid;
+      finalPaymentDue = +(totalVal - amtPaid).toFixed(2);
+    }
 
     setSaving(true);
     setError("");
@@ -681,32 +738,36 @@ function ExpenseFormPage({ mode = "create" }) {
       const sub_category_id = form.sub_category ? await resolveCategoryId(form.sub_category, category_id) : null;
 
       const payload = {
-        ...form,
+        location: form.location,
         category_id,
         sub_category_id,
         category_name: form.category || null,
         sub_category_name: form.sub_category || null,
+        expense_number: form.expense_number || null,
+        expense_date: form.expense_date,
+        expense_for: form.expense_for || null,
         tax_amount: computedTax,
-        amount_paid: form.payment_status === "partial" ? parseFloat(form.amount_paid) : (form.payment_status === "paid" ? totalVal : 0),
-        payment_method: form.payment_method,
-        payment_due: paymentDue,
-        contact_id: null,
+        total_amount: totalVal,
+        amount_paid: finalAmountPaid,
+        payment_due: finalPaymentDue,
+        payment_method: form.payment_method || "Cash",
+        payment_status: form.payment_status,
+        description: form.description || null,
+        attachment_url: form.attachment_url || null,
         is_refund: isRefund,
-        refund_amount: isRefund ? form.refund_amount : null,
+        refund_amount: isRefund ? parseFloat(form.refund_amount) : null,
         refund_date: isRefund ? form.refund_date : null,
         refund_reason: isRefund ? (form.refund_reason || null) : null,
-        refund_method: isRefund ? (form.refund_method || null) : null,
+        refund_method: isRefund ? form.refund_method : null,
         is_recurring: isRecurring,
         recurring_interval: form.interval || null,
         recurring_interval_unit: form.intervalUnit,
         recurring_repetitions: form.repetitions || null,
+        contact_id: null,
       };
 
-      if (mode === "edit") {
-        await expensesAPI.update(id, payload);
-      } else {
-        await expensesAPI.create(payload);
-      }
+      if (mode === "edit") await expensesAPI.update(id, payload);
+      else await expensesAPI.create(payload);
       navigate("/expenses");
     } catch (err) {
       setError(err?.response?.data?.error || "Failed to save expense");
@@ -888,7 +949,7 @@ function ExpenseFormPage({ mode = "create" }) {
                   required={form.payment_status === "partial"}
                   disabled={readOnly}
                 />
-                {form.amount_paid && form.total_amount && (
+                {form.amount_paid && form.total_amount && parseFloat(form.amount_paid) > 0 && (
                   <span style={{ fontSize: 11, color: T.warn }}>
                     Balance due: {money(Math.max(0, parseFloat(form.total_amount) - parseFloat(form.amount_paid || 0)))}
                   </span>
@@ -1045,9 +1106,89 @@ export function EditExpense() {
 }
 
 export function ViewExpense() {
-  return <ExpenseFormPage mode="view" />;
-}
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const [expense, setExpense] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
+  useEffect(() => {
+    expensesAPI.get(id)
+      .then((d) => setExpense(d.expense))
+      .catch(() => setError("Failed to load expense"))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const field = (label, value, highlight = false) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
+      <span style={{ fontWeight: 600, color: T.textSub, fontSize: 13 }}>{label}</span>
+      <span style={{ color: highlight ? T.primary : T.textMain, fontSize: 13, fontWeight: highlight ? 700 : 500 }}>{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <div style={styles.page}>
+      <div style={{ ...styles.topBar, overflowX: "hidden" }}>
+        <div>
+          <h1 style={styles.pageTitle}>View Expense</h1>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 3 }}>Home / Expenses / View</div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button style={styles.btnSecondary} onClick={() => navigate("/expenses")}>← Back</button>
+          <button style={styles.btnSave} onClick={() => navigate(`/expenses/${id}/edit`)}>✏️ Edit</button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, minWidth: 0, padding: "0 24px 24px", boxSizing: "border-box" }}>
+        {loading && <div style={{ padding: 40, textAlign: "center", color: T.textMuted }}>Loading...</div>}
+        {error && <div style={{ color: T.danger, padding: 16 }}>{error}</div>}
+        {expense && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 4 }}>
+            {/* Left card */}
+            <div style={{ ...styles.card, padding: "20px 24px" }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: T.textMain }}>Expense Details</div>
+              {field("Reference No", expense.expense_number)}
+              {field("Date", expense.expense_date ? new Date(expense.expense_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
+              {field("Location", expense.location)}
+              {field("Category", expense.category_name || expense.category)}
+              {field("Sub Category", expense.sub_category_name)}
+              {field("Expense For", expense.expense_for)}
+              {field("Note", expense.description)}
+            </div>
+            {/* Right card */}
+            <div style={{ ...styles.card, padding: "20px 24px" }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: T.textMain }}>Payment Details</div>
+              {field("Total Amount", `₹${parseFloat(expense.total_amount || 0).toFixed(2)}`, true)}
+              {field("Tax", `₹${parseFloat(expense.tax_amount || 0).toFixed(2)}`)}
+              {field("Payment Status",
+                <span style={{
+                  background: expense.payment_status === "paid" ? "#dcfce7" : expense.payment_status === "partial" ? "#fef9c3" : "#fee2e2",
+                  color: expense.payment_status === "paid" ? "#166534" : expense.payment_status === "partial" ? "#854d0e" : "#b91c1c",
+                  borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 600, textTransform: "capitalize",
+                }}>{expense.payment_status}</span>
+              )}
+              {field("Amount Paid", `₹${parseFloat(expense.amount_paid || 0).toFixed(2)}`)}
+              {field("Payment Due", `₹${parseFloat(expense.payment_due || 0).toFixed(2)}`)}
+              {field("Payment Method", expense.payment_method)}
+              {expense.is_refund && field("Refund Amount", `₹${parseFloat(expense.refund_amount || 0).toFixed(2)}`)}
+              {expense.is_refund && field("Net Expense", `₹${parseFloat(expense.net_expense || 0).toFixed(2)}`, true)}
+            </div>
+            {/* Recurring card — only if recurring */}
+            {expense.is_recurring && (
+              <div style={{ ...styles.card, padding: "20px 24px", gridColumn: "1 / -1" }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: T.textMain }}>Recurring Details</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  {field("Interval", `${expense.recurring_interval} ${expense.recurring_interval_unit}`)}
+                  {field("Repetitions", expense.recurring_repetitions ?? "Infinite")}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 /* ════════════════════════════════════════════════════════════
    3. IMPORT EXPENSE
 ════════════════════════════════════════════════════════════ */

@@ -29,7 +29,7 @@ import Contacts, {
   SuppliersPage, CustomersPage, CustomerGroupsPage, ImportContactsPage,
 } from "./pages/Contacts";
 import { AllSales, AddSale, ListPOS, POSCreate, AddDraft, ListDrafts, AddQuotation, ListQuotations, SellReturn, Shipments, Discounts, ImportSales } from "./pages/Sell";
-import { ListStockTransfers, AddStockTransfer } from "./pages/StockTransfers";
+import { ListStockTransfers, AddStockTransfer, EditStockTransfer } from "./pages/StockTransfers";
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
 import { ListExpenses, AddExpense, EditExpense, ViewExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 import NotificationTemplates from "./pages/NotificationTemplates";
@@ -114,7 +114,7 @@ function AppLayout() {
     <div style={{ display: "flex" }}>
       <Sidebar />
       <TopHeader businessName="Manodtechnologies" />
-      <main style={{
+     <main style={{
         marginLeft: "260px",
         marginTop: "60px",
         flex: 1,
@@ -123,11 +123,11 @@ function AppLayout() {
         overflowY: "auto",
         overflowX: "hidden",
         background: "var(--manod-page-bg, #f0f4f1)",
-        padding: 0,
+        padding: "24px 28px",
         transition: "background 0.3s ease",
         display: "flex",
         flexDirection: "column",
-      }}>
+      }}> 
         <Routes>
           {/* Dashboard */}
           <Route path="/" element={<FeatureRoute feature={FEATURES.DASHBOARD}><Dashboard /></FeatureRoute>} />
@@ -194,10 +194,12 @@ function AppLayout() {
           <Route path="/pos/create" element={<FeatureRoute feature={FEATURES.POS}><POSCreate /></FeatureRoute>} />
 
           {/* Stock */}
-          <Route path="/stock-transfers"          element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><ListStockTransfers /></FeatureRoute>} />
-          <Route path="/stock-transfers/create"   element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><AddStockTransfer /></FeatureRoute>} />
-          <Route path="/stock-adjustments"        element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><ListStockAdjustments /></FeatureRoute>} />
-          <Route path="/stock-adjustments/create" element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><AddStockAdjustment /></FeatureRoute>} />
+          {/* Stock */}
+<Route path="/stock-transfers"          element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><ListStockTransfers /></FeatureRoute>} />
+<Route path="/stock-transfers/create"   element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><AddStockTransfer /></FeatureRoute>} />
+<Route path="/stock-transfers/:id/edit" element={<FeatureRoute feature={FEATURES.STOCK_TRANSFERS}><EditStockTransfer /></FeatureRoute>} />
+<Route path="/stock-adjustments"        element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><ListStockAdjustments /></FeatureRoute>} />
+<Route path="/stock-adjustments/create" element={<FeatureRoute feature={FEATURES.STOCK_ADJUSTMENT}><AddStockAdjustment /></FeatureRoute>} />
 
           {/* Expenses */}
           <Route path="/expenses"           element={<FeatureRoute feature={FEATURES.EXPENSES}><ListExpenses /></FeatureRoute>} />

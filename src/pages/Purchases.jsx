@@ -84,7 +84,7 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
 
   useEffect(()=>{
     if(!editData)return;
-    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:editData.discount_type||"None",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.payment_note||"",notes:editData.notes||""});
+    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:"Fixed",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.notes||editData.payment_note||"",notes:editData.notes||""});
     if(editData.supplier_name){setSupSearch(editData.supplier_name);setSelSup({id:editData.supplier_id,name:editData.supplier_name});}
     if(Array.isArray(editData.items)){setItems(editData.items.map(i=>({id:i.product_id||null,name:i.product_name||i.name||"",sku:i.product_sku||i.sku||"",qty:parseFloat(i.quantity)||1,unitCost:parseFloat(i.unit_cost)||0,discPct:parseFloat(i.discount_pct)||0,marginPct:parseFloat(i.margin_pct)||0,lineTotal:parseFloat(i.line_total)||0,sellingPrice:parseFloat(i.selling_price)||0})));}
   },[editData]);
@@ -316,18 +316,18 @@ export default function Purchases(){
       </div>
     </div>
   );
-
-  const statCards=[
+const statCards=[
     {label:"TOTAL PURCHASES",value:total,sub:`${purchases.filter(r=>r.purchase_status==="Received").length} received`,color:"#15803d",
-      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);load({fPS:"",fPay:"",fSup:"",fFrom:"",fTo:""});}},
+      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);}},
     {label:"TOTAL VALUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.grand_total||0),0)),sub:`${purchases.length} records`,color:"#1d4ed8",
-      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);load({fPS:"",fPay:"",fSup:"",fFrom:"",fTo:""});}},
+      onClick:()=>{setFPS("");setFPay("");setFSup("");setFFrom("");setFTo("");setPage(1);}},
     {label:"RECEIVED",value:purchases.filter(r=>r.purchase_status==="Received").length,sub:"fully received",color:"#7c3aed",
-      onClick:()=>{setFPS("Received");setFPay("");setPage(1);load({fPS:"Received",fPay:"",fSup:fSup,fFrom:fFrom,fTo:fTo});}},
+      onClick:()=>{setFPS("Received");setFPay("");setPage(1);}},
+    {label:"PARTIAL",value:purchases.filter(r=>r.payment_status==="Partial").length,sub:"partially paid",color:"#c2410c",
+      onClick:()=>{setFPS("");setFPay("Partial");setPage(1);}},
     {label:"PAYMENT DUE",value:fmtINR(purchases.reduce((s,r)=>s+parseFloat(r.payment_due||0),0)),sub:`${purchases.filter(r=>r.payment_status==="Due").length} pending`,color:"#b91c1c",
-      onClick:()=>{setFPS("");setFPay("Due");setPage(1);load({fPS:"",fPay:"Due",fSup:fSup,fFrom:fFrom,fTo:fTo});}},
+      onClick:()=>{setFPS("");setFPay("Due");setPage(1);}},
   ];
-
   return(
     <div style={{fontFamily:"'Segoe UI',-apple-system,sans-serif"}}>
       {ToastEl}
@@ -344,7 +344,7 @@ export default function Purchases(){
       </div>
 
       {/* Stats - clickable to filter */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:20}}>
+  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:16,marginBottom:20}}>
         {statCards.map(({label,value,sub,color,onClick})=>(
           <div key={label} onClick={onClick} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px #0001",borderLeft:`4px solid ${color}`,cursor:onClick?"pointer":"default",transition:"box-shadow .15s"}}
             onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 16px #0002";}}
@@ -379,6 +379,7 @@ export default function Purchases(){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={()=>window.print()} style={{...BG,fontSize:12,padding:"6px 12px"}}>🖨 Print</button>
+            <button onClick={()=>{const c=["reference_no","purchase_date","supplier_name","grand_total","payment_due"];const h=["Ref No","Date","Supplier","Grand Total","Payment Due"];const csv=[h.join(","),...purchases.map(r=>c.map(k=>`"${r[k]||""}"`).join(","))].join("\n");const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(new Blob([csv],{type:"text/csv"})),download:"purchases.csv"});document.body.appendChild(a);a.click();document.body.removeChild(a);}} style={{...BG,fontSize:12,padding:"6px 12px",color:"#15803d",borderColor:"#86efac"}}>Export CSV</button>
             <div style={{position:"relative"}}>
               <input placeholder="Search..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}} style={{...FI,width:200,paddingLeft:30}}/>
               <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:"#9ca3af",fontSize:13}}>🔍</span>

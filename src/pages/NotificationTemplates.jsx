@@ -1,27 +1,60 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { getTemplateByType, saveTemplateByType } from "../api/notificationTemplatesAPI";
+
+// ── Maps each section + tab to the DB `template_type` key ─────────────────────
+const TEMPLATE_TYPE_MAP = {
+  "Notifications:": {
+    "Send Ledger": "send_ledger",
+  },
+  "Customer Notifications:": {
+    "New Sale": "customer_new_sale",
+    "Payment Received": "customer_payment_received",
+    "Payment Reminder": "customer_payment_reminder",
+    "New Booking": "customer_new_booking",
+    "New Quotation": "customer_new_quotation",
+  },
+  "Supplier Notifications:": {
+    "New Order": "supplier_new_order",
+    "Payment Paid": "supplier_payment_paid",
+    "Items Received": "supplier_items_received",
+    "Items Pending": "supplier_items_pending",
+    "Purchase Order": "supplier_purchase_order",
+  },
+};
+
+const EMPTY_FORM = {
+  email_subject: "",
+  cc_email: "",
+  bcc_email: "",
+  email_body: "",
+  auto_email: false,
+  sms_body: "",
+  auto_sms: false,
+  whatsapp_body: "",
+  auto_whatsapp: false,
+};
 
 // ── Tiny Rich Text Toolbar ────────────────────────────────────────────────────
-function RichEditor({ placeholder = "Enter text here..." }) {
+// `key`-remounted per template_type by the parent, so it always starts with
+// the right HTML and never fights React over contentEditable state.
+function RichEditor({ value, onChange, placeholder = "Enter text here..." }) {
   const editorRef = useRef(null);
 
-  const exec = (cmd, value = null) => {
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = value || "";
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on mount — parent forces remount via key when switching tabs
+
+  const exec = (cmd, val = null) => {
     editorRef.current?.focus();
-    document.execCommand(cmd, false, value);
+    document.execCommand(cmd, false, val);
+    onChange?.(editorRef.current.innerHTML);
   };
 
-  const insertTag = (tag) => {
-    editorRef.current?.focus();
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const node = document.createTextNode(tag);
-      range.insertNode(node);
-      range.setStartAfter(node);
-      range.setEndAfter(node);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
+  const handleInput = () => {
+    onChange?.(editorRef.current?.innerHTML || "");
   };
 
   const toolbarBtns = [
@@ -114,6 +147,8 @@ function RichEditor({ placeholder = "Enter text here..." }) {
         contentEditable
         suppressContentEditableWarning
         data-placeholder={placeholder}
+        onInput={handleInput}
+        onBlur={handleInput}
       />
 
       <div className="nte-footer">
@@ -124,8 +159,35 @@ function RichEditor({ placeholder = "Enter text here..." }) {
 }
 
 // ── Section component ─────────────────────────────────────────────────────────
-function NotifSection({ title, tabs, tagsGroups }) {
-  const [activeTab, setActiveTab] = useState(tabs[0]);
+// activeTab is owned by the parent (not local state) so the Save button
+// knows which tab/template_type is currently on screen for this section.
+function NotifSection({ title, tabs, tagsGroups, tabTypeMap, activeTab, onTabChange, formCache, loadingTypes, onEnsureLoaded, onFieldChange }) {
+  const activeType = tabTypeMap[activeTab];
+  const form = formCache[activeType] || EMPTY_FORM;
+  const isLoading = !!loadingTypes[activeType];
+
+  useEffect(() => {
+    onEnsureLoaded(activeType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeType]);
+
+  const handleTabClick = (t) => {
+    onTabChange(title, t);
+    onEnsureLoaded(tabTypeMap[t]);
+  };
+
+
+  const field = (name) => ({
+    value: form[name] ?? "",
+    onChange: (e) => onFieldChange(activeType, name, e.target.value),
+    disabled: isLoading,
+  });
+
+  const checkbox = (name) => ({
+    checked: !!form[name],
+    onChange: (e) => onFieldChange(activeType, name, e.target.checked),
+    disabled: isLoading,
+  });
 
   return (
     <div className="nt-section">
@@ -137,7 +199,7 @@ function NotifSection({ title, tabs, tagsGroups }) {
           <button
             key={t}
             className={`nt-tab${activeTab === t ? " active" : ""}`}
-            onClick={() => setActiveTab(t)}
+            onClick={() => handleTabClick(t)}
           >
             {t}
           </button>
@@ -156,53 +218,70 @@ function NotifSection({ title, tabs, tagsGroups }) {
         ))}
       </div>
 
-      {/* Email Subject */}
-      <div className="nt-field-group">
-        <label className="nt-label">Email Subject:</label>
-        <input className="nt-input" placeholder="Email Subject" />
-      </div>
+      {isLoading ? (
+        <div className="nt-loading">Loading template…</div>
+      ) : (
+        <>
+          {/* Email Subject */}
+          <div className="nt-field-group">
+            <label className="nt-label">Email Subject:</label>
+            <input className="nt-input" placeholder="Email Subject" {...field("email_subject")} />
+          </div>
 
-      {/* CC / BCC */}
-      <div className="nt-row">
-        <div className="nt-field-group nt-half">
-          <label className="nt-label">CC:</label>
-          <input className="nt-input" placeholder="CC" />
-        </div>
-        <div className="nt-field-group nt-half">
-          <label className="nt-label">BCC:</label>
-          <input className="nt-input" placeholder="BCC" />
-        </div>
-      </div>
+          {/* CC / BCC */}
+          <div className="nt-row">
+            <div className="nt-field-group nt-half">
+              <label className="nt-label">CC:</label>
+              <input className="nt-input" placeholder="CC" {...field("cc_email")} />
+            </div>
+            <div className="nt-field-group nt-half">
+              <label className="nt-label">BCC:</label>
+              <input className="nt-input" placeholder="BCC" {...field("bcc_email")} />
+            </div>
+          </div>
 
-      {/* Email Body */}
-      <div className="nt-field-group">
-        <label className="nt-label">Email Body:</label>
-        <RichEditor placeholder="Email Body" />
-      </div>
+          {/* Email Body */}
+          <div className="nt-field-group">
+            <label className="nt-label">Email Body:</label>
+            <RichEditor
+              key={activeType}
+              value={form.email_body}
+              onChange={(html) => onFieldChange(activeType, "email_body", html)}
+              placeholder="Email Body"
+            />
+          </div>
 
-      {/* SMS Body */}
-      <div className="nt-field-group">
-        <label className="nt-label">SMS Body:</label>
-        <textarea className="nt-textarea" placeholder="SMS Body" rows={4} />
-      </div>
+          {/* SMS Body */}
+          <div className="nt-field-group">
+            <label className="nt-label">SMS Body:</label>
+            <textarea className="nt-textarea" placeholder="SMS Body" rows={4} {...field("sms_body")} />
+          </div>
 
-      {/* WhatsApp Text */}
-      <div className="nt-field-group">
-        <label className="nt-label">Whatsapp Text:</label>
-        <textarea className="nt-textarea" placeholder="Whatsapp Text" rows={4} />
-      </div>
+          {/* WhatsApp Text */}
+          <div className="nt-field-group">
+            <label className="nt-label">Whatsapp Text:</label>
+            <textarea className="nt-textarea" placeholder="Whatsapp Text" rows={4} {...field("whatsapp_body")} />
+          </div>
 
-      {/* Auto-send checkboxes */}
-      <div className="nt-checkboxes">
-        {["Auto Send Email", "Auto Send SMS", "Auto send Whatsapp notification"].map((label) => (
-          <label key={label} className="nt-checkbox-label">
-            <input type="checkbox" className="nt-checkbox" />
-            {label}
-          </label>
-        ))}
-      </div>
+          {/* Auto-send checkboxes */}
+          <div className="nt-checkboxes">
+            <label className="nt-checkbox-label">
+              <input type="checkbox" className="nt-checkbox" {...checkbox("auto_email")} />
+              Auto Send Email
+            </label>
+            <label className="nt-checkbox-label">
+              <input type="checkbox" className="nt-checkbox" {...checkbox("auto_sms")} />
+              Auto Send SMS
+            </label>
+            <label className="nt-checkbox-label">
+              <input type="checkbox" className="nt-checkbox" {...checkbox("auto_whatsapp")} />
+              Auto send Whatsapp notification
+            </label>
+          </div>
 
-      <div className="nt-info-bar">Business logo will not work in SMS.</div>
+          <div className="nt-info-bar">Business logo will not work in SMS.</div>
+        </>
+      )}
     </div>
   );
 }
@@ -247,6 +326,84 @@ export default function NotificationTemplates() {
       ],
     },
   ];
+
+  // templateType -> form data
+  const [formCache, setFormCache] = useState({});
+  // templateType -> bool
+  const [loadingTypes, setLoadingTypes] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  // which tab is currently active, per section — needed so Save knows what to submit
+  const [activeTabsBySection, setActiveTabsBySection] = useState(() =>
+    Object.fromEntries(sections.map((s) => [s.title, s.tabs[0]]))
+  );
+
+  const loadedOrLoading = useRef(new Set());
+
+  const ensureLoaded = useCallback((templateType) => {
+    if (!templateType || loadedOrLoading.current.has(templateType)) return;
+    loadedOrLoading.current.add(templateType);
+    setLoadingTypes((prev) => ({ ...prev, [templateType]: true }));
+
+    getTemplateByType(templateType)
+      .then((template) => {
+        setFormCache((prev) => ({
+          ...prev,
+          [templateType]: {
+            email_subject: template.email_subject || "",
+            cc_email: template.cc_email || "",
+            bcc_email: template.bcc_email || "",
+            email_body: template.email_body || "",
+            auto_email: !!template.auto_email,
+            sms_body: template.sms_body || "",
+            auto_sms: !!template.auto_sms,
+            whatsapp_body: template.whatsapp_body || "",
+            auto_whatsapp: !!template.auto_whatsapp,
+          },
+        }));
+      })
+      .catch((err) => {
+        console.error(`Failed to load template "${templateType}":`, err);
+        loadedOrLoading.current.delete(templateType); // allow retry
+      })
+      .finally(() => {
+        setLoadingTypes((prev) => ({ ...prev, [templateType]: false }));
+      });
+  }, []);
+
+  const handleFieldChange = useCallback((templateType, fieldName, value) => {
+    setFormCache((prev) => ({
+      ...prev,
+      [templateType]: { ...(prev[templateType] || EMPTY_FORM), [fieldName]: value },
+    }));
+  }, []);
+
+  // Load the first section's first tab on mount so the page isn't empty.
+  useEffect(() => {
+    ensureLoaded(TEMPLATE_TYPE_MAP[sections[0].title][sections[0].tabs[0]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const jobs = sections.map((s) => {
+        const activeTab = activeTabsBySection[s.title];
+        const templateType = TEMPLATE_TYPE_MAP[s.title][activeTab];
+        const data = formCache[templateType];
+        if (!data) return Promise.resolve(null); // never loaded/edited — skip
+        return saveTemplateByType(templateType, data);
+      });
+      await Promise.all(jobs);
+      setSaveMsg({ type: "success", text: "Templates saved successfully." });
+    } catch (err) {
+      setSaveMsg({ type: "error", text: err.message || "Failed to save templates." });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(null), 4000);
+    }
+  };
 
   return (
     <>
@@ -467,10 +624,19 @@ export default function NotificationTemplates() {
           margin-top: 10px;
         }
 
+        .nt-loading {
+          padding: 24px;
+          text-align: center;
+          color: #5a7060;
+          font-size: 0.9rem;
+        }
+
         /* ── Save button ── */
         .nt-save-wrap {
           display: flex;
-          justify-content: center;
+          flex-direction: column;
+          align-items: center;
+          gap: 12px;
           margin-top: 32px;
           margin-bottom: 8px;
         }
@@ -495,7 +661,11 @@ export default function NotificationTemplates() {
           box-shadow: 0 6px 22px rgba(26,92,48,.45), 0 2px 6px rgba(0,0,0,.15);
         }
         .nt-save-btn:active { transform: translateY(0); }
+        .nt-save-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .nt-save-icon { font-size: 1.1rem; }
+        .nt-save-msg { font-size: 0.88rem; font-weight: 600; }
+        .nt-save-msg.success { color: #1a6b35; }
+        .nt-save-msg.error { color: #b3261e; }
       `}</style>
 
       <div className="nt-page">
@@ -507,14 +677,25 @@ export default function NotificationTemplates() {
             title={s.title}
             tabs={s.tabs}
             tagsGroups={s.tagsGroups}
+            tabTypeMap={TEMPLATE_TYPE_MAP[s.title]}
+            activeTab={activeTabsBySection[s.title]}
+            onTabChange={(sectionTitle, tab) =>
+              setActiveTabsBySection((prev) => ({ ...prev, [sectionTitle]: tab }))
+            }
+            formCache={formCache}
+            loadingTypes={loadingTypes}
+            onEnsureLoaded={ensureLoaded}
+            onFieldChange={handleFieldChange}
           />
         ))}
 
+
         <div className="nt-save-wrap">
-          <button className="nt-save-btn">
+          <button className="nt-save-btn" onClick={handleSave} disabled={saving}>
             <span className="nt-save-icon">💾</span>
-            Save
+            {saving ? "Saving..." : "Save"}
           </button>
+          {saveMsg && <span className={`nt-save-msg ${saveMsg.type}`}>{saveMsg.text}</span>}
         </div>
       </div>
     </>

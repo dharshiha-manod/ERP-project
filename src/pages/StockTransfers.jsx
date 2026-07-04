@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+// NEW
 import {
   fetchAllStockTransfers,
   fetchStockTransferById,
@@ -7,6 +8,7 @@ import {
   updateStockTransfer,
   deleteStockTransfer,
   fetchProductsForTransfer,
+  fetchStockTransferStats,
 } from "../api/stockTransfersAPI";
 
 // ── Styles ──────────────────────────────────────────────────────────────────
@@ -88,11 +90,36 @@ const S = {
   modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" },
   modalCloseBtn: { border: "none", background: "transparent", fontSize: "1.3rem", cursor: "pointer", color: "#888", lineHeight: 1 },
   modalBody: { padding: "20px" },
-  modalRow: { display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f3f3f3", fontSize: "0.88rem" },
+ modalRow: { display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #f3f3f3", fontSize: "0.88rem" },
   modalLabel: { color: "#777", fontWeight: 600 },
   modalValue: { color: "#222" },
+  // KPI cards
+  // KPI cards — flat, professional, all same white background
+  kpiGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px", marginBottom: "18px" },
+  kpiCard: {
+    background: "#fff", borderRadius: "10px", padding: "16px 18px",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.08)", borderLeft: "4px solid #ccc",
+    cursor: "pointer", transition: "transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease",
+    userSelect: "none",
+  },
+  kpiCardStatic: {
+    background: "#fff", borderRadius: "10px", padding: "16px 18px",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.08)", borderLeft: "4px solid #ccc",
+  },
+  kpiLabel: { fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "#888", marginBottom: "6px" },
+  kpiValue: { fontSize: "1.5rem", fontWeight: 700, color: "#1a1a1a" },
+  // Filter bar
+  filterBar: { display: "flex", alignItems: "flex-end", gap: "14px", padding: "14px 20px", flexWrap: "wrap", borderBottom: "1px solid #f0f0f0", background: "#fafcfb" },
+  filterGroup: { display: "flex", flexDirection: "column", gap: "4px" },
+  filterLabel: { fontSize: "0.75rem", fontWeight: 600, color: "#666" },
+  filterInput: { border: "1px solid #ccc", borderRadius: "5px", padding: "6px 9px", fontSize: "0.83rem", background: "#fff" },
+  clearFilterBtn: { border: "none", background: "transparent", color: "#c0392b", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", padding: "6px 4px" },
+  // Distinct export buttons
+  exportBtnCSV:   { border: "none", borderRadius: "6px", padding: "7px 14px", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", color: "#fff", background: "linear-gradient(135deg,#0d9488,#14b8a6)", display: "inline-flex", alignItems: "center", gap: "6px" },
+  exportBtnExcel: { border: "none", borderRadius: "6px", padding: "7px 14px", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", color: "#fff", background: "linear-gradient(135deg,#15803d,#22c55e)", display: "inline-flex", alignItems: "center", gap: "6px" },
+  exportBtnPrint: { border: "none", borderRadius: "6px", padding: "7px 14px", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", color: "#fff", background: "linear-gradient(135deg,#334155,#475569)", display: "inline-flex", alignItems: "center", gap: "6px" },
+  exportBtnPDF:   { border: "none", borderRadius: "6px", padding: "7px 14px", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", color: "#fff", background: "linear-gradient(135deg,#b91c1c,#dc2626)", display: "inline-flex", alignItems: "center", gap: "6px" },
 };
-
 // Global anchor-color rules elsewhere in the app can override inline
 // `color` on <Link> (which renders an <a>) with !important, making the
 // Add/Back buttons hard to read. This scoped override wins that fight.
@@ -278,17 +305,25 @@ function ViewStockTransferModal({ id, onClose }) {
 }
 
 // ── LIST STOCK TRANSFERS ────────────────────────────────────────────────────
-
 export function ListStockTransfers() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState(25);
   const [search, setSearch]   = useState("");
   const [page, setPage]       = useState(1);
 
+  // Filters
+  const [statusFilter, setStatusFilter] = useState("");
+  const [dateFrom, setDateFrom]         = useState("");
+  const [dateTo, setDateTo]             = useState("");
+
   const [rows, setRows]       = useState([]);
   const [total, setTotal]     = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
+
+  // KPI stats
+  const [stats, setStats]               = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const [hoveredRow, setHoveredRow] = useState(null);
   const [viewingId, setViewingId]   = useState(null);
@@ -308,16 +343,28 @@ export function ListStockTransfers() {
   const loadData = useCallback(() => {
     setLoading(true);
     setError("");
-    fetchAllStockTransfers({ page, limit: entries, search })
+    fetchAllStockTransfers({
+      page, limit: entries, search,
+      status: statusFilter, date_from: dateFrom, date_to: dateTo,
+    })
       .then((res) => {
         setRows(res.stockTransfers || []);
         setTotal(res.total || 0);
       })
       .catch((err) => setError(err.message || "Failed to load stock transfers"))
       .finally(() => setLoading(false));
-  }, [page, entries, search]);
+  }, [page, entries, search, statusFilter, dateFrom, dateTo]);
+
+  const loadStats = useCallback(() => {
+    setStatsLoading(true);
+    fetchStockTransferStats()
+      .then((s) => setStats(s))
+      .catch(() => setStats(null))
+      .finally(() => setStatsLoading(false));
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   const toggleCol = (key) => {
     setVisibleKeys((prev) =>
@@ -328,6 +375,16 @@ export function ListStockTransfers() {
   };
 
   const closeMenus = () => { setShowColMenu(false); setShowPdfMenu(false); };
+const clearFilters = () => {
+    setStatusFilter(""); setDateFrom(""); setDateTo(""); setSearch(""); setPage(1);
+  };
+
+  // Clicking a KPI card filters the table by that status.
+  // Clicking the same one again (or "Total Transfers") clears the status filter.
+  const handleKpiClick = (statusValue) => {
+    setStatusFilter((prev) => (prev === statusValue ? "" : statusValue));
+    setPage(1);
+  };
 
   const handleDelete = async (row) => {
     if (!window.confirm(`Delete stock transfer "${row.transfer_number}"? This cannot be undone.`)) return;
@@ -335,6 +392,7 @@ export function ListStockTransfers() {
       setDeletingId(row.id);
       await deleteStockTransfer(row.id);
       loadData();
+      loadStats();
     } catch (err) {
       alert(err.message || "Failed to delete stock transfer");
     } finally {
@@ -343,11 +401,84 @@ export function ListStockTransfers() {
   };
 
   const totalPages = Math.max(1, Math.ceil(total / entries));
+  const fmtMoney = (v) => `₹${Number(v || 0).toFixed(2)}`;
 
   return (
     <div style={S.page} onClick={closeMenus}>
       <style>{BTN_COLOR_OVERRIDE}</style>
       <h1 style={S.pageTitle}>Stock Transfers</h1>
+{/* KPI Cards — click a status card to filter the table by it */}
+      <div style={S.kpiGrid}>
+        <div
+          style={{
+            ...S.kpiCard,
+            borderLeftColor: "#2e7d32",
+            ...(statusFilter === "" ? { background: "#f0faf4", boxShadow: "0 0 0 2px #2e7d32 inset" } : {}),
+          }}
+          onClick={() => handleKpiClick("")}
+          title="Show all transfers"
+        >
+          <div style={{ ...S.kpiLabel, color: "#2e7d32" }}>Total Transfers</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : (stats?.total_transfers ?? 0)}</div>
+        </div>
+
+        <div style={{ ...S.kpiCardStatic, borderLeftColor: "#0d9488" }} title="Sum of all transfer values">
+          <div style={{ ...S.kpiLabel, color: "#0d9488" }}>Total Value</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : fmtMoney(stats?.total_value)}</div>
+        </div>
+
+        <div
+          style={{
+            ...S.kpiCard,
+            borderLeftColor: "#856404",
+            ...(statusFilter === "Pending" ? { background: "#fffaf0", boxShadow: "0 0 0 2px #856404 inset" } : {}),
+          }}
+          onClick={() => handleKpiClick("Pending")}
+          title="Filter by Pending"
+        >
+          <div style={{ ...S.kpiLabel, color: "#856404" }}>Pending</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : (stats?.pending_count ?? 0)}</div>
+        </div>
+
+        <div
+          style={{
+            ...S.kpiCard,
+            borderLeftColor: "#004085",
+            ...(statusFilter === "In Transit" ? { background: "#f0f7ff", boxShadow: "0 0 0 2px #004085 inset" } : {}),
+          }}
+          onClick={() => handleKpiClick("In Transit")}
+          title="Filter by In Transit"
+        >
+          <div style={{ ...S.kpiLabel, color: "#004085" }}>In Transit</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : (stats?.in_transit_count ?? 0)}</div>
+        </div>
+
+        <div
+          style={{
+            ...S.kpiCard,
+            borderLeftColor: "#155724",
+            ...(statusFilter === "Completed" ? { background: "#f0faf4", boxShadow: "0 0 0 2px #155724 inset" } : {}),
+          }}
+          onClick={() => handleKpiClick("Completed")}
+          title="Filter by Completed"
+        >
+          <div style={{ ...S.kpiLabel, color: "#155724" }}>Completed</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : (stats?.completed_count ?? 0)}</div>
+        </div>
+
+        <div
+          style={{
+            ...S.kpiCard,
+            borderLeftColor: "#721c24",
+            ...(statusFilter === "Cancelled" ? { background: "#fdf3f4", boxShadow: "0 0 0 2px #721c24 inset" } : {}),
+          }}
+          onClick={() => handleKpiClick("Cancelled")}
+          title="Filter by Cancelled"
+        >
+          <div style={{ ...S.kpiLabel, color: "#721c24" }}>Cancelled</div>
+          <div style={S.kpiValue}>{statsLoading ? "…" : (stats?.cancelled_count ?? 0)}</div>
+        </div>
+      </div>
 
       <div style={S.card}>
         {/* Header */}
@@ -364,9 +495,37 @@ export function ListStockTransfers() {
           </Link>
         </div>
 
+        {/* Filter bar */}
+        <div style={S.filterBar} onClick={(e) => e.stopPropagation()}>
+          <div style={S.filterGroup}>
+            <span style={S.filterLabel}>Status</span>
+            <select
+              style={S.filterInput}
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Transit">In Transit</option>
+              <option value="Completed">Completed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div style={S.filterGroup}>
+            <span style={S.filterLabel}>Date From</span>
+            <input type="date" style={S.filterInput} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+          </div>
+          <div style={S.filterGroup}>
+            <span style={S.filterLabel}>Date To</span>
+            <input type="date" style={S.filterInput} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+          </div>
+          {(statusFilter || dateFrom || dateTo || search) && (
+            <button style={S.clearFilterBtn} onClick={clearFilters}>✕ Clear filters</button>
+          )}
+        </div>
+
         {/* Toolbar */}
         <div style={S.toolbar}>
-          {/* Show entries */}
           <div style={S.showEntries}>
             <span>Show</span>
             <select style={S.select} value={entries} onChange={(e) => { setEntries(Number(e.target.value)); setPage(1); }}>
@@ -375,21 +534,17 @@ export function ListStockTransfers() {
             <span>entries</span>
           </div>
 
-          {/* Action buttons */}
           <div style={S.actionsRow}>
-            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); exportCSV(rows, visibleCols); }} title="Download as CSV">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236c757d' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3C/svg%3E" alt="" />
-              Export CSV
+            <button style={S.exportBtnCSV} onClick={(e) => { e.stopPropagation(); exportCSV(rows, visibleCols); }} title="Download as CSV">
+              📄 CSV
             </button>
 
-            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); exportExcel(rows, visibleCols); }} title="Download as Excel">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23217346' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M3 9h18M9 3v18'/%3E%3C/svg%3E" alt="" />
-              Export Excel
+            <button style={S.exportBtnExcel} onClick={(e) => { e.stopPropagation(); exportExcel(rows, visibleCols); }} title="Download as Excel">
+              📊 Excel
             </button>
 
-            <button style={S.actionBtn} onClick={(e) => { e.stopPropagation(); printTable(rows, visibleCols); }} title="Print table">
-              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpolyline points='6 9 6 2 18 2 18 9'/%3E%3Cpath d='M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2'/%3E%3Crect x='6' y='14' width='12' height='8'/%3E%3C/svg%3E" alt="" />
-              Print
+            <button style={S.exportBtnPrint} onClick={(e) => { e.stopPropagation(); printTable(rows, visibleCols); }} title="Print table">
+              🖨️ Print
             </button>
 
             <div style={S.colVisDropdown} onClick={(e) => e.stopPropagation()}>
@@ -426,12 +581,11 @@ export function ListStockTransfers() {
 
             <div style={S.pdfDropdown} onClick={(e) => e.stopPropagation()}>
               <button
-                style={{ ...S.actionBtn, background: showPdfMenu ? "#f0f4f1" : "#fff", borderColor: showPdfMenu ? "#2d6a4f" : "#d0d0d0" }}
+                style={S.exportBtnPDF}
                 onClick={() => { setShowPdfMenu((v) => !v); setShowColMenu(false); }}
                 title="Export as PDF"
               >
-                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23c0392b' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='9' y1='13' x2='15' y2='13'/%3E%3Cline x1='9' y1='17' x2='15' y2='17'/%3E%3C/svg%3E" alt="" />
-                Export PDF ▾
+                📕 PDF ▾
               </button>
               {showPdfMenu && (
                 <div style={S.pdfMenu}>
@@ -454,7 +608,6 @@ export function ListStockTransfers() {
             </div>
           </div>
 
-          {/* Search */}
           <div style={S.searchWrap}>
             <span>Search:</span>
             <input
@@ -499,7 +652,7 @@ export function ListStockTransfers() {
                         {col.key === "status" ? (
                           <span style={badgeStyle(row[col.key])}>{row[col.key]}</span>
                         ) : col.key === "total_amount" ? (
-                          `₹${Number(row[col.key] || 0).toFixed(2)}`
+                          fmtMoney(row[col.key])
                         ) : col.key === "transfer_date" ? (
                           formatDate(row[col.key])
                         ) : col.key === "notes" ? (
@@ -560,7 +713,6 @@ export function ListStockTransfers() {
     </div>
   );
 }
-
 // ── ADD / EDIT STOCK TRANSFER (shared form) ─────────────────────────────────
 
 function StockTransferForm({ mode }) {
