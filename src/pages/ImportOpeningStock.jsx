@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const authHeaders = () => {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("manod_token");
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 };
 

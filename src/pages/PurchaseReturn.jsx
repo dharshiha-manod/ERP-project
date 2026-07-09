@@ -103,7 +103,11 @@ function ReturnForm({onSubmit,onCancel,editData=null}){
     setShowProdDrop(true);
   };
   const searchProd=async(val)=>{setProdSearch(val);setSearchingProd(true);try{const d=await apiFetch("GET",`/purchases/products/search?q=${encodeURIComponent(val)}`);setProdSugg(d.products||[]);setShowProdDrop(true);}catch{setProdSugg([]);}finally{setSearchingProd(false);};};
-  const selProd=(p)=>{const price=parseFloat(p.default_price)||0;setProducts(prev=>[...prev,{name:p.name,sku:p.sku||"",qty:1,unitPrice:price,subtotal:price}]);setProdSearch("");setShowProdDrop(false);};
+const selProd=(p)=>{
+  const price=parseFloat(p.default_price ?? p.unit_purchase_price ?? p.purchase_price ?? p.selling_price ?? p.default_sell_price ?? 0)||0;
+  setProducts(prev=>[...prev,{id:p.id||null,name:p.name,sku:p.sku||"",qty:1,unitPrice:price,subtotal:price}]);
+  setProdSearch("");setShowProdDrop(false);
+};
   const addManual=()=>{if(!prodSearch.trim())return;setProducts(prev=>[...prev,{name:prodSearch,sku:"",qty:1,unitPrice:0,subtotal:0}]);setProdSearch("");setShowProdDrop(false);};
   const updProd=(i,field,val)=>{setProducts(prev=>{const arr=[...prev];arr[i]={...arr[i],[field]:parseFloat(val)||0};const q=field==="qty"?parseFloat(val)||0:arr[i].qty;const p=field==="unitPrice"?parseFloat(val)||0:arr[i].unitPrice;arr[i].subtotal=+(q*p).toFixed(2);return arr;});};
 
@@ -126,7 +130,7 @@ function ReturnForm({onSubmit,onCancel,editData=null}){
         subtotal:sub,total_amount:total,
         amount_paid:paid,payment_due:Math.max(0,total-paid),
         payment_status:paid>=total&&total>0?"Paid":paid>0?"Partial":"Due",
-        items:products.map(p=>({product_name:p.name,product_sku:p.sku||null,quantity:p.qty,unit_price:p.unitPrice,subtotal:p.subtotal})),
+ items:products.map(p=>({product_id:p.id||null,product_name:p.name,product_sku:p.sku||null,quantity:p.qty,unit_price:p.unitPrice,subtotal:p.subtotal})),
       };
       if(isEdit){await apiFetch("PUT",`/purchase-returns/${editData.id}`,body);showToast("Return updated!","success");}
       else{await apiFetch("POST","/purchase-returns",body);showToast("Return submitted!","success");}
@@ -182,7 +186,7 @@ function ReturnForm({onSubmit,onCancel,editData=null}){
           <div style={{position:"relative",width:"75%"}}>
             <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:searchingProd?"#f59e0b":"#9ca3af",zIndex:1}}>{searchingProd?"⏳":"🔍"}</span>
             <input value={prodSearch} onChange={e=>searchProd(e.target.value)} onFocus={loadProds} onBlur={()=>setTimeout(()=>setShowProdDrop(false),150)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addManual();}if(e.key==="Escape")setShowProdDrop(false);}} placeholder="Search products from database..." style={{...INP,paddingLeft:38}} autoComplete="off"/>
-            {showProdDrop&&prodSugg.length>0&&<div style={{...DD,maxHeight:260}}>{prodSugg.filter(p=>!prodSearch||p.name?.toLowerCase().includes(prodSearch.toLowerCase())).map((p,i)=><div key={p.id||i} onMouseDown={()=>selProd(p)} style={{...DI,display:"flex",justifyContent:"space-between"}} onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"} onMouseLeave={e=>e.currentTarget.style.background="#fff"}><div><div style={{fontWeight:600,fontSize:13}}>{p.name}</div>{p.sku&&<div style={{fontSize:11,color:"#9ca3af"}}>SKU: {p.sku}</div>}</div><div style={{fontWeight:600,color:"#16a34a",fontSize:13}}>{p.default_price?`₹${parseFloat(p.default_price).toFixed(2)}`:"—"}</div></div>)}{prodSearch&&<div onMouseDown={addManual} style={{...DI,color:"#2563eb",fontWeight:600,textAlign:"center",borderTop:"1px solid #f3f4f6"}}>＋ Add "{prodSearch}" manually</div>}</div>}
+            {showProdDrop&&prodSugg.length>0&&<div style={{...DD,maxHeight:260}}>{prodSugg.filter(p=>!prodSearch||p.name?.toLowerCase().includes(prodSearch.toLowerCase())).map((p,i)=><div key={p.id||i} onMouseDown={()=>selProd(p)} style={{...DI,display:"flex",justifyContent:"space-between"}} onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"} onMouseLeave={e=>e.currentTarget.style.background="#fff"}><div><div style={{fontWeight:600,fontSize:13}}>{p.name}</div>{p.sku&&<div style={{fontSize:11,color:"#9ca3af"}}>SKU: {p.sku}</div>}</div><div style={{fontWeight:600,color:"#16a34a",fontSize:13}}>{(p.default_price ?? p.unit_purchase_price ?? p.purchase_price ?? p.selling_price ?? p.default_sell_price)?`₹${parseFloat(p.default_price ?? p.unit_purchase_price ?? p.purchase_price ?? p.selling_price ?? p.default_sell_price).toFixed(2)}`:"—"}</div></div>)}{prodSearch&&<div onMouseDown={addManual} style={{...DI,color:"#2563eb",fontWeight:600,textAlign:"center",borderTop:"1px solid #f3f4f6"}}>＋ Add "{prodSearch}" manually</div>}</div>}
           </div>
           <button onClick={addManual} style={{marginLeft:10,background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,color:"#2563eb",fontWeight:600,cursor:"pointer",fontSize:13,padding:"0 16px"}}>＋ Add</button>
         </div>
@@ -301,7 +305,7 @@ const load=useCallback(async(ov={})=>{
           <button onClick={()=>{setConfirmDel({id:viewData.id,ref:viewData.return_number});setViewData(null);setView("list");}} style={{...BG,background:"#dc2626",color:"#fff",borderColor:"#dc2626"}}>🗑 Delete</button>
         </div>
       </div>
-      <div style={FC}>
+<div style={FC}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 32px"}}>
           {[["Return No",viewData.return_number],["Date",fmtDate(viewData.return_date||viewData.created_at)],["Supplier",viewData.supplier_name],["Location",viewData.location],["Parent Purchase",viewData.purchase_ref||"—"],["Payment Status",viewData.payment_status],["Grand Total",fmtINR(viewData.total_amount)],["Amount Paid",fmtINR(viewData.amount_paid)],["Payment Due",fmtINR(viewData.payment_due)],["Reason",viewData.reason||"—"]].map(([label,val])=>(
             <div key={label} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f3f4f6"}}>
@@ -310,6 +314,28 @@ const load=useCallback(async(ov={})=>{
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{...FC,marginTop:16}}>
+        <div style={ST}>Products</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{background:"#f0fdf4",borderBottom:"2px solid #bbf7d0"}}>
+            {["#","Product","Qty","Unit Price","Subtotal"].map(h=><th key={h} style={{padding:"10px",textAlign:"left",fontWeight:700,color:"#15803d",fontSize:12}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {(!viewData.items||viewData.items.length===0)
+              ?<tr><td colSpan={5} style={{textAlign:"center",padding:24,color:"#9ca3af"}}>No products found</td></tr>
+              :viewData.items.map((it,i)=>(
+                <tr key={i} style={{borderBottom:"1px solid #f3f4f6"}}>
+                  <td style={TD}>{i+1}</td>
+                  <td style={TD}>{it.product_name}{it.product_sku&&<div style={{fontSize:11,color:"#9ca3af"}}>{it.product_sku}</div>}</td>
+                  <td style={TD}>{it.quantity}</td>
+                  <td style={TD}>{fmtINR(it.unit_price)}</td>
+                  <td style={TD}><b style={{color:"#15803d"}}>{fmtINR(it.total_amount)}</b></td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -407,7 +433,7 @@ const statCards=[
                       <td style={{...TD,fontWeight:600,color:"#b91c1c"}}>{fmtINR(r.payment_due)}</td>
                       <td style={{...TD,whiteSpace:"nowrap"}}>
                         <div style={{display:"flex",gap:5}}>
-                          <button onClick={()=>{setViewData(r);setView("view");}} title="View" style={IB("#2563eb")}><IconEye/></button>
+                          <button onClick={async()=>{try{const full=await apiFetch("GET",`/purchase-returns/${r.id}`);setViewData(full.purchaseReturn||full);}catch{setViewData(r);}setView("view");}} title="View" style={IB("#2563eb")}><IconEye/></button>
                           <button onClick={()=>openEdit(r)} title="Edit" style={IB("#f59e0b")}><IconEdit/></button>
                           <button onClick={()=>setConfirmDel({id:r.id,ref:r.return_number||`#${r.id}`})} title="Delete" style={IB("#dc2626")}><IconDel/></button>
                         </div>

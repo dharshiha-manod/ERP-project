@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Essentials from "./Essentials";
 import * as hrmAPI from "../api/hrmAPI";
+
 /* ═══════════════════════════════════════════════════════════
    API HELPER  (added — does not change any UI)
 ═══════════════════════════════════════════════════════════ */
@@ -944,6 +945,7 @@ const byShiftRows = attRecords
         { label:"Late Today",     value:lateToday.length.toString(),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:lateToday } },
         { label:"Absent Today",   value:absentToday.length.toString(),  color:G.red,   modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:absentToday } },
         { label:"On Leave Today", value:onLeaveToday.length.toString(), color:G.blue,  modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:onLeaveToday } },
+      
       ]} />
       <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
        {["All Attendance","Shifts","By Shift","By Date"].map(t=>(
@@ -1261,10 +1263,10 @@ const [form,setForm]=useState({ employee:"", month:"", department:"", designatio
   const [designations,setDesignations]=useState([]);
   const [compRecords,setCompRecords]=useState([]);
   const [compLoading,setCompLoading]=useState(true);
-  const payComp = compRecords.map(c => [`PC-${String(c.id).padStart(3,"0")}`, c.description, c.component_type, `₹${Number(c.amount||0).toLocaleString("en-IN")}`, c.applicable_from ? String(c.applicable_from).slice(0,10) : "—"]);
+  const payComp = compRecords.map(c => [`PC-${String(c.id).padStart(3,"0")}`, c.description, c.component_type, c.calc_method||"Fixed", c.calc_method==="Percentage" ? `${Number(c.amount||0)}%` : `₹${Number(c.amount||0).toLocaleString("en-IN")}`, c.status||"Active", c.applicable_from ? String(c.applicable_from).slice(0,10) : "—"]);
 
  const [compModal,setCompModal]=useState(false);
-  const [compForm,setCompForm]=useState({ desc:"", type:"Earning", amount:"", date:"" });
+  const [compForm,setCompForm]=useState({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
   const [compSaving,setCompSaving]=useState(false);
 
   const [groupRecords,setGroupRecords]=useState([]);
@@ -1273,6 +1275,57 @@ const [form,setForm]=useState({ employee:"", month:"", department:"", designatio
   const [groupModal,setGroupModal]=useState(false);
   const [groupForm,setGroupForm]=useState({ name:"", schedule:"Monthly", employees:"", desc:"" });
 
+  const [manageCompModal,setManageCompModal]=useState(false);
+  const [managingGroupIdx,setManagingGroupIdx]=useState(null);
+  const [groupCompIds,setGroupCompIds]=useState([]);
+  const [groupCompLoading,setGroupCompLoading]=useState(false);
+  const [groupCompSaving,setGroupCompSaving]=useState(false);
+
+  const openManageComponents = async (i) => {
+    const rec = groupRecords[i];
+    setManagingGroupIdx(i);
+    setManageCompModal(true);
+    setGroupCompLoading(true);
+    try {
+      const d = await hrmAPI.getGroupComponents(rec.id);
+      setGroupCompIds((d.components || []).map(c => c.id));
+    } catch(e) { alert(e.message); }
+    setGroupCompLoading(false);
+  };
+
+  const toggleGroupComp = (id) => {
+    setGroupCompIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  };
+
+ const saveGroupComponents = async () => {
+    const rec = groupRecords[managingGroupIdx];
+    setGroupCompSaving(true);
+    try {
+      await hrmAPI.updateGroupComponents(rec.id, groupCompIds);
+      setManageCompModal(false); setManagingGroupIdx(null);
+    } catch(e) { alert(e.message); }
+    setGroupCompSaving(false);
+  };
+
+  const [employees,setEmployees]=useState([]);
+  const [employeesLoading,setEmployeesLoading]=useState(true);
+  const [assigningId,setAssigningId]=useState(null);
+
+  const loadEmployees = async () => {
+    setEmployeesLoading(true);
+    try { const d = await hrmAPI.getEmployeesWithGroups(); setEmployees(d.employees||[]); } catch(e){ console.error(e); }
+    setEmployeesLoading(false);
+  };
+
+  const handleAssign = async (userId, groupId) => {
+    setAssigningId(userId);
+    try {
+      await hrmAPI.assignPayrollGroup(userId, groupId || null);
+      await loadEmployees();
+      await loadGroups();
+    } catch(e) { alert(e.message); }
+    setAssigningId(null);
+  };
   const loadPayroll = async () => {
     setLoading(true);
     try { const d = await hrmAPI.getPayrolls(); setRecords(d.payrolls||[]); } catch(e){ console.error(e); }
@@ -1296,7 +1349,7 @@ const loadDeptDesig = async () => {
     try { const d = await hrmAPI.getPayrollGroups(); setGroupRecords(d.groups||[]); } catch(e){ console.error(e); }
     setGroupsLoading(false);
   };
-  useEffect(() => { loadPayroll(); loadComponents(); loadDeptDesig(); loadGroups(); }, []);
+ useEffect(() => { loadPayroll(); loadComponents(); loadDeptDesig(); loadGroups(); loadEmployees(); }, []);
 
   const newGroupId=()=>`PG-${String(groupRecords.length+1).padStart(3,"0")}`;
   const saveGroup = async () => {
@@ -1363,22 +1416,134 @@ const loadDeptDesig = async () => {
     setEditModal(false); setEditingId(null);
   };
   const compApiDelete = async (i) => { await hrmAPI.deletePayComponent(compRecords[i].id); await loadComponents(); };
-  const compApiEdit = async (i, vals) => {
+const compApiEdit = async (i, vals) => {
     const rec = compRecords[i];
     await hrmAPI.updatePayComponent(rec.id, {
-      description:vals[1], component_type:vals[2],
-      amount: parseFloat(String(vals[3]).replace(/[₹,]/g,""))||0,
-      applicable_from: vals[4]==="—"?null:vals[4],
+      description:vals[1], component_type:vals[2], calc_method:vals[3],
+      amount: parseFloat(String(vals[4]).replace(/[₹,%]/g,""))||0,
+      status:vals[5],
+      applicable_from: vals[6]==="—"?null:vals[6],
     });
     await loadComponents();
   };
 
+  const [runModal,setRunModal]=useState(false);
+  const [runMonth,setRunMonth]=useState("");
+  const [eligible,setEligible]=useState([]);
+  const [eligibleLoading,setEligibleLoading]=useState(false);
+  const [selectedEmpIds,setSelectedEmpIds]=useState([]);
+  const [previewData,setPreviewData]=useState(null);
+  const [previewLoading,setPreviewLoading]=useState(false);
+  const [running,setRunning]=useState(false);
+
+  const loadEligible = async (month) => {
+    if (!month) { setEligible([]); return; }
+    setEligibleLoading(true);
+    try {
+      const d = await hrmAPI.getEligibleForRun(month);
+      setEligible(d.employees || []);
+      setSelectedEmpIds([]);
+    } catch(e) { alert(e.message); }
+    setEligibleLoading(false);
+  };
+
+  const toggleEmpSelect = (id) => {
+    setSelectedEmpIds(ids => ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id]);
+  };
+
+  const previewOne = async (employeeId) => {
+    setPreviewLoading(true);
+    try {
+      const d = await hrmAPI.previewPayroll(employeeId);
+      setPreviewData(d.preview);
+    } catch(e) { alert(e.message); }
+    setPreviewLoading(false);
+  };
+const executeRun = async () => {
+    if (!runMonth) { alert("Please select a Month / Year."); return; }
+    if (!selectedEmpIds.length) { alert("Select at least one employee to run payroll for."); return; }
+    setRunning(true);
+    try {
+      const result = await hrmAPI.runPayroll(selectedEmpIds, runMonth);
+      const createdCount = result.created?.length || 0;
+      const errorCount = result.errors?.length || 0;
+      let msg = `Payroll run complete: ${createdCount} record(s) created.`;
+      if (errorCount) msg += `\n${errorCount} failed:\n` + result.errors.map(e=>`• Employee ${e.employee_id}: ${e.error}`).join("\n");
+      alert(msg);
+      await loadPayroll();
+      setRunModal(false); setRunMonth(""); setEligible([]); setSelectedEmpIds([]); setPreviewData(null);
+    } catch(e) { alert(e.message); }
+    setRunning(false);
+  };
+
+  const [slipModal,setSlipModal]=useState(false);
+  const [slipData,setSlipData]=useState(null);
+  const [slipLoading,setSlipLoading]=useState(false);
+
+  const openSalarySlip = async (i) => {
+    const rec = records[i];
+    setSlipModal(true);
+    setSlipLoading(true);
+    try {
+      const d = await hrmAPI.getPayrollItems(rec.id);
+      setSlipData({ payroll: rec, items: d.items || [] });
+    } catch(e) { alert(e.message); setSlipModal(false); }
+    setSlipLoading(false);
+  };
+
+  const printSlip = () => {
+    if (!slipData) return;
+    const { payroll, items } = slipData;
+    const earnings = items.filter(it => it.component_type === "Earning");
+    const deductions = items.filter(it => it.component_type === "Deduction");
+    const gross = Number(payroll.gross_salary || earnings.reduce((s,i)=>s+Number(i.amount||0),0));
+    const ded = Number(payroll.total_deductions || deductions.reduce((s,i)=>s+Number(i.amount||0),0));
+    const net = Number(payroll.net_salary || (gross - ded));
+
+    const rowsHtml = (list) => list.length
+      ? list.map(it => `<tr><td style="padding:8px;border-bottom:1px solid #eee">${it.component_name}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">₹${Number(it.amount).toLocaleString("en-IN")}</td></tr>`).join("")
+      : `<tr><td colspan="2" style="padding:8px;color:#999;text-align:center">None</td></tr>`;
+
+    const w = window.open("", "_blank");
+    w.document.write(`
+      <html><head><title>Salary Slip - ${payroll.reference_no}</title>
+ <style>
+        body{font-family:'Inter',Arial,sans-serif;font-size:13px;color:#1b2e1c;background:#f0f4f1;margin:0;padding:40px 0}
+        .sheet{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:36px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+        h2{color:#2e7d32;margin:0 0 4px;text-align:center}
+        .meta{color:#607d63;font-size:12px;margin-bottom:24px;text-align:center;border-bottom:1px solid #eee;padding-bottom:16px}
+        table{width:100%;border-collapse:collapse;margin-bottom:16px}
+        th{background:#e8f5e9;color:#2e7d32;text-align:left;padding:8px;font-size:11px;text-transform:uppercase}
+        .totals{margin-top:12px;border-top:2px solid #2e7d32;padding-top:12px}
+        .totals div{display:flex;justify-content:space-between;padding:4px 0}
+        .net{font-weight:800;font-size:16px;color:#2e7d32;border-top:1px solid #ccc;margin-top:8px;padding-top:8px}
+      </style></head><body><div class="sheet">
+        <h2>Salary Slip</h2>
+        <div class="meta">Ref: ${payroll.reference_no} · ${payroll.month_year} · Generated ${new Date().toLocaleString("en-IN")}</div>
+        <table><tr><td style="padding:4px 0"><strong>Employee:</strong> ${payroll.employee_name}</td></tr>
+        <tr><td style="padding:4px 0"><strong>Department:</strong> ${payroll.department || "—"} &nbsp;&nbsp; <strong>Designation:</strong> ${payroll.designation || "—"}</td></tr></table>
+        <h3 style="color:#2e7d32">Earnings</h3>
+        <table><thead><tr><th>Component</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rowsHtml(earnings)}</tbody></table>
+        <h3 style="color:#c62828">Deductions</h3>
+        <table><thead><tr><th>Component</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rowsHtml(deductions)}</tbody></table>
+        <div class="totals">
+          <div><span>Gross Earnings</span><span>₹${gross.toLocaleString("en-IN")}</span></div>
+          <div><span>Total Deductions</span><span>₹${ded.toLocaleString("en-IN")}</span></div>
+         <div class="net"><span>Net Salary</span><span>₹${net.toLocaleString("en-IN")}</span></div>
+        </div>
+      </div></body></html>`);
+    w.document.close(); w.focus();
+    setTimeout(() => w.print(), 300);
+  };
   return (
     <div>
       <HRMNav />
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
         <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Payroll</h2>
-        <GreenBtn onClick={()=>setModal(true)}>+ Add Payroll</GreenBtn>
+        <div style={{ display:"flex", gap:10 }}>
+          <GreenBtn onClick={()=>setRunModal(true)}>▶ Run Payroll</GreenBtn>
+          <DarkBtn onClick={()=>setModal(true)}>+ Manual Entry</DarkBtn>
+        </div>
       </div>
       <KpiRow cards={[
         { label:"Total Payrolls", value:rows.length.toString(), accent:true, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows } },
@@ -1386,8 +1551,8 @@ const loadDeptDesig = async () => {
         { label:"Paid",    value:paid.length.toString(),    color:G.green, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows:paid } },
         { label:"Pending", value:pending.length.toString(), color:G.amber, modalData:{ columns:["Ref No","Employee","Dept","Designation","Month","Amount","Status"], rows:pending } },
       ]} />
-      <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
-        {["All Payrolls","Payroll Groups","Pay Components"].map(t=>(<button key={t} onClick={()=>setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?G.green:G.muted, borderBottom:tab===t?`3px solid ${G.green}`:"3px solid transparent", fontSize:13 }}>{t}</button>))}
+     <div style={{ display:"flex", gap:0, borderBottom:`2px solid ${G.border}`, marginBottom:20 }}>
+        {["All Payrolls","Payroll Groups","Pay Components","Assign Employees"].map(t=>(<button key={t} onClick={()=>setTab(t)} style={{ padding:"10px 18px", border:"none", background:"none", cursor:"pointer", fontWeight:tab===t?700:500, color:tab===t?G.green:G.muted, borderBottom:tab===t?`3px solid ${G.green}`:"3px solid transparent", fontSize:13 }}>{t}</button>))}
       </div>
 {tab==="All Payrolls" && <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
         <HRMTable
@@ -1396,6 +1561,11 @@ const loadDeptDesig = async () => {
           exportFilename="payroll"
           onApiDelete={payrollApiDelete}
           onEditClick={openEditPayroll}
+          extraActions={(i) => (
+            <button title="Salary Slip" onClick={()=>openSalarySlip(i)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:G.green, fontSize:16 }}>
+              <i className="ti ti-file-invoice"></i>
+            </button>
+          )}
         />}</Card>}
       {tab==="Payroll Groups" && (
         <Card>
@@ -1410,6 +1580,9 @@ const loadDeptDesig = async () => {
               onApiDelete={groupApiDelete}
               onApiEdit={groupApiEdit}
               columnEditors={{ 2: ["Monthly","Bi-weekly","Weekly"] }}
+              extraActions={(i) => (
+                <button onClick={()=>openManageComponents(i)} style={{ padding:"5px 12px", background:G.purpleBg, color:G.purple, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>⚙ Components</button>
+              )}
             />}
         </Card>
       )}
@@ -1417,8 +1590,154 @@ const loadDeptDesig = async () => {
         <Card>
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><GreenBtn onClick={()=>setCompModal(true)}>+ Add Component</GreenBtn></div>
           {compLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-            <HRMTable columns={["ID","Description","Type","Amount","Applicable From"]} rows={payComp} exportFilename="pay-components" onApiDelete={compApiDelete} onApiEdit={compApiEdit} />}
+            <HRMTable
+              columns={["ID","Description","Type","Calc Method","Amount","Status","Applicable From"]}
+              rows={payComp}
+              exportFilename="pay-components"
+              onApiDelete={compApiDelete}
+              onApiEdit={compApiEdit}
+              columnEditors={{ 2: ["Earning","Deduction"], 3: ["Fixed","Percentage"], 5: ["Active","Inactive"] }}
+            />}
         </Card>
+      )}
+     {tab==="Assign Employees" && (
+        <Card>
+          {employeesLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+          employees.length === 0 ? (
+            <div style={{ textAlign:"center", padding:32, color:G.muted }}>No employees found.</div>
+          ) : (
+            <div style={{ overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+                <thead>
+                  <tr style={{ background:G.greenBg }}>
+                    {["Employee","Email","Assigned Payroll Group"].map(c => (
+                      <th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em" }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((emp,i) => (
+                    <tr key={emp.id} style={{ background:i%2===0?G.white:G.rowHov }}>
+                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text, fontWeight:600 }}>{emp.full_name || "—"}</td>
+                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{emp.email}</td>
+                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>
+                        <FSelect
+                          value={emp.payroll_group_id || ""}
+                          onChange={e=>handleAssign(emp.id, e.target.value ? parseInt(e.target.value) : null)}
+                          style={{ opacity:assigningId===emp.id?0.6:1, pointerEvents:assigningId===emp.id?"none":"auto", maxWidth:220 }}
+                        >
+                          <option value="">Unassigned</option>
+                          {groupRecords.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </FSelect>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ marginTop:10, fontSize:13, color:G.muted }}>Showing {employees.length} of {employees.length} entries</div>
+            </div>
+          )}
+        </Card>
+      )}
+      {runModal && (
+        <Modal title="Run Payroll" onClose={()=>{setRunModal(false); setRunMonth(""); setEligible([]); setSelectedEmpIds([]); setPreviewData(null);}} width={700}>
+          <Field label="Month / Year" required>
+            <FInput type="month" value={runMonth} onChange={e=>{ const v=e.target.value; setRunMonth(v); loadEligible(v); setPreviewData(null); }} />
+          </Field>
+
+          {!runMonth ? (
+            <div style={{ textAlign:"center", padding:24, color:G.muted, fontSize:13 }}>Select a month to see eligible employees.</div>
+          ) : eligibleLoading ? (
+            <div style={{ textAlign:"center", padding:24, color:G.muted }}>Loading eligible employees…</div>
+          ) : eligible.length === 0 ? (
+            <div style={{ textAlign:"center", padding:24, color:G.muted, fontSize:13 }}>No eligible employees — either everyone already has a payroll record for this month, or no one has an assigned Payroll Group.</div>
+          ) : (
+            <>
+              <div style={{ fontSize:13, fontWeight:600, color:G.text, marginBottom:8 }}>Select Employees ({selectedEmpIds.length} selected)</div>
+              <div style={{ maxHeight:240, overflowY:"auto", border:`1px solid ${G.border}`, borderRadius:8, marginBottom:16 }}>
+                {eligible.map(emp => (
+                  <div key={emp.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderBottom:`1px solid ${G.border}` }}>
+                    <input type="checkbox" checked={selectedEmpIds.includes(emp.id)} onChange={()=>toggleEmpSelect(emp.id)} />
+                    <span style={{ flex:1, fontSize:13.5, color:G.text }}>{emp.full_name}</span>
+                    <span style={{ fontSize:12, color:G.muted }}>{emp.payroll_group_name}</span>
+                    <button onClick={()=>previewOne(emp.id)} style={{ padding:"4px 10px", background:G.blueBg, color:G.blue, border:"none", borderRadius:6, cursor:"pointer", fontSize:11, fontWeight:700 }}>Preview</button>
+                  </div>
+                ))}
+              </div>
+
+              {previewLoading && <div style={{ textAlign:"center", padding:16, color:G.muted, fontSize:13 }}>Calculating preview…</div>}
+              {previewData && !previewLoading && (
+                <div style={{ border:`1px solid ${G.border}`, borderRadius:8, padding:16, marginBottom:16, background:G.bg }}>
+                  <div style={{ fontWeight:700, fontSize:14, color:G.text, marginBottom:10 }}>Preview — {previewData.employee.full_name}</div>
+                  {previewData.items.map((it,i) => (
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0" }}>
+                      <span style={{ color:G.muted }}>{it.component_name} ({it.component_type})</span>
+                      <span style={{ color:it.component_type==="Deduction"?G.red:G.green, fontWeight:600 }}>{it.component_type==="Deduction"?"-":""}₹{Number(it.amount).toLocaleString("en-IN")}</span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop:`1px solid ${G.border}`, marginTop:8, paddingTop:8 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:13 }}><span>Gross Earnings</span><span style={{ fontWeight:700 }}>₹{Number(previewData.grossEarnings).toLocaleString("en-IN")}</span></div>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:13 }}><span>Total Deductions</span><span style={{ fontWeight:700, color:G.red }}>₹{Number(previewData.totalDeductions).toLocaleString("en-IN")}</span></div>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:800, color:G.green, marginTop:4 }}><span>Net Salary</span><span>₹{Number(previewData.netSalary).toLocaleString("en-IN")}</span></div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+<div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={executeRun} style={{ opacity:running?0.6:1, pointerEvents:running?"none":"auto" }}>{running ? "Running…" : `▶ Run Payroll (${selectedEmpIds.length})`}</GreenBtn>
+            <DarkBtn onClick={()=>{setRunModal(false); setRunMonth(""); setEligible([]); setSelectedEmpIds([]); setPreviewData(null);}}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {slipModal && (
+        <Modal title="Salary Slip" onClose={()=>{setSlipModal(false); setSlipData(null);}} width={560}>
+          {slipLoading ? (
+            <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div>
+          ) : slipData && (() => {
+            const { payroll, items } = slipData;
+            const earnings = items.filter(it => it.component_type === "Earning");
+            const deductions = items.filter(it => it.component_type === "Deduction");
+            const gross = Number(payroll.gross_salary ?? earnings.reduce((s,i)=>s+Number(i.amount||0),0));
+            const ded = Number(payroll.total_deductions ?? deductions.reduce((s,i)=>s+Number(i.amount||0),0));
+            const net = Number(payroll.net_salary ?? (gross - ded));
+            return (
+              <div>
+                <div style={{ marginBottom:16, paddingBottom:16, borderBottom:`1px solid ${G.border}` }}>
+                  <div style={{ fontWeight:700, fontSize:15, color:G.text }}>{payroll.employee_name}</div>
+                  <div style={{ fontSize:12, color:G.muted, marginTop:2 }}>{payroll.reference_no} · {payroll.month_year} · {payroll.department || "—"} / {payroll.designation || "—"}</div>
+                </div>
+
+                <div style={{ fontWeight:700, fontSize:13, color:G.green, marginBottom:8 }}>Earnings</div>
+                {earnings.length === 0 ? <div style={{ fontSize:13, color:G.muted, marginBottom:12 }}>None</div> : earnings.map((it,idx) => (
+                  <div key={idx} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0" }}>
+                    <span style={{ color:G.text }}>{it.component_name}</span>
+                    <span style={{ fontWeight:600, color:G.green }}>₹{Number(it.amount).toLocaleString("en-IN")}</span>
+                  </div>
+                ))}
+
+                <div style={{ fontWeight:700, fontSize:13, color:G.red, marginTop:14, marginBottom:8 }}>Deductions</div>
+                {deductions.length === 0 ? <div style={{ fontSize:13, color:G.muted, marginBottom:12 }}>None</div> : deductions.map((it,idx) => (
+                  <div key={idx} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0" }}>
+                    <span style={{ color:G.text }}>{it.component_name}</span>
+                    <span style={{ fontWeight:600, color:G.red }}>-₹{Number(it.amount).toLocaleString("en-IN")}</span>
+                  </div>
+                ))}
+
+                <div style={{ marginTop:16, paddingTop:16, borderTop:`2px solid ${G.green}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"3px 0" }}><span>Gross Earnings</span><span style={{ fontWeight:700 }}>₹{gross.toLocaleString("en-IN")}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"3px 0" }}><span>Total Deductions</span><span style={{ fontWeight:700, color:G.red }}>₹{ded.toLocaleString("en-IN")}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:16, fontWeight:800, color:G.green, marginTop:6, paddingTop:6, borderTop:`1px solid ${G.border}` }}><span>Net Salary</span><span>₹{net.toLocaleString("en-IN")}</span></div>
+                </div>
+
+                <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:24 }}>
+                  <GreenBtn onClick={printSlip}>🖨 Print / PDF</GreenBtn>
+                  <DarkBtn onClick={()=>{setSlipModal(false); setSlipData(null);}}>Close</DarkBtn>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
       )}
       {modal && (
         <Modal title="Add Payroll" onClose={()=>setModal(false)}>
@@ -1451,7 +1770,7 @@ const loadDeptDesig = async () => {
           </div>
         </Modal>
       )}
-      {groupModal && (
+     {groupModal && (
         <Modal title="Add Payroll Group" onClose={()=>setGroupModal(false)}>
           <AutoIdField label="Group ID" value={newGroupId()} />
           <Field label="Group Name" required><FInput value={groupForm.name} onChange={e=>setGroupForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Monthly Staff" /></Field>
@@ -1461,6 +1780,30 @@ const loadDeptDesig = async () => {
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={saveGroup}>Save</GreenBtn>
             <DarkBtn onClick={()=>setGroupModal(false)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {manageCompModal && (
+        <Modal title={`Manage Components — ${groupRecords[managingGroupIdx]?.name || ""}`} onClose={()=>{setManageCompModal(false); setManagingGroupIdx(null);}} width={520}>
+          {groupCompLoading ? (
+            <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div>
+          ) : compRecords.length === 0 ? (
+            <div style={{ textAlign:"center", padding:32, color:G.muted }}>No pay components yet — add some in the Pay Components tab first.</div>
+          ) : (
+            <div style={{ maxHeight:360, overflowY:"auto" }}>
+              {compRecords.map(c => (
+                <label key={c.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderBottom:`1px solid ${G.border}`, cursor:"pointer", fontSize:14 }}>
+                  <input type="checkbox" checked={groupCompIds.includes(c.id)} onChange={()=>toggleGroupComp(c.id)} />
+                  <span style={{ flex:1, color:G.text }}>{c.description}</span>
+                  <span style={{ fontSize:11, background:c.component_type==="Earning"?G.greenBg:G.redBg, color:c.component_type==="Earning"?G.green:G.red, padding:"3px 10px", borderRadius:20, fontWeight:700 }}>{c.component_type}</span>
+                  <span style={{ fontSize:12, color:G.muted, minWidth:60, textAlign:"right" }}>{c.calc_method==="Percentage" ? `${Number(c.amount||0)}%` : `₹${Number(c.amount||0).toLocaleString("en-IN")}`}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:20 }}>
+            <GreenBtn onClick={saveGroupComponents} style={{ opacity:groupCompSaving?0.6:1, pointerEvents:groupCompSaving?"none":"auto" }}>{groupCompSaving ? "Saving..." : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setManageCompModal(false); setManagingGroupIdx(null);}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -1495,9 +1838,15 @@ const loadDeptDesig = async () => {
       {compModal && (
         <Modal title="Add Pay Component" onClose={()=>setCompModal(false)}>
           <AutoIdField label="Component ID" value={newCompId()} />
-          <Field label="Description"><FInput value={compForm.desc} onChange={e=>setCompForm(f=>({...f,desc:e.target.value}))} /></Field>
-          <Field label="Type"><FSelect value={compForm.type} onChange={e=>setCompForm(f=>({...f,type:e.target.value}))}><option>Earning</option><option>Deduction</option></FSelect></Field>
-          <Field label="Amount"><FInput type="text" value={compForm.amount} onChange={e=>setCompForm(f=>({...f,amount:e.target.value}))} placeholder="₹0" /></Field>
+          <Field label="Description" required><FInput value={compForm.desc} onChange={e=>setCompForm(f=>({...f,desc:e.target.value}))} placeholder="e.g. Basic Salary, HRA, PF" /></Field>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Type"><FSelect value={compForm.type} onChange={e=>setCompForm(f=>({...f,type:e.target.value}))}><option>Earning</option><option>Deduction</option></FSelect></Field>
+            <Field label="Calculation Method"><FSelect value={compForm.calcMethod} onChange={e=>setCompForm(f=>({...f,calcMethod:e.target.value}))}><option>Fixed</option><option>Percentage</option></FSelect></Field>
+          </div>
+          <Field label={compForm.calcMethod==="Percentage" ? "Percentage (%)" : "Amount"}>
+            <FInput type="text" value={compForm.amount} onChange={e=>setCompForm(f=>({...f,amount:e.target.value}))} placeholder={compForm.calcMethod==="Percentage" ? "e.g. 12" : "₹0"} />
+          </Field>
+          <Field label="Status"><FSelect value={compForm.status} onChange={e=>setCompForm(f=>({...f,status:e.target.value}))}><option>Active</option><option>Inactive</option></FSelect></Field>
           <Field label="Applicable Date"><FInput type="date" value={compForm.date} onChange={e=>setCompForm(f=>({...f,date:e.target.value}))} /></Field>
 <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn
@@ -1505,11 +1854,11 @@ const loadDeptDesig = async () => {
                 if(compForm.desc && !compSaving){
                   setCompSaving(true);
                   try {
-                    await hrmAPI.createPayComponent({ description:compForm.desc, component_type:compForm.type, amount:parseFloat(compForm.amount)||0, applicable_from:compForm.date||null });
+                    await hrmAPI.createPayComponent({ description:compForm.desc, component_type:compForm.type, calc_method:compForm.calcMethod, amount:parseFloat(compForm.amount)||0, status:compForm.status, applicable_from:compForm.date||null });
                     await loadComponents();
                   } catch(e){ alert(e.message); }
                   setCompSaving(false);
-                  setCompModal(false); setCompForm({ desc:"", type:"Earning", amount:"", date:"" });
+                  setCompModal(false); setCompForm({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
                 }
               }}
               style={{ opacity:compSaving?0.6:1, pointerEvents:compSaving?"none":"auto" }}
@@ -1521,7 +1870,129 @@ const loadDeptDesig = async () => {
   );
 }
 
-function MyPayrolls() { return (<div><HRMNav /><h2 style={{ marginBottom:16, fontSize:20, fontWeight:700, color:G.text }}>My Payrolls</h2><Card><NoData /></Card></div>); }
+function MyPayrolls() {
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [slipModal,setSlipModal]=useState(false);
+  const [slipData,setSlipData]=useState(null);
+  const [slipLoading,setSlipLoading]=useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await hrmAPI.getPayrolls();
+      const all = d.payrolls || [];
+      let myId = null, myName = null;
+      try {
+        const stored = JSON.parse(localStorage.getItem("manod_user") || "{}");
+        myId = stored.id || null;
+        myName = stored.name || null;
+      } catch {}
+      const mine = all.filter(p =>
+        (myId && p.employee_id === myId) ||
+        (!myId && myName && p.employee_name?.toLowerCase() === myName.toLowerCase())
+      );
+      setRecords(mine);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const rows = records.map(p => [p.reference_no, p.month_year, `₹${Number(p.net_salary||0).toLocaleString("en-IN")}`, p.status]);
+
+  const openSlip = async (i) => {
+    const rec = records[i];
+    setSlipModal(true);
+    setSlipLoading(true);
+    try {
+      const d = await hrmAPI.getPayrollItems(rec.id);
+      setSlipData({ payroll: rec, items: d.items || [] });
+    } catch(e) { alert(e.message); setSlipModal(false); }
+    setSlipLoading(false);
+  };
+
+  return (
+    <div>
+      <HRMNav />
+      <h2 style={{ marginBottom:16, fontSize:20, fontWeight:700, color:G.text }}>My Payrolls</h2>
+      <Card>
+        {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        rows.length === 0 ? <NoData /> : (
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
+              <thead>
+                <tr style={{ background:G.greenBg }}>
+                  {["Ref No","Month","Net Salary","Status"].map(c => (
+                    <th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase" }}>{c}</th>
+                  ))}
+                  <th style={{ padding:"10px 14px", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", textAlign:"center" }}>Slip</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row,i) => (
+                  <tr key={i} style={{ background:i%2===0?G.white:G.rowHov }}>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text, fontWeight:600 }}>{row[0]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[1]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text }}>{row[2]}</td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}><StatusPill text={row[3]} /></td>
+                    <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, textAlign:"center" }}>
+                      <button onClick={()=>openSlip(i)} style={{ padding:"5px 12px", background:G.greenBg, color:G.green, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>View Slip</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop:10, fontSize:13, color:G.muted }}>Showing {rows.length} of {rows.length} entries</div>
+          </div>
+        )}
+      </Card>
+      {slipModal && (
+        <Modal title="Salary Slip" onClose={()=>{setSlipModal(false); setSlipData(null);}} width={560}>
+          {slipLoading ? (
+            <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div>
+          ) : slipData && (() => {
+            const { payroll, items } = slipData;
+            const earnings = items.filter(it => it.component_type === "Earning");
+            const deductions = items.filter(it => it.component_type === "Deduction");
+            const gross = Number(payroll.gross_salary ?? earnings.reduce((s,i)=>s+Number(i.amount||0),0));
+            const ded = Number(payroll.total_deductions ?? deductions.reduce((s,i)=>s+Number(i.amount||0),0));
+            const net = Number(payroll.net_salary ?? (gross - ded));
+            return (
+              <div>
+                <div style={{ marginBottom:16, paddingBottom:16, borderBottom:`1px solid ${G.border}` }}>
+                  <div style={{ fontWeight:700, fontSize:15, color:G.text }}>{payroll.employee_name}</div>
+                  <div style={{ fontSize:12, color:G.muted, marginTop:2 }}>{payroll.reference_no} · {payroll.month_year}</div>
+                </div>
+                <div style={{ fontWeight:700, fontSize:13, color:G.green, marginBottom:8 }}>Earnings</div>
+                {earnings.length === 0 ? <div style={{ fontSize:13, color:G.muted, marginBottom:12 }}>None</div> : earnings.map((it,idx) => (
+                  <div key={idx} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0" }}>
+                    <span style={{ color:G.text }}>{it.component_name}</span>
+                    <span style={{ fontWeight:600, color:G.green }}>₹{Number(it.amount).toLocaleString("en-IN")}</span>
+                  </div>
+                ))}
+                <div style={{ fontWeight:700, fontSize:13, color:G.red, marginTop:14, marginBottom:8 }}>Deductions</div>
+                {deductions.length === 0 ? <div style={{ fontSize:13, color:G.muted, marginBottom:12 }}>None</div> : deductions.map((it,idx) => (
+                  <div key={idx} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0" }}>
+                    <span style={{ color:G.text }}>{it.component_name}</span>
+                    <span style={{ fontWeight:600, color:G.red }}>-₹{Number(it.amount).toLocaleString("en-IN")}</span>
+                  </div>
+                ))}
+                <div style={{ marginTop:16, paddingTop:16, borderTop:`2px solid ${G.green}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"3px 0" }}><span>Gross Earnings</span><span style={{ fontWeight:700 }}>₹{gross.toLocaleString("en-IN")}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"3px 0" }}><span>Total Deductions</span><span style={{ fontWeight:700, color:G.red }}>₹{ded.toLocaleString("en-IN")}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:16, fontWeight:800, color:G.green, marginTop:6, paddingTop:6, borderTop:`1px solid ${G.border}` }}><span>Net Salary</span><span>₹{net.toLocaleString("en-IN")}</span></div>
+                </div>
+                <div style={{ display:"flex", justifyContent:"flex-end", marginTop:24 }}>
+                  <DarkBtn onClick={()=>{setSlipModal(false); setSlipData(null);}}>Close</DarkBtn>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 /* ══════════════════════════════════════════
    HOLIDAY (original UI + API save + exports)
@@ -1532,6 +2003,7 @@ function Holiday() {
   const rows = records.map(h => [`HOL-${String(h.id).padStart(3,"0")}`, h.name, h.start_date?String(h.start_date).slice(0,10):"", h.end_date?String(h.end_date).slice(0,10):"", h.duration, h.location]);
 
   const [modal,setModal]=useState(false);
+  const [editingId,setEditingId]=useState(null);
   const [form,setForm]=useState({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
 
   const load = async () => {
@@ -1541,28 +2013,46 @@ function Holiday() {
   };
   useEffect(() => { load(); }, []);
 
-  const newId=()=>`HOL-${String(records.length+1).padStart(3,"0")}`;
+  const newId=()=>editingId ? `HOL-${String(records.findIndex(r=>r.id===editingId)+1).padStart(3,"0")}` : `HOL-${String(records.length+1).padStart(3,"0")}`;
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
+    setModal(true);
+  };
+  const openEdit = (i) => {
+    const rec = records[i];
+    setEditingId(rec.id);
+    setForm({
+      name: rec.name || "",
+      startDate: rec.start_date ? String(rec.start_date).slice(0,10) : "",
+      endDate: rec.end_date ? String(rec.end_date).slice(0,10) : "",
+      location: rec.location || "All Locations",
+      note: rec.note || "",
+    });
+    setModal(true);
+  };
+
   const save=async()=>{
     if(!form.name||!form.startDate||!form.endDate) return;
     try {
-      await hrmAPI.createHoliday({ name:form.name, start_date:form.startDate, end_date:form.endDate, location:form.location, note:form.note });
+      if (editingId) {
+        await hrmAPI.updateHoliday(editingId, { name:form.name, start_date:form.startDate, end_date:form.endDate, location:form.location, note:form.note });
+      } else {
+        await hrmAPI.createHoliday({ name:form.name, start_date:form.startDate, end_date:form.endDate, location:form.location, note:form.note });
+      }
       await load();
     } catch(e){ alert(e.message); }
-    setModal(false); setForm({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
+    setModal(false); setEditingId(null); setForm({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
   };
   const apiDelete = async (i) => { await hrmAPI.deleteHoliday(records[i].id); await load(); };
-  const apiEdit = async (i, vals) => {
-    const rec = records[i];
-    await hrmAPI.updateHoliday(rec.id, { name:vals[1], start_date:vals[2], end_date:vals[3], location:vals[5] });
-    await load();
-  };
 
   return (
     <div>
       <HRMNav />
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
         <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Holidays</h2>
-        <GreenBtn onClick={()=>setModal(true)}>+ Add Holiday</GreenBtn>
+        <GreenBtn onClick={openAdd}>+ Add Holiday</GreenBtn>
       </div>
       <KpiRow cards={[
         { label:"Total Holidays", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Name","Start","End","Duration","Location"], rows } },
@@ -1570,9 +2060,9 @@ function Holiday() {
         { label:"Total Days Off", value:rows.reduce((s,r)=>s+(parseInt(r[4])||0),0).toString(), color:G.blue },
       ]} />
       <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-        <HRMTable columns={["ID","Name","Start","End","Duration","Location"]} rows={rows} exportFilename="holidays" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
+        <HRMTable columns={["ID","Name","Start","End","Duration","Location"]} rows={rows} exportFilename="holidays" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
       {modal && (
-        <Modal title="Add Holiday" onClose={()=>setModal(false)}>
+        <Modal title={editingId ? "Edit Holiday" : "Add Holiday"} onClose={()=>{setModal(false); setEditingId(null);}}>
           <AutoIdField label="Holiday ID" value={newId()} />
           <Field label="Name" required><FInput value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Holiday name" /></Field>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
@@ -1581,7 +2071,7 @@ function Holiday() {
           </div>
           <Field label="Location"><FSelect value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}><option>All Locations</option><option>Manodtechnologies</option><option>Branch 1</option></FSelect></Field>
           <Field label="Note"><FTextarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} /></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}><GreenBtn onClick={save}>Save</GreenBtn><DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn></div>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}><GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn><DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn></div>
         </Modal>
       )}
     </div>
@@ -1636,7 +2126,7 @@ function Departments() {
           <Field label="Department Name" required><FInput value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))} placeholder="e.g. Sales" /></Field>
           <Field label="Description"><FTextarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} placeholder="Brief description" /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <GreenBtn onClick={async()=>{
+          <GreenBtn onClick={async()=>{
               if(form.dept){
                 try {
                   await hrmAPI.createDepartment({ name:form.dept, description:form.desc });
@@ -1722,6 +2212,7 @@ function SalesTargets() {
   const rows = records.map((t,i) => [`ST-${String(t.id).padStart(3,"0")}`, t.employee_name, `₹${Number(t.target_amount||0).toLocaleString("en-IN")}`, `${t.commission_pct||0}%`, t.month_year||"—"]);
 
   const [modal,setModal]=useState(false);
+  const [editingId,setEditingId]=useState(null);
   const [form,setForm]=useState({ user:"", target:"", commission:"", month:"" });
 
   const load = async () => {
@@ -1731,27 +2222,53 @@ function SalesTargets() {
   };
   useEffect(() => { load(); }, []);
 
-  const newId=()=>`ST-${String(records.length+1).padStart(3,"0")}`;
+  const newId=()=>editingId ? `ST-${String(records.findIndex(r=>r.id===editingId)+1).padStart(3,"0")}` : `ST-${String(records.length+1).padStart(3,"0")}`;
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ user:"", target:"", commission:"", month:"" });
+    setModal(true);
+  };
+  const openEdit = (i) => {
+    const rec = records[i];
+    setEditingId(rec.id);
+    setForm({
+      user: rec.employee_name || "",
+      target: String(rec.target_amount || ""),
+      commission: String(rec.commission_pct || ""),
+      month: rec.month_year || "",
+    });
+    setModal(true);
+  };
+
+  const save = async () => {
+    if(!form.user||!form.target) return;
+    try {
+      if (editingId) {
+        const rec = records.find(r=>r.id===editingId);
+        await hrmAPI.updateSalesTarget(editingId, {
+          employee_name: form.user,
+          target_amount: parseFloat(String(form.target).replace(/[₹,]/g,""))||0,
+          commission_pct: parseFloat(form.commission)||0,
+          month_year: form.month,
+          achieved_amount: rec?.achieved_amount || 0,
+        });
+      } else {
+        await hrmAPI.createSalesTarget({ employee_name:form.user, target_amount:parseFloat(String(form.target).replace(/[₹,]/g,""))||0, commission_pct:parseFloat(form.commission)||0, month_year:form.month });
+      }
+      await load();
+    } catch(e){ alert(e.message); }
+    setModal(false); setEditingId(null); setForm({ user:"", target:"", commission:"", month:"" });
+  };
 
   const apiDelete = async (i) => { await hrmAPI.deleteSalesTarget(records[i].id); await load(); };
-  const apiEdit = async (i, vals) => {
-    const rec = records[i];
-    await hrmAPI.updateSalesTarget(rec.id, {
-      employee_name:vals[1],
-      target_amount: parseFloat(String(vals[2]).replace(/[₹,]/g,""))||0,
-      commission_pct: parseFloat(String(vals[3]).replace(/%/g,""))||0,
-      month_year:vals[4],
-      achieved_amount: rec.achieved_amount || 0,
-    });
-    await load();
-  };
 
   return (
     <div>
       <HRMNav />
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
         <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Sales Targets</h2>
-        <GreenBtn onClick={()=>setModal(true)}>+ Add Target</GreenBtn>
+        <GreenBtn onClick={openAdd}>+ Add Target</GreenBtn>
       </div>
       <KpiRow cards={[
         { label:"Total Reps", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","User","Target Amount","Commission %","Month"], rows } },
@@ -1759,25 +2276,17 @@ function SalesTargets() {
         { label:"Total Commission Budget", value:`₹${records.reduce((s,r)=>s+(Number(r.target_amount||0)*Number(r.commission_pct||0)/100),0).toLocaleString("en-IN")}`,    color:G.blue  },
       ]} />
       <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-        <HRMTable columns={["ID","User","Target Amount","Commission %","Month"]} rows={rows} exportFilename="sales-targets" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
+        <HRMTable columns={["ID","User","Target Amount","Commission %","Month"]} rows={rows} exportFilename="sales-targets" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
       {modal && (
-        <Modal title="Add Sales Target" onClose={()=>setModal(false)}>
+        <Modal title={editingId ? "Edit Sales Target" : "Add Sales Target"} onClose={()=>{setModal(false); setEditingId(null);}}>
           <AutoIdField label="Target ID" value={newId()} />
           <Field label="User" required><FInput value={form.user} onChange={e=>setForm(f=>({...f,user:e.target.value}))} placeholder="Employee name" /></Field>
           <Field label="Target Amount" required><FInput value={form.target} onChange={e=>setForm(f=>({...f,target:e.target.value}))} placeholder="₹0" /></Field>
           <Field label="Commission %"><FInput type="number" value={form.commission} onChange={e=>setForm(f=>({...f,commission:e.target.value}))} placeholder="5" /></Field>
           <Field label="Month / Year"><FInput type="month" value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <GreenBtn onClick={async()=>{
-              if(form.user&&form.target){
-                try {
-                  await hrmAPI.createSalesTarget({ employee_name:form.user, target_amount:parseFloat(form.target.replace(/[₹,]/g,""))||0, commission_pct:parseFloat(form.commission)||0, month_year:form.month });
-                  await load();
-                } catch(e){ alert(e.message); }
-                setModal(false); setForm({ user:"", target:"", commission:"", month:"" });
-              }
-            }}>Save</GreenBtn>
-            <DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+            <GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -1790,14 +2299,56 @@ function SalesTargets() {
 ══════════════════════════════════════════ */
 function HRMSettings() {
   const [form,setForm]=useState({ workDays:"5", workHours:"8", overtimeRate:"1.5", currency:"INR", payslipNote:"Thank you for your service.", leaveApproval:"manager", attendanceMode:"manual" });
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
-  const save=()=>{ setSaved(true); setTimeout(()=>setSaved(false),2500); };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await hrmAPI.getSettings();
+      const s = d.settings;
+      if (s) {
+        setForm({
+          workDays: String(s.work_days_per_week ?? "5"),
+          workHours: String(s.work_hours_per_day ?? "8"),
+          overtimeRate: String(s.overtime_rate_multiplier ?? "1.5"),
+          currency: s.currency || "INR",
+          payslipNote: s.payslip_note || "",
+          leaveApproval: s.leave_approval || "manager",
+          attendanceMode: s.attendance_mode || "manual",
+        });
+      }
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await hrmAPI.updateSettings({
+        work_days_per_week: parseInt(form.workDays) || 5,
+        work_hours_per_day: parseFloat(form.workHours) || 8,
+        overtime_rate_multiplier: parseFloat(form.overtimeRate) || 1.5,
+        currency: form.currency,
+        payslip_note: form.payslipNote,
+        leave_approval: form.leaveApproval,
+        attendance_mode: form.attendanceMode,
+      });
+      setSaved(true); setTimeout(()=>setSaved(false),2500);
+    } catch (e) { alert(e.message); }
+    setSaving(false);
+  };
+
   return (
     <div>
       <HRMNav />
       <h2 style={{ marginBottom:18, fontSize:20, fontWeight:700, color:G.text }}>HRM Settings</h2>
       <Card style={{ maxWidth:700 }}>
         <h3 style={{ marginTop:0, marginBottom:20, fontSize:15, fontWeight:700, borderBottom:`1px solid ${G.border}`, paddingBottom:12, color:G.text }}>General Configuration</h3>
+        {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> : (
+        <>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
           <Field label="Working Days / Week"><FSelect value={form.workDays} onChange={e=>setForm(f=>({...f,workDays:e.target.value}))}>{["5","6","7"].map(v=><option key={v}>{v}</option>)}</FSelect></Field>
           <Field label="Working Hours / Day"><FInput type="number" value={form.workHours} onChange={e=>setForm(f=>({...f,workHours:e.target.value}))} /></Field>
@@ -1808,14 +2359,15 @@ function HRMSettings() {
         </div>
         <Field label="Payslip Footer Note"><FTextarea value={form.payslipNote} onChange={e=>setForm(f=>({...f,payslipNote:e.target.value}))} /></Field>
         <div style={{ display:"flex", gap:12, alignItems:"center", marginTop:10 }}>
-          <GreenBtn onClick={save} style={{ fontSize:14, padding:"10px 28px" }}>💾 Save Settings</GreenBtn>
+          <GreenBtn onClick={save} style={{ fontSize:14, padding:"10px 28px", opacity:saving?0.6:1, pointerEvents:saving?"none":"auto" }}>💾 {saving ? "Saving..." : "Save Settings"}</GreenBtn>
           {saved && <span style={{ color:G.green, fontSize:13, fontWeight:700, background:G.greenBg, padding:"6px 14px", borderRadius:8 }}>✓ Settings saved!</span>}
         </div>
+        </>
+        )}
       </Card>
     </div>
   );
 }
-
 /* ══════════════════════════════════════════
    ESSENTIALS — 100% ORIGINAL CODE BELOW
    (no changes — just pasted as-is)

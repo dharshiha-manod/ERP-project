@@ -138,7 +138,7 @@ export default function Brands() {
             <tr style={{ borderBottom: "2px solid #dee2e6" }}>
               <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Brands</th>
               <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Note</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Action</th>
+          <th style={{ textAlign: "center", padding: "10px 12px", fontWeight: 600 }}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -151,9 +151,30 @@ export default function Brands() {
                 <tr key={b.id} style={{ borderBottom: "1px solid #dee2e6" }}>
                   <td style={{ padding: "10px 12px" }}>{b.name}</td>
                   <td style={{ padding: "10px 12px" }}>{b.description}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <button onClick={() => openEdit(b)} style={{ marginRight: 6, padding: "4px 12px", borderRadius: 4, border: "1px solid #6f42c1", background: "#fff", color: "#6f42c1", cursor: "pointer", fontSize: 13 }}>✏ Edit</button>
-                    <button onClick={() => handleDelete(b)} style={{ padding: "4px 12px", borderRadius: 4, border: "1px solid #dc3545", background: "#fff", color: "#dc3545", cursor: "pointer", fontSize: 13 }}>🗑 Delete</button>
+                  <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16 }}>
+                      <button onClick={() => openEdit(b)} title="View" style={{ background: "transparent", border: "none", color: "#0ea5e9", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button onClick={() => openEdit(b)} title="Edit" style={{ background: "transparent", border: "none", color: "#d97706", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => handleDelete(b)} title="Delete" style={{ background: "transparent", border: "none", color: "#dc2626", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <line x1="10" y1="11" x2="10" y2="17" />
+                          <line x1="14" y1="11" x2="14" y2="17" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

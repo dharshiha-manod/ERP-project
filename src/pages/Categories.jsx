@@ -151,7 +151,7 @@ export default function Categories() {
                 {visibleCols.code        && <th style={s.th}>Category Code</th>}
                 {visibleCols.description && <th style={s.th}>Description</th>}
                 {visibleCols.parent      && <th style={s.th}>Parent</th>}
-                {visibleCols.action      && <th style={s.th}>Action</th>}
+{visibleCols.action      && <th style={{ ...s.th, textAlign: "center" }}>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -167,9 +167,30 @@ export default function Categories() {
                     {visibleCols.description && <td style={{ ...s.td, color:"#555" }}>{c.description || ""}</td>}
                     {visibleCols.parent      && <td style={s.td}>{c.parent_name ? <span style={s.parentBadge}>{c.parent_name}</span> : <span style={{ color:"#ccc" }}>—</span>}</td>}
                     {visibleCols.action      && (
-                      <td style={s.td}>
-                        <button onClick={() => openEdit(c)} style={s.editBtn}>✏ Edit</button>
-                        <button onClick={() => handleDelete(c)} style={s.delBtn}>🗑 Delete</button>
+                      <td style={{ ...s.td, textAlign: "center" }}>
+                        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16 }}>
+                          <button onClick={() => openEdit(c)} title="View" style={s.iconView}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </button>
+                          <button onClick={() => openEdit(c)} title="Edit" style={s.iconEdit}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                            </svg>
+                          </button>
+                          <button onClick={() => handleDelete(c)} title="Delete" style={s.iconDelete}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -252,8 +273,9 @@ const s = {
   td:         { padding:"11px 14px", verticalAlign:"middle" },
   noData:     { textAlign:"center", padding:"44px 0", color:"#9ca3af" },
   parentBadge:{ background:"#ede9fe", color:"#6d28d9", borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:500 },
-  editBtn:    { background:"#f0fdf4", color:"#2e7d32", border:"1px solid #bbf7d0", borderRadius:5, padding:"5px 13px", cursor:"pointer", fontSize:13, fontWeight:500, marginRight:6 },
-  delBtn:     { background:"#fff0f0", color:"#dc2626", border:"1px solid #fecaca", borderRadius:5, padding:"5px 13px", cursor:"pointer", fontSize:13, fontWeight:500 },
+  iconView:   { background:"transparent", border:"none", color:"#0ea5e9", cursor:"pointer", padding:0, display:"flex", alignItems:"center" },
+  iconEdit:   { background:"transparent", border:"none", color:"#d97706", cursor:"pointer", padding:0, display:"flex", alignItems:"center" },
+  iconDelete: { background:"transparent", border:"none", color:"#dc2626", cursor:"pointer", padding:0, display:"flex", alignItems:"center" },
   footRow:    { display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:14, fontSize:13, color:"#555" },
   pageBtns:   { display:"flex", gap:5, alignItems:"center" },
   pageBtn:    { background:"#fff", border:"1px solid #d1d5db", borderRadius:4, padding:"5px 13px", cursor:"pointer", fontSize:13 },

@@ -49,6 +49,7 @@ import Login          from "./pages/Login";
 import Subscription, { isSubscriptionActive } from "./pages/Subscription";
 import { hasFeature, FEATURES } from "./planAccess";
 import "./App.css";
+import Accounting from "./pages/Accounting";
 
 // ─── Auth helpers ──────────────────────────────────────────────────────────
 function isAuthenticated() {
@@ -170,7 +171,14 @@ function AppLayout() {
               </FeatureRoute>
             }
           />
-
+<Route
+  path="/accounting"
+  element={
+    <FeatureRoute feature={FEATURES.ACCOUNTING}>
+      <Accounting />
+    </FeatureRoute>
+  }
+/>
           {/* Purchases */}
           <Route path="/purchases"              element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />
           <Route path="/purchases/create"       element={<FeatureRoute feature={FEATURES.PURCHASES}><Purchases /></FeatureRoute>} />

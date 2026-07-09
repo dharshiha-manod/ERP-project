@@ -1,31 +1,67 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
-
-const SAMPLE_PRODUCTS = [
-  { name: "Samsung Galaxy S24 Ultra", sku: "SAM-S24U-001", excTax: "85000", incTax: "100300", excTaxSell: "106250", tax: "GST 18%", sellingPriceTaxType: "Exclusive" },
-  { name: "Apple iPhone 15 Pro", sku: "APL-IP15P-002", excTax: "110000", incTax: "129800", excTaxSell: "132000", tax: "GST 18%", sellingPriceTaxType: "Exclusive" },
-  { name: "Nike Air Max 270", sku: "NIK-AM270-003", excTax: "4500", incTax: "5040", excTaxSell: "6300", tax: "GST 12%", sellingPriceTaxType: "Exclusive" },
-  { name: "Sony WH-1000XM5 Headphones", sku: "SNY-WH1000-004", excTax: "22000", incTax: "25960", excTaxSell: "28600", tax: "GST 18%", sellingPriceTaxType: "Exclusive" },
-  { name: "Bosch Washing Machine 7kg", sku: "BSH-WM7-005", excTax: "28000", incTax: "35840", excTaxSell: "34160", tax: "GST 28%", sellingPriceTaxType: "Exclusive" },
-  { name: "Adidas Ultraboost 22", sku: "ADI-UB22-006", excTax: "8000", incTax: "8960", excTaxSell: "10800", tax: "GST 12%", sellingPriceTaxType: "Exclusive" },
-  { name: "LG 55\" OLED TV", sku: "LG-OLED55-007", excTax: "75000", incTax: "96000", excTaxSell: "88500", tax: "GST 28%", sellingPriceTaxType: "Exclusive" },
-  { name: "A4 Copier Paper (500 sheets)", sku: "STA-A4P-009", excTax: "220", incTax: "231", excTaxSell: "281.60", tax: "GST 5%", sellingPriceTaxType: "Exclusive" },
-];
+import { productsAPI } from "../api/productAPI";
 
 export default function UpdatePrice() {
   const fileRef = useRef();
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
   const [importMsg, setImportMsg] = useState("");
 
-  const handleExport = () => {
-    const headers = [["Product Name", "SKU", "Purchase Price (Exc. Tax)", "Purchase Price (Inc. Tax)", "Selling Price", "Tax Rate", "Selling Price Tax Type"]];
-    const rows = SAMPLE_PRODUCTS.map(p => [p.name, p.sku, p.excTax, p.incTax, p.excTaxSell, p.tax, p.sellingPriceTaxType]);
-    const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
-    ws["!cols"] = headers[0].map(() => ({ wch: 26 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Product Prices");
-    XLSX.writeFile(wb, "product_prices.xlsx");
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await productsAPI.getAll({ limit: 1000 });
+      setProducts(data.products || []);
+    } catch (err) {
+      console.error("Failed to load products:", err.message);
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  // ── EXPORT: build Excel from real product data ──────────────────────────
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      // Always pull the freshest data before exporting
+      const data = await productsAPI.getAll({ limit: 1000 });
+      const list = data.products || [];
+
+      const headers = [[
+        "Product Name", "SKU",
+        "Purchase Price (Exc. Tax)", "Purchase Price (Inc. Tax)",
+        "Selling Price (Exc. Tax)", "Tax Rate", "Selling Price Tax Type",
+      ]];
+      const rows = list.map(p => [
+        p.name || "",
+        p.sku || "",
+        p.exc_tax ?? 0,
+        p.inc_tax ?? 0,
+        p.exc_tax_sell ?? 0,
+        p.tax || "None",
+        p.selling_price_tax_type || "Exclusive",
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
+      ws["!cols"] = headers[0].map(() => ({ wch: 26 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Product Prices");
+      XLSX.writeFile(wb, "product_prices.xlsx");
+
+      setProducts(list);
+    } catch (err) {
+      console.error("Export failed:", err.message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -35,22 +71,97 @@ export default function UpdatePrice() {
     setImportMsg("");
   };
 
+  // ── IMPORT: parse Excel, match by SKU, update each product via real API ─
   const handleSubmit = () => {
-    if (!importFile) { setImportStatus("error"); setImportMsg("Please choose a file to import."); return; }
+    if (!importFile) {
+      setImportStatus("error");
+      setImportMsg("Please choose a file to import.");
+      return;
+    }
+
+    setImporting(true);
     const reader = new FileReader();
-    reader.onload = (ev) => {
+
+    reader.onload = async (ev) => {
       try {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws);
-        setImportStatus("success");
-        setImportMsg(`Successfully imported ${rows.length} product price(s).`);
-      } catch {
+
+        if (rows.length === 0) {
+          setImportStatus("error");
+          setImportMsg("The file is empty or has no valid rows.");
+          setImporting(false);
+          return;
+        }
+
+        // Fetch current products fresh so we match against latest SKUs/ids
+        const latest = await productsAPI.getAll({ limit: 1000 });
+        const bySku = new Map(
+          (latest.products || [])
+            .filter(p => p.sku)
+            .map(p => [String(p.sku).trim().toLowerCase(), p])
+        );
+
+        let updated = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (const row of rows) {
+          const sku = String(row["SKU"] || "").trim().toLowerCase();
+          const product = sku ? bySku.get(sku) : null;
+
+          if (!product) {
+            skipped++;
+            continue;
+          }
+
+          const payload = {
+            exc_tax:      row["Purchase Price (Exc. Tax)"] !== undefined ? parseFloat(row["Purchase Price (Exc. Tax)"]) : undefined,
+            inc_tax:      row["Purchase Price (Inc. Tax)"] !== undefined ? parseFloat(row["Purchase Price (Inc. Tax)"]) : undefined,
+            exc_tax_sell: row["Selling Price (Exc. Tax)"]  !== undefined ? parseFloat(row["Selling Price (Exc. Tax)"])  : undefined,
+            tax:                    row["Tax Rate"] || undefined,
+            selling_price_tax_type: row["Selling Price Tax Type"] || undefined,
+          };
+
+          try {
+            await productsAPI.update(product.id, payload);
+            updated++;
+          } catch (err) {
+            errors.push(`${row["Product Name"] || sku}: ${err.message}`);
+          }
+        }
+
+        await loadProducts();
+
+        if (updated > 0 && errors.length === 0 && skipped === 0) {
+          setImportStatus("success");
+          setImportMsg(`Successfully updated ${updated} product price(s).`);
+        } else if (updated > 0) {
+          setImportStatus("success");
+          setImportMsg(
+            `Updated ${updated} product(s).` +
+            (skipped > 0 ? ` Skipped ${skipped} row(s) — SKU not found.` : "") +
+            (errors.length > 0 ? ` ${errors.length} row(s) failed.` : "")
+          );
+        } else {
+          setImportStatus("error");
+          setImportMsg(
+            skipped > 0
+              ? `No products matched. Check that SKUs in the file match existing products.`
+              : `Import failed. ${errors[0] || ""}`
+          );
+        }
+      } catch (err) {
+        console.error("Import parse error:", err);
         setImportStatus("error");
         setImportMsg("Failed to parse file. Please use the exported template.");
+      } finally {
+        setImporting(false);
       }
     };
+
     reader.readAsArrayBuffer(importFile);
   };
 
@@ -67,34 +178,44 @@ export default function UpdatePrice() {
             <p style={{ fontSize: 13, color: "#555", marginBottom: 16 }}>
               Export current product prices to an Excel file. You can edit the prices and import them back.
             </p>
-            <button style={s.btnExport} onClick={handleExport}>
-              📥 Export product prices
+            <button style={{ ...s.btnExport, opacity: exporting ? 0.7 : 1 }} onClick={handleExport} disabled={exporting}>
+              {exporting ? "Exporting…" : "📥 Export product prices"}
             </button>
             <div style={s.previewTable}>
               <div style={s.previewTitle}>Current Price List Preview</div>
-              <table style={s.table}>
-                <thead>
-                  <tr style={{ background: "#f9fafb" }}>
-                    <th style={s.th}>Product</th>
-                    <th style={s.th}>SKU</th>
-                    <th style={s.th}>Purchase (Exc.)</th>
-                    <th style={s.th}>Selling Price</th>
-                    <th style={s.th}>Tax</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SAMPLE_PRODUCTS.slice(0, 5).map((p, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f0f0f0", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                      <td style={s.td}>{p.name}</td>
-                      <td style={s.td}><code style={{ fontSize: 11 }}>{p.sku}</code></td>
-                      <td style={s.td}>₹{Number(p.excTax).toLocaleString()}</td>
-                      <td style={s.td}>₹{Number(p.excTaxSell).toLocaleString()}</td>
-                      <td style={s.td}><span style={s.taxBadge}>{p.tax}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>Showing 5 of {SAMPLE_PRODUCTS.length} products</div>
+              {loading ? (
+                <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>Loading products…</div>
+              ) : products.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No products found.</div>
+              ) : (
+                <>
+                  <table style={s.table}>
+                    <thead>
+                      <tr style={{ background: "#f9fafb" }}>
+                        <th style={s.th}>Product</th>
+                        <th style={s.th}>SKU</th>
+                        <th style={s.th}>Purchase (Exc.)</th>
+                        <th style={s.th}>Selling Price</th>
+                        <th style={s.th}>Tax</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.slice(0, 5).map((p, i) => (
+                        <tr key={p.id ?? i} style={{ borderBottom: "1px solid #f0f0f0", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                          <td style={s.td}>{p.name}</td>
+                          <td style={s.td}><code style={{ fontSize: 11 }}>{p.sku || "—"}</code></td>
+                          <td style={s.td}>₹{Number(p.exc_tax || 0).toLocaleString()}</td>
+                          <td style={s.td}>₹{Number(p.exc_tax_sell || 0).toLocaleString()}</td>
+                          <td style={s.td}><span style={s.taxBadge}>{p.tax || "None"}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>
+                    Showing {Math.min(5, products.length)} of {products.length} products
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -113,7 +234,9 @@ export default function UpdatePrice() {
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={handleFileChange} />
               </div>
             </div>
-            <button style={s.btnSubmit} onClick={handleSubmit}>🖫 Submit</button>
+            <button style={{ ...s.btnSubmit, opacity: importing ? 0.7 : 1 }} onClick={handleSubmit} disabled={importing}>
+              {importing ? "Importing…" : "🖫 Submit"}
+            </button>
 
             {importStatus && (
               <div style={importStatus === "success" ? s.alertSuccess : s.alertError}>

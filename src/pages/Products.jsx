@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
-import { productsAPI, brandsAPI, unitsAPI, categoriesAPI } from "../api/productAPI";
+import { productsAPI, brandsAPI, unitsAPI, categoriesAPI, variationsAPI } from "../api/productAPI";
 
 // ── Constants ──────────────────────────────────────────────
 const TAXES        = ["None","GST 5%","GST 12%","GST 18%","GST 28%"];
@@ -17,19 +17,18 @@ const genSKU = (name = "") => {
   const num    = Date.now().toString().slice(-4);
   return `${prefix}-${rand}${num}`;
 };
-
 const EMPTY_FORM = {
   name:"", sku:"", barcodeType:"Code 128 (C128)",
-  unit:"", brand:"", category:"", subCategory:"",
+  unit:"", brand:"", category:"", subCategory:"", variationTemplate:"", warranty:"",
   businessLocation:"Manodtechnologies (BL0001)",
   alertQty:"", manageStock:true,
   description:"", weight:"", prepTime:"",
   tax:"None", sellingPriceTaxType:"Exclusive",
   productType:"Single",
   excTax:"", incTax:"", margin:"25.00", excTaxSell:"",
+  openingStock:"", openingStockValue:"",
   image:null, imagePreview:null,
 };
-
 // ── Searchable Select Component ────────────────────────────
 function SearchableSelect({ options, value, onChange, placeholder = "Search or select...", disabled }) {
   const [open, setOpen]   = useState(false);
@@ -182,22 +181,25 @@ const exportPDF = (products) => {
 export function AddProductForm({ onSaved, editProduct }) {
   const navigate   = useNavigate();
   const fileRef    = useRef();
-
-  const [units,       setUnits]       = useState([]);
+const [units,       setUnits]       = useState([]);
   const [brands,      setBrands]      = useState([]);
   const [categories,  setCategories]  = useState([]);
   const [subCats,     setSubCats]     = useState([]);
   const [allCats,     setAllCats]     = useState([]);
+  const [warranties,  setWarranties]  = useState([]);
+const [variationTemplates, setVariationTemplates] = useState([]);
   const [saving,      setSaving]      = useState(false);
 
-  const initForm = editProduct ? {
+ const initForm = editProduct ? {
     name:                editProduct.name || "",
     sku:                 editProduct.sku  || "",
     barcodeType:         editProduct.barcode_type || "Code 128 (C128)",
     unit:                editProduct.unit  || "",
     brand:               editProduct.brand || "",
-    category:            editProduct.category || "",
+  category:            editProduct.category || "",
     subCategory:         editProduct.sub_category || "",
+    variationTemplate:   editProduct.variation_template || "",
+    warranty:            editProduct.warranty || "",
     businessLocation:    editProduct.business_location || "Manodtechnologies (BL0001)",
     alertQty:            editProduct.alert_qty ?? "",
     manageStock:         editProduct.manage_stock ?? true,
@@ -207,15 +209,52 @@ export function AddProductForm({ onSaved, editProduct }) {
     tax:                 editProduct.tax || "None",
     sellingPriceTaxType: editProduct.selling_price_tax_type || "Exclusive",
     productType:         editProduct.product_type || "Single",
-    excTax:              editProduct.exc_tax ?? "",
+ excTax:              editProduct.exc_tax ?? "",
     incTax:              editProduct.inc_tax ?? "",
     margin:              editProduct.margin ?? "25.00",
     excTaxSell:          editProduct.exc_tax_sell ?? "",
+    openingStock:        editProduct.current_stock ?? "",
+    openingStockValue:   "",
     image:null, imagePreview:null,
   } : EMPTY_FORM;
-
-  const [form, setForm] = useState(initForm);
+const [form, setForm] = useState(initForm);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Group Pricing state ──
+  const [priceGroups, setPriceGroups] = useState([]);
+  const [groupPrices, setGroupPrices] = useState({}); // { [groupId]: "price string" }
+
+  const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  const gpAuthHeaders = () => {
+    const token = localStorage.getItem("manod_token");
+    return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res  = await fetch(`${gpBase}/selling-price-groups?limit=100`, { headers: gpAuthHeaders() });
+        const data = await res.json();
+        setPriceGroups(data.groups || []);
+
+        if (editProduct) {
+          const pRes  = await fetch(`${gpBase}/product-selling-prices/${editProduct.id}`, { headers: gpAuthHeaders() });
+          const pData = await pRes.json();
+          const map = {};
+          (pData.prices || []).forEach(pr => { map[pr.selling_price_group_id] = String(pr.selling_price); });
+          setGroupPrices(map);
+        }
+      } catch (e) { console.error("Price group load error:", e.message); }
+    })();
+  }, [editProduct]);
+
+  const computeSuggested = (group) => {
+    const base = parseFloat(form.excTaxSell) || 0;
+    if (!base) return "";
+    const pct = parseFloat(group.percentage) || 0;
+    const val = group.type === "Markup" ? base * (1 + pct / 100) : base * (1 - pct / 100);
+    return val.toFixed(2);
+  };
 
   // Auto-generate SKU when name changes (only for new products)
   useEffect(() => {
@@ -223,6 +262,18 @@ export function AddProductForm({ onSaved, editProduct }) {
       set("sku", genSKU(form.name));
     }
   }, [form.name]);
+// Auto-calculate Inc. tax from Exc. tax + selected GST%
+  useEffect(() => {
+    const exc = parseFloat(form.excTax);
+    const gstMatch = (form.tax || "").match(/(\d+(\.\d+)?)/);
+    const gstPct = gstMatch ? parseFloat(gstMatch[1]) : 0;
+    if (!isNaN(exc) && exc > 0) {
+      const inc = (exc * (1 + gstPct / 100)).toFixed(2);
+      setForm(f => ({ ...f, incTax: inc }));
+    } else {
+      setForm(f => ({ ...f, incTax: "" }));
+    }
+  }, [form.excTax, form.tax]);
 
   // Auto-calculate selling price from purchase + margin
   useEffect(() => {
@@ -233,25 +284,52 @@ export function AddProductForm({ onSaved, editProduct }) {
       setForm(f => ({ ...f, excTaxSell: sell }));
     }
   }, [form.excTax, form.margin]);
+  // Auto-calculate opening stock value (qty × purchase price)
+  useEffect(() => {
+    const qty   = parseFloat(form.openingStock);
+    const price = parseFloat(form.excTax);
+    if (!isNaN(qty) && !isNaN(price) && qty >= 0 && price >= 0) {
+      setForm(f => ({ ...f, openingStockValue: (qty * price).toFixed(2) }));
+    } else {
+      setForm(f => ({ ...f, openingStockValue: "" }));
+    }
+  }, [form.openingStock, form.excTax]);
 
-  // Load dropdowns
+ // Load dropdowns — each isolated so one failure can't block the others
   useEffect(() => {
     (async () => {
       try {
-        const [u, b, c] = await Promise.all([
-          unitsAPI.getAll({ limit:200 }),
-          brandsAPI.getAll({ limit:200 }),
-          categoriesAPI.getAll({ limit:500 }),
-        ]);
-        const unitOpts = (u.units||[]).map(x => ({ value: x.name, label: x.name }));
-        const brandOpts= (b.brands||[]).map(x => ({ value: x.name, label: x.name }));
-        const allC     = c.categories||[];
+        const u = await unitsAPI.getAll({ limit:200 });
+        setUnits((u.units||[]).map(x => ({ value: x.name, label: x.name })));
+      } catch (e) { console.error("Units load error:", e.message); }
+
+      try {
+        const b = await brandsAPI.getAll({ limit:200 });
+        setBrands((b.brands||[]).map(x => ({ value: x.name, label: x.name })));
+      } catch (e) { console.error("Brands load error:", e.message); }
+
+      try {
+        const c = await categoriesAPI.getAll({ limit:500 });
+        const allC = c.categories||[];
         setAllCats(allC);
-        setUnits(unitOpts);
-        setBrands(brandOpts);
         setCategories(allC.filter(x => !x.parent_id).map(x => ({ value: x.name, label: x.name })));
         setSubCats(allC.filter(x => !!x.parent_id).map(x => ({ value: x.name, label: x.name })));
-      } catch (e) { console.error("Dropdown load error:", e.message); }
+      } catch (e) { console.error("Categories load error:", e.message); }
+
+     try {
+        const vt = await variationsAPI.getAll({ limit:200 });
+     setVariationTemplates((vt.variations||[]).map(x => ({ value: x.name, label: `${x.name} (${(x.values||[]).map(val=>val.value||val).join(", ")})` })));
+        console.log("editProduct raw:", JSON.stringify(editProduct));
+        console.log("form.variationTemplate:", JSON.stringify(form.variationTemplate));
+        console.log("variationTemplates options:", (vt.variations||[]).map(x => x.name));
+      } catch (e) { console.error("Variations load error:", e.message); }
+
+      try {
+        const wRes = await fetch(`${gpBase}/products/warranties?limit=200`, { headers: gpAuthHeaders() });
+        const w = await wRes.json();
+        if (!wRes.ok) throw new Error(w.error || "Failed to load warranties");
+        setWarranties((w.warranties||[]).map(x => ({ value: x.name, label: `${x.name} (${x.duration} ${x.duration_type})` })));
+      } catch (e) { console.error("Warranties load error:", e.message); }
     })();
   }, []);
 
@@ -272,19 +350,23 @@ export function AddProductForm({ onSaved, editProduct }) {
   };
 
   const save = async (andNew = false) => {
-    if (!form.name.trim()) { alert("Product Name is required"); return; }
+   if (!form.name.trim()) { alert("Product Name is required"); return; }
     if (!form.unit)        { alert("Unit is required"); return; }
+    if (form.productType === "Variable" && !form.variationTemplate) { alert("Please select a Variation for a Variable product"); return; }
     setSaving(true);
     try {
-      const payload = {
+     const payload = {
         name:                   form.name,
         sku:                    form.sku || genSKU(form.name),
         barcode_type:           form.barcodeType,
         unit:                   form.unit,
         brand:                  form.brand || null,
-        category:               form.category || null,
-        sub_category:           form.subCategory || null,
+      category:               form.category || null,
+       sub_category:           form.subCategory || null,
+        variation_template:     form.variationTemplate || null,
         business_location:      form.businessLocation,
+        warranty:               form.warranty || null,
+       
         alert_qty:              form.alertQty || 0,
         manage_stock:           form.manageStock,
         description:            form.description || null,
@@ -296,14 +378,38 @@ export function AddProductForm({ onSaved, editProduct }) {
         exc_tax:                form.excTax || 0,
         inc_tax:                form.incTax || 0,
         margin:                 form.margin || 0,
-        exc_tax_sell:           form.excTaxSell || 0,
+exc_tax_sell:           form.excTaxSell || 0,
+        opening_stock:          parseInt(form.openingStock) || 0,
         status:                 "Active",
+        image:                  form.imagePreview || null,
       };
-      if (editProduct) await productsAPI.update(editProduct.id, payload);
-      else             await productsAPI.create(payload);
+
+    let savedProductId = editProduct?.id;
+      if (editProduct) {
+        await productsAPI.update(editProduct.id, payload);
+      } else {
+        const created = await productsAPI.create(payload);
+        savedProductId = created?.product?.id;
+      }
+
+      // Save per-group prices (only entries the user actually filled in)
+      const priceEntries = Object.entries(groupPrices)
+        .filter(([, val]) => val !== "" && val !== null && val !== undefined)
+        .map(([groupId, val]) => ({ selling_price_group_id: parseInt(groupId), selling_price: parseFloat(val) }));
+
+      if (savedProductId && priceEntries.length) {
+        try {
+          await fetch(`${gpBase}/product-selling-prices/${savedProductId}`, {
+            method: "PUT", headers: gpAuthHeaders(),
+            body: JSON.stringify({ prices: priceEntries })
+          });
+        } catch (e) { console.error("Failed to save group prices:", e.message); }
+      }
+
       if (onSaved) { onSaved(); return; }
       if (andNew)  setForm({ ...EMPTY_FORM, sku: "" });
       else         navigate("/products/");
+
     } catch (err) { alert(err.message || "Failed to save product"); }
     finally { setSaving(false); }
   };
@@ -398,6 +504,17 @@ export function AddProductForm({ onSaved, editProduct }) {
           </div>
         </div>
 
+      <div style={{ maxWidth:320, marginBottom:4 }}>
+          <div style={f.field}>
+            <label style={f.lbl}>
+              Warranty
+              <span style={f.hint} title="Link a warranty policy to this product">ⓘ</span>
+            </label>
+            <SearchableSelect options={warranties} value={form.warranty}
+              onChange={v => set("warranty", v)} placeholder="Search warranty..."/>
+          </div>
+        </div>
+
         <div style={f.row1}>
           <label style={f.checkRow}>
             <input type="checkbox" checked={form.manageStock} onChange={e => set("manageStock", e.target.checked)}
@@ -456,13 +573,20 @@ export function AddProductForm({ onSaved, editProduct }) {
             </select>
           </div>
         </div>
-        <div style={{ maxWidth:320, marginBottom:20 }}>
+       <div style={f.row2}>
           <div style={f.field}>
             <label style={f.lbl}>Product Type *</label>
             <select style={f.inp} value={form.productType} onChange={e => set("productType", e.target.value)}>
               {PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
+          {form.productType === "Variable" && (
+            <div style={f.field}>
+              <label style={f.lbl}>Variation *</label>
+              <SearchableSelect options={variationTemplates} value={form.variationTemplate}
+                onChange={v => set("variationTemplate", v)} placeholder="Search variation..."/>
+            </div>
+          )}
         </div>
 
         {/* Pricing table */}
@@ -481,12 +605,11 @@ export function AddProductForm({ onSaved, editProduct }) {
               </label>
               <input style={f.inp} placeholder="0.00" type="number" value={form.excTax}
                 onChange={e => set("excTax", e.target.value)}/>
-              <label style={{ ...f.priceLbl, marginTop:10 }}>
-                Inc. tax *
-                <span style={f.hint} title="Purchase price including tax">ⓘ</span>
+            <label style={{ ...f.priceLbl, marginTop:10 }}>
+                Inc. tax
+                <span style={f.hint} title="Auto-calculated: Exc. tax + selected GST%">ⓘ</span>
               </label>
-              <input style={f.inp} placeholder="0.00" type="number" value={form.incTax}
-                onChange={e => set("incTax", e.target.value)}/>
+              <input style={{ ...f.inp, background:"#f0fdf4" }} placeholder="0.00" type="number" value={form.incTax} disabled/>
             </div>
             <div style={f.pricingCol}>
               <label style={f.priceLbl}>Margin %</label>
@@ -508,7 +631,69 @@ export function AddProductForm({ onSaved, editProduct }) {
               <div style={{ fontSize:11, color:"#9ca3af", marginTop:4 }}>Max 5MB · 1:1</div>
             </div>
           </div>
+     </div>
+
+       <div style={{ ...f.row2, maxWidth:640, marginTop:20 }}>
+          <div style={f.field}>
+            <label style={f.lbl}>
+              Opening Stock (Qty)
+              <span style={f.hint} title="Initial quantity available for this product. This becomes the starting Current Stock and feeds the Stock Report.">ⓘ</span>
+            </label>
+            <input style={f.inp} type="number" min="0" placeholder="e.g. 20"
+              value={form.openingStock} onChange={e => set("openingStock", e.target.value)}/>
+          </div>
+         <div style={f.field}>
+            <label style={f.lbl}>
+              Opening Stock Value (₹)
+              <span style={f.hint} title="Auto-calculated: Opening Stock × Purchase Price (Exc. tax)">ⓘ</span>
+            </label>
+            <input style={{ ...f.inp, background:"#f0fdf4" }} disabled
+              value={form.openingStockValue ? `₹${Number(form.openingStockValue).toLocaleString("en-IN")}` : "₹0.00"}/>
+          </div>
         </div>
+
+        {priceGroups.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <h4 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 10 }}>
+              Group Pricing <span style={{ fontWeight: 400, color: "#9ca3af", fontSize: 12 }}>(optional — leave blank to use default selling price)</span>
+            </h4>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    <th style={{ textAlign:"left", padding:"9px 12px", fontWeight:600, color:"#374151" }}>Group</th>
+                    <th style={{ textAlign:"left", padding:"9px 12px", fontWeight:600, color:"#374151" }}>Type</th>
+                    <th style={{ textAlign:"left", padding:"9px 12px", fontWeight:600, color:"#374151" }}>Suggested</th>
+                    <th style={{ textAlign:"left", padding:"9px 12px", fontWeight:600, color:"#374151" }}>Price (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priceGroups.map(g => (
+                    <tr key={g.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                      <td style={{ padding:"9px 12px", fontWeight:600 }}>{g.name}{g.is_default ? " ★" : ""}</td>
+                      <td style={{ padding:"9px 12px" }}>
+                        <span style={{ background: g.type==="Discount"?"#fee2e2":"#dbeafe", color: g.type==="Discount"?"#dc2626":"#1d4ed8", borderRadius:20, padding:"2px 10px", fontSize:11 }}>
+                          {g.type} {g.percentage}%
+                        </span>
+                      </td>
+                      <td style={{ padding:"9px 12px", color:"#9ca3af" }}>
+                        {computeSuggested(g) ? `₹${computeSuggested(g)}` : "—"}
+                      </td>
+                      <td style={{ padding:"9px 12px" }}>
+                        <input
+                          type="number" placeholder={computeSuggested(g) || "0.00"}
+                          value={groupPrices[g.id] ?? ""}
+                          onChange={e => setGroupPrices(gp => ({ ...gp, [g.id]: e.target.value }))}
+                          style={{ ...f.inp, maxWidth: 140 }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer buttons */}
@@ -551,12 +736,14 @@ export default function ListProducts() {
   const [error,       setError]       = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [search,      setSearch]      = useState("");
-  const [perPage,     setPerPage]     = useState(25);
+  const [perPage,     setPerPage]     = useState(25);   
   const [page,        setPage]        = useState(1);
   const [selected,    setSelected]    = useState([]);
   const [activeTab,   setActiveTab]   = useState("all");
-  const [editProduct, setEditProduct] = useState(null);
-  const [showEdit,    setShowEdit]    = useState(false);
+ const [editProduct, setEditProduct] = useState(null);
+const [showEdit,    setShowEdit]    = useState(false);
+const [viewProduct, setViewProduct] = useState(null);
+const [showView,    setShowView]    = useState(false);
   const [cols, setCols] = useState({
     image:true, action:true, product:true, location:true,
     purchase:true, selling:true, stock:true, type:true,
@@ -570,27 +757,40 @@ export default function ListProducts() {
   const [categories,     setCategories]     = useState([]);
   const [brands,         setBrands]         = useState([]);
 
-  const load = useCallback(async () => {
+ const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const data = await productsAPI.getAll({
-        page, limit: perPage, search,
-        status: filterStatus,
-        category_id: filterCategory,
-        brand_id: filterBrand,
-      });
-      setProducts(data.products || []);
-      setTotal(data.total || 0);
-    } catch (err) { setError(err.message || "Failed to load products"); }
-    finally { setLoading(false); }
+      const params = {
+        page, limit: perPage,
+        search: search || undefined,
+        status: filterStatus || undefined,
+        category: filterCategory || undefined,
+        brand: filterBrand || undefined,
+      };
+      const res = await productsAPI.getAll(params);
+      setProducts(res.products || []);
+      setTotal(res.total ?? (res.products ? res.products.length : 0));
+    } catch (e) {
+      setError(e.message || "Failed to load products");
+      setProducts([]); setTotal(0);
+    }
+    setLoading(false);
   }, [page, perPage, search, filterStatus, filterCategory, filterBrand]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Load filter dropdowns
+  // Real filter dropdowns
   useEffect(() => {
-    categoriesAPI.getAll({ limit:200 }).then(d => setCategories(d.categories||[])).catch(()=>{});
-    brandsAPI.getAll({ limit:200 }).then(d => setBrands(d.brands||[])).catch(()=>{});
+    (async () => {
+      try {
+        const [c, b] = await Promise.all([
+          categoriesAPI.getAll({ limit:500 }),
+          brandsAPI.getAll({ limit:200 }),
+        ]);
+        setCategories((c.categories||[]).filter(x=>!x.parent_id).map(x=>({ id:x.name, name:x.name })));
+        setBrands((b.brands||[]).map(x=>({ id:x.name, name:x.name })));
+      } catch (e) { console.error("Filter dropdown load error:", e.message); }
+    })();
   }, []);
 
   // Search debounce
@@ -603,30 +803,52 @@ export default function ListProducts() {
 
   const toggleSelect = (id) => setSelected(p => p.includes(id) ? p.filter(x=>x!==id) : [...p,id]);
   const toggleAll    = ()   => setSelected(selected.length === products.length && products.length > 0 ? [] : products.map(p=>p.id));
-
-  const handleDelete = async (id) => {
+const handleDelete = async (id) => {
     if (!window.confirm("Delete this product?")) return;
-    try { await productsAPI.delete(id); await load(); }
-    catch (err) { alert(err.message || "Delete failed"); }
+    try {
+      await productsAPI.delete(id);
+      await load();
+    } catch (e) {
+      const msg = e.message || "";
+      if (msg.includes("foreign key constraint") || msg.includes("violates")) {
+        const wantsDeactivate = window.confirm(
+          "This product can't be deleted because it's used in stock adjustment history.\n\nWould you like to mark it as Inactive instead? (Keeps history intact, hides it from active use)"
+        );
+        if (wantsDeactivate) {
+          try {
+            await productsAPI.update(id, { status: "Inactive" });
+            await load();
+          } catch (e2) { alert(e2.message || "Failed to deactivate product"); }
+        }
+      } else {
+        alert(msg || "Failed to delete product");
+      }
+    }
   };
 
   const handleDeleteSelected = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
     if (!window.confirm(`Delete ${selected.length} product(s)?`)) return;
-    try { await Promise.all(selected.map(id => productsAPI.delete(id))); setSelected([]); await load(); }
-    catch (err) { alert(err.message || "Delete failed"); }
+    try {
+      await Promise.all(selected.map(id => productsAPI.delete(id)));
+      setSelected([]);
+      await load();
+    } catch (e) { alert(e.message || "Failed to delete selected products"); }
   };
 
   const handleDeactivate = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
-    try { await Promise.all(selected.map(id => productsAPI.updateStatus(id, "Inactive"))); setSelected([]); await load(); }
-    catch (err) { alert(err.message || "Deactivate failed"); }
+    try {
+      await Promise.all(selected.map(id => productsAPI.update(id, { status:"Inactive" })));
+      setSelected([]);
+      await load();
+    } catch (e) { alert(e.message || "Failed to deactivate selected products"); }
   };
-
-  const stockColor = (qty) => {
-    if (qty <= 0) return { bg:"#fee2e2", color:"#991b1b" };
-    if (qty < 10) return { bg:"#fef3c7", color:"#92400e" };
-    return { bg:"#d1fae5", color:"#065f46" };
+const stockColor = (qty, alertQty) => {
+    const threshold = Number(alertQty) > 0 ? Number(alertQty) : 10;
+    if (qty <= 0) return { bg:"#fee2e2", color:"#991b1b", label:"Out of Stock" };
+    if (qty <= threshold) return { bg:"#fef3c7", color:"#92400e", label:"Low Stock" };
+    return { bg:"#d1fae5", color:"#065f46", label:null };
   };
 
   const from = products.length === 0 ? 0 : (page-1)*perPage+1;
@@ -722,21 +944,21 @@ export default function ListProducts() {
         <table style={p.table}>
           <thead>
             <tr style={p.thead}>
-              <th style={p.th}><input type="checkbox" checked={selected.length===products.length&&products.length>0} onChange={toggleAll} style={{ accentColor:"#2d7a3a" }}/></th>
-              {cols.image    && <th style={p.th}>Product Image</th>}
-              {cols.action   && <th style={p.th}>Action</th>}
-              {cols.product  && <th style={p.th}>Product</th>}
-              {cols.location && <th style={p.th}>Business Location</th>}
-              {cols.purchase && <th style={p.th}>Unit Purchase Price</th>}
-              {cols.selling  && <th style={p.th}>Selling Price</th>}
-              {cols.stock    && <th style={p.th}>Current Stock</th>}
-              {cols.type     && <th style={p.th}>Product Type</th>}
-              {cols.category && <th style={p.th}>Category</th>}
-              {cols.brand    && <th style={p.th}>Brand</th>}
-              {cols.tax      && <th style={p.th}>Tax</th>}
-              {cols.sku      && <th style={p.th}>SKU</th>}
-              {cols.status   && <th style={p.th}>Status</th>}
-            </tr>
+<th style={p.th}><input type="checkbox" checked={selected.length===products.length&&products.length>0} onChange={toggleAll} style={{ accentColor:"#2d7a3a" }}/></th>
+  {cols.product  && <th style={p.th}>Product</th>}
+  {cols.location && <th style={p.th}>Business Location</th>}
+  {cols.purchase && <th style={p.th}>Unit Purchase Price</th>}
+  {cols.selling  && <th style={p.th}>Selling Price</th>}
+  {cols.stock    && <th style={p.th}>Current Stock</th>}
+  {cols.type     && <th style={p.th}>Product Type</th>}
+  {cols.category && <th style={p.th}>Category</th>}
+  {cols.brand    && <th style={p.th}>Brand</th>}
+  {cols.tax      && <th style={p.th}>Tax</th>}
+  {cols.sku      && <th style={p.th}>SKU</th>}
+  {cols.status   && <th style={p.th}>Status</th>}
+  {cols.action   && <th style={p.th}>Action</th>}
+  {cols.image    && <th style={p.th}>Product Image</th>}
+</tr>
           </thead>
           <tbody>
             {loading ? (
@@ -750,35 +972,25 @@ export default function ListProducts() {
               <tr><td colSpan={15} style={p.noData}>No data available in table</td></tr>
             ) : (
               products.map((prod, i) => {
-                const sc = stockColor(prod.current_stock ?? 0);
+                const sc = stockColor(prod.current_stock ?? 0, prod.alert_qty);
                 const isSelected = selected.includes(prod.id);
                 return (
                   <tr key={prod.id}
                     style={{ background: isSelected?"#f0fdf4": i%2===0?"#fff":"#fafafa", borderBottom:"1px solid #f0f0f0", transition:"background 0.15s" }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background="#f9fafb"; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background=i%2===0?"#fff":"#fafafa"; }}>
+                      onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background=i%2===0?"#fff":"#fafafa"; }}>
                     <td style={p.td}><input type="checkbox" checked={isSelected} onChange={()=>toggleSelect(prod.id)} style={{ accentColor:"#2d7a3a" }}/></td>
-                    {cols.image && (
-                      <td style={p.td}>
-                        {prod.image_url
-                          ? <img src={prod.image_url} alt={prod.name} style={{ width:44, height:44, objectFit:"cover", borderRadius:6, border:"1px solid #e5e7eb" }}/>
-                          : <div style={{ width:44, height:44, borderRadius:6, background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:11 }}>IMG</div>}
-                      </td>
-                    )}
-                    {cols.action && (
-                      <td style={p.td}>
-                        <div style={{ display:"flex", gap:5 }}>
-                          <button onClick={()=>{setEditProduct(prod);setShowEdit(true);}} style={p.editBtn}>✏ Edit</button>
-                          <button onClick={()=>handleDelete(prod.id)} style={p.delBtn}>🗑 Del</button>
-                        </div>
-                      </td>
-                    )}
                     {cols.product  && <td style={{...p.td,fontWeight:600,maxWidth:200}}>{prod.name}</td>}
                     {cols.location && <td style={{...p.td,color:"#6b7280",fontSize:12}}>{prod.business_location}</td>}
                     {cols.purchase && <td style={p.td}>{prod.exc_tax>0?`₹${Number(prod.exc_tax).toLocaleString("en-IN")}`:"—"}</td>}
                     {cols.selling  && <td style={{...p.td,fontWeight:700,color:"#2d7a3a"}}>{prod.exc_tax_sell>0?`₹${Number(prod.exc_tax_sell).toLocaleString("en-IN")}`:"—"}</td>}
-                    {cols.stock    && <td style={p.td}><span style={{background:sc.bg,color:sc.color,borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:600}}>{prod.current_stock??0}</span></td>}
-                    {cols.type     && <td style={p.td}><span style={{background:"#ede9fe",color:"#6d28d9",borderRadius:20,padding:"2px 10px",fontSize:12}}>{prod.product_type}</span></td>}
+{cols.stock    && (
+                      <td style={p.td}>
+                        <span style={{background:sc.bg,color:sc.color,borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:600}}>
+                          {prod.current_stock??0}{sc.label ? ` · ${sc.label}` : ""}
+                        </span>
+                      </td>
+                    )}                    {cols.type     && <td style={p.td}><span style={{background:"#ede9fe",color:"#6d28d9",borderRadius:20,padding:"2px 10px",fontSize:12}}>{prod.product_type}</span></td>}
                     {cols.category && <td style={p.td}>{prod.category||"—"}</td>}
                     {cols.brand    && <td style={p.td}>{prod.brand||"—"}</td>}
                     {cols.tax      && <td style={{...p.td,fontSize:12,color:"#6b7280"}}>{prod.tax}</td>}
@@ -788,6 +1000,34 @@ export default function ListProducts() {
                         <span style={{background:prod.status==="Active"?"#d1fae5":"#fee2e2",color:prod.status==="Active"?"#065f46":"#991b1b",borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:500}}>
                           {prod.status||"Active"}
                         </span>
+                      </td>
+                    )}
+       {cols.action && (
+  <td style={p.td}>
+    <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+      <button onClick={()=>{setViewProduct(prod);setShowView(true);}} style={p.iconBtnView} title="View">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button onClick={()=>{setEditProduct(prod);setShowEdit(true);}} style={p.iconBtnEdit} title="Edit">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+        </svg>
+      </button>
+      <button onClick={()=>handleDelete(prod.id)} style={p.iconBtnDel} title="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+        </svg>
+      </button>
+    </div>
+  </td>
+)}
+                    {cols.image && (
+                      <td style={p.td}>
+                        {prod.image_url
+                          ? <img src={prod.image_url} alt={prod.name} style={{ width:44, height:44, objectFit:"cover", borderRadius:6, border:"1px solid #e5e7eb" }}/>
+                          : <div style={{ width:44, height:44, borderRadius:6, background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:11 }}>IMG</div>}
                       </td>
                     )}
                   </tr>
@@ -825,6 +1065,46 @@ export default function ListProducts() {
           <button onClick={()=>setPage(totalPages)} disabled={page>=totalPages} style={{...p.pageBtn,opacity:page>=totalPages?0.45:1}}>»</button>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {showView && viewProduct && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:1000, overflowY:"auto", display:"flex", justifyContent:"center", padding:"32px 16px" }}>
+          <div style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:480, padding:"28px 24px", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
+            <button onClick={()=>{setShowView(false);setViewProduct(null);}}
+              style={{ position:"absolute", right:20, top:20, background:"none", border:"none", fontSize:24, cursor:"pointer", color:"#666" }}>×</button>
+            <h2 style={{ margin:"0 0 18px", fontSize:20, fontWeight:700 }}>Product Details</h2>
+            <div style={{ display:"flex", gap:16, marginBottom:16 }}>
+              {viewProduct.image_url
+                ? <img src={viewProduct.image_url} alt={viewProduct.name} style={{ width:80, height:80, objectFit:"cover", borderRadius:8, border:"1px solid #e5e7eb" }}/>
+                : <div style={{ width:80, height:80, borderRadius:8, background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center", color:"#d1d5db", fontSize:12 }}>No image</div>}
+              <div>
+                <div style={{ fontSize:17, fontWeight:700, color:"#1a1a2e" }}>{viewProduct.name}</div>
+                <div style={{ fontSize:12, color:"#6b7280", fontFamily:"monospace", marginTop:4 }}>SKU: {viewProduct.sku||"—"}</div>
+                <span style={{background:viewProduct.status==="Active"?"#d1fae5":"#fee2e2",color:viewProduct.status==="Active"?"#065f46":"#991b1b",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600,marginTop:6,display:"inline-block"}}>
+                  {viewProduct.status||"Active"}
+                </span>
+              </div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 20px", fontSize:13 }}>
+              <div><b>Brand:</b> {viewProduct.brand||"—"}</div>
+              <div><b>Category:</b> {viewProduct.category||"—"}</div>
+              <div><b>Unit:</b> {viewProduct.unit||"—"}</div>
+              <div><b>Product Type:</b> {viewProduct.product_type||"—"}</div>
+              <div><b>Purchase Price:</b> {viewProduct.exc_tax>0?`₹${Number(viewProduct.exc_tax).toLocaleString("en-IN")}`:"—"}</div>
+              <div><b>Selling Price:</b> {viewProduct.exc_tax_sell>0?`₹${Number(viewProduct.exc_tax_sell).toLocaleString("en-IN")}`:"—"}</div>
+              <div><b>Current Stock:</b> {viewProduct.current_stock??0}</div>
+              <div><b>Tax:</b> {viewProduct.tax||"—"}</div>
+              <div><b>Business Location:</b> {viewProduct.business_location||"—"}</div>
+            </div>
+            {viewProduct.description && (
+              <div style={{ marginTop:16, fontSize:13, color:"#374151" }}>
+                <b>Description:</b>
+                <p style={{ margin:"4px 0 0", color:"#6b7280" }}>{viewProduct.description}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {showEdit && editProduct && (
@@ -898,8 +1178,9 @@ const p = {
   th:         { padding:"12px 10px", textAlign:"left", fontWeight:600, borderBottom:"2px solid #e5e7eb", whiteSpace:"nowrap", color:"#374151" },
   td:         { padding:"11px 10px", borderBottom:"1px solid #f5f5f5", verticalAlign:"middle" },
   noData:     { textAlign:"center", padding:"52px 0", color:"#9ca3af", fontSize:14 },
-  editBtn:    { background:"#f0fdf4", color:"#2d7a3a", border:"1px solid #bbf7d0", borderRadius:5, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:500, whiteSpace:"nowrap" },
-  delBtn:     { background:"#fff0f0", color:"#dc2626", border:"1px solid #fecaca", borderRadius:5, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:500 },
+  iconBtnView:{ background:"none", border:"none", padding:0, cursor:"pointer", color:"#3b82f6", display:"flex", alignItems:"center" },
+iconBtnEdit:{ background:"none", border:"none", padding:0, cursor:"pointer", color:"#f59e0b", display:"flex", alignItems:"center" },
+iconBtnDel: { background:"none", border:"none", padding:0, cursor:"pointer", color:"#ef4444", display:"flex", alignItems:"center" },
   bulkDel:    { background:"#fff", border:"1px solid #ef4444", color:"#ef4444", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },
   bulkOutline:{ background:"#fff", border:"1px solid #d1d5db", color:"#374151", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13 },
   bulkWarn:   { background:"#fff", border:"1px solid #f59e0b", color:"#d97706", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },

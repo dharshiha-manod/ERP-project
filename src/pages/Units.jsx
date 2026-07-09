@@ -192,7 +192,7 @@ export default function Units() {
                 Allow decimal{" "}
                 <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16, borderRadius: "50%", background: "#17a2b8", color: "#fff", fontSize: 10, cursor: "pointer" }} title="Whether this unit allows decimal values">i</span>
               </th>
-              <th style={th}>Action</th>
+          <th style={{ ...th, textAlign: "center" }}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -210,9 +210,30 @@ export default function Units() {
                       {u.allow_decimal ? "Yes" : "No"}
                     </span>
                   </td>
-                  <td style={td}>
-                    <button onClick={() => openEdit(u)} style={btn.editSm}>✏ Edit</button>
-                    <button onClick={() => handleDelete(u)} style={btn.delSm}>🗑 Delete</button>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16 }}>
+                      <button onClick={() => openEdit(u)} title="View" style={btn.iconView}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button onClick={() => openEdit(u)} title="Edit" style={btn.iconEdit}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => handleDelete(u)} title="Delete" style={btn.iconDelete}>
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <line x1="10" y1="11" x2="10" y2="17" />
+                          <line x1="14" y1="11" x2="14" y2="17" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -283,8 +304,9 @@ const btn = {
   xls: { background: "#fff", border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 },
   pdf: { background: "#fff", border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 },
   outline: { background: "#fff", border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 10px", fontSize: 12, cursor: "pointer" },
-  editSm: { marginRight: 6, padding: "4px 12px", borderRadius: 4, border: "1px solid #2e7d32", background: "#f0fdf4", color: "#2e7d32", cursor: "pointer", fontSize: 12, fontWeight: 500 },
-  delSm: { padding: "4px 12px", borderRadius: 4, border: "1px solid #dc3545", background: "#fff", color: "#dc3545", cursor: "pointer", fontSize: 12 },
+  iconView: { background: "transparent", border: "none", color: "#0ea5e9", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" },
+  iconEdit: { background: "transparent", border: "none", color: "#d97706", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" },
+  iconDelete: { background: "transparent", border: "none", color: "#dc2626", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" },
   page: { padding: "4px 14px", borderRadius: 4, border: "1px solid #ccc", background: "#fff", cursor: "pointer" },
 };
 const icon = {

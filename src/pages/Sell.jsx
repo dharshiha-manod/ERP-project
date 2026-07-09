@@ -86,7 +86,8 @@ function useProducts() {
   const products = raw.map(p => ({
     ...p,
     name: p.name || p.product_name || p.title || "Unnamed Product",
-    selling_price: Number(p.selling_price || p.sale_price || p.price || p.cost_price || 0),
+    selling_price: Number(p.exc_tax_sell || p.selling_price || p.sale_price || p.price || p.cost_price || 0),
+    purchase_price: Number(p.exc_tax || p.purchase_price || p.cost || 0),
     stock: p.stock ?? p.quantity ?? p.stock_quantity ?? undefined,
   }));
   return { products, loading };
@@ -111,7 +112,11 @@ function useCategories() {
   const categories = data?.data || data?.categories || [];
   return { categories, loading };
 }
-
+function useSellingPriceGroups() {
+  const { data, loading } = useAPI("/selling-price-groups");
+  const groups = data?.groups || data?.data || [];
+  return { groups, loading };
+}
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt   = n  => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
 const genNo = px => `${px}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
@@ -586,6 +591,15 @@ function InvoiceCombobox({ invoices, value, onChange, placeholder="Type invoice 
 
   const pick = inv => { setQ(inv.invoiceNo); onChange(inv.invoiceNo, inv); setOpen(false); };
 
+  // Fallback: if the typed text is an exact invoice number match but the
+  // user never clicked a dropdown row (e.g. blurred/tabbed away), auto-pick
+  // it anyway so "Products to Return" still loads instead of staying empty.
+  const tryAutoPick = () => {
+    if (!q) return;
+    const exact = invoices.find(inv => (inv.invoiceNo||"").toLowerCase() === q.trim().toLowerCase());
+    if (exact) pick(exact);
+  };
+
   return (
     <div ref={ref} style={{ position:"relative" }}>
       <div style={{ position:"relative" }}>
@@ -594,12 +608,15 @@ function InvoiceCombobox({ invoices, value, onChange, placeholder="Type invoice 
         <input value={q}
           name="invoice-ref-search-field" autoComplete="off" autoCorrect="off" spellCheck="false"
           onChange={e=>{ setQ(e.target.value); setOpen(true); }}
-          onFocus={()=>setOpen(true)} placeholder={placeholder}
+          onFocus={()=>setOpen(true)}
+          onBlur={()=>setTimeout(tryAutoPick, 150)}
+          onKeyDown={e=>{ if (e.key==="Enter") { e.preventDefault(); tryAutoPick(); } }}
+          placeholder={placeholder}
           style={{ width:"100%", border:`1px solid ${open?GREEN:BORDER}`, borderRadius:6,
             padding:"7px 10px 7px 32px", fontSize:13, fontFamily:F, background:"#fff",
             color:TEXT_MAIN, outline:"none", boxSizing:"border-box" }}
         />
-      </div>
+      </div>   
       {open && (
         <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0,
           background:"#fff", border:`1px solid ${BORDER}`, borderRadius:8,
@@ -953,6 +970,15 @@ export function AddSale() {
   const [searchParams] = useSearchParams();
   const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
+  const { groups: priceGroups } = useSellingPriceGroups();
+  const [priceGroupId, setPriceGroupId] = useState("");
+
+  const getPriceForGroup = async (product) => {
+    if (!priceGroupId) return product.selling_price;
+    const res = await apiFetch(`/product-selling-prices/${product.id}`);
+    const match = (res?.prices || []).find(pr => String(pr.selling_price_group_id) === String(priceGroupId));
+    return match ? Number(match.selling_price) : product.selling_price;
+  };
 
   const [invoiceNo,   setInvoiceNo]   = useState(()=>genNo("INV"));
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0,10));
@@ -1033,11 +1059,12 @@ const endpoint = from === "quotation" ? `/quotations/${id}`
     if (obj?.customer_type || obj?.type) setCustomerType(obj.customer_type || obj.type);
     else if (name === "Walk-In Customer") setCustomerType("Walk-In");
   };
-  const addProduct = p => {
+const addProduct = async p => {
     if (items.some(i=>i.id===p.id)) return;
+    const unitPrice = await getPriceForGroup(p);
     setItems(prev=>[...prev,{
-      id:p.id||Date.now(), product:p.name, sku:p.sku||"",
-      qty:1, unit:"Pcs", unitPrice:p.selling_price, discount:0, tax:0,
+      id:p.id||Date.now(), productId:p.id, product:p.name, sku:p.sku||"",
+      qty:1, unit:"Pcs", unitPrice, discount:0, tax:0,
     }]);
   };
   const upd = (id,k,v) => setItems(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
@@ -1173,6 +1200,12 @@ const handleSave = async () => {
               <div><FL required>Customer Type</FL>
                 <Sel value={customerType} onChange={e=>setCustomerType(e.target.value)}>
                   {CUSTOMER_TYPES.map(o=><option key={o}>{o}</option>)}
+                </Sel>
+              </div>
+              <div><FL>Price Group</FL>
+                <Sel value={priceGroupId} onChange={e=>setPriceGroupId(e.target.value)}>
+                  <option value="">Default Price</option>
+                  {priceGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
                 </Sel>
               </div>
               <div><FL>Salesperson</FL>
@@ -1507,23 +1540,51 @@ export function POSCreate() {
   const navigate = useNavigate();
   const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
+  const { groups: priceGroups } = useSellingPriceGroups();
   const [cart,     setCart]     = useState([]);
   const [customer, setCustomer] = useState("Walk-In Customer");
+  const [priceGroupId, setPriceGroupId] = useState(""); // "" = default selling price
   const [payMethod,setPayMethod]= useState("Cash");
   const [discount, setDiscount] = useState(0);
-  const [taxRate,  setTaxRate]  = useState(18);
+  const [taxRate,  setTaxRate]  = useState(0);
   const [notes,    setNotes]    = useState("");
   const [receipt,  setReceipt]  = useState(null);
   const [saving,   setSaving]   = useState(false);
   const [gridQ,    setGridQ]    = useState("");
 
-  const addToCart = p => {
+  // Looks up this product's price for the currently selected price group.
+  // Falls back to the product's normal selling price if no group price is set.
+  const getPriceForGroup = async (product) => {
+    if (!priceGroupId) return product.selling_price;
+    const res = await apiFetch(`/product-selling-prices/${product.id}`);
+    const match = (res?.prices || []).find(pr => String(pr.selling_price_group_id) === String(priceGroupId));
+    return match ? Number(match.selling_price) : product.selling_price;
+  };
+
+  const addToCart = async p => {
+    const price = await getPriceForGroup(p);
     setCart(prev=>{
       const ex=prev.find(c=>c.id===p.id);
       if(ex) return prev.map(c=>c.id===p.id?{...c,qty:c.qty+1}:c);
-      return [...prev,{id:p.id,name:p.name,sku:p.sku||"",price:p.selling_price,qty:1}];
+      return [...prev,{id:p.id,name:p.name,sku:p.sku||"",price,qty:1}];
     });
   };
+
+  // If the user switches price group AFTER already adding items, re-price
+  // everything already in the cart so totals stay correct.
+  useEffect(() => {
+    if (cart.length === 0) return;
+    (async () => {
+      const repriced = await Promise.all(cart.map(async c => {
+        const prod = products.find(p => p.id === c.id);
+        if (!prod) return c;
+        const price = await getPriceForGroup(prod);
+        return { ...c, price };
+      }));
+      setCart(repriced);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceGroupId]);
   const updQty = (id,qty) => {
     if(qty<1){setCart(prev=>prev.filter(c=>c.id!==id));return;}
     setCart(prev=>prev.map(c=>c.id===id?{...c,qty}:c));
@@ -1611,9 +1672,15 @@ const handleCompleteSale = async () => {
       <div style={{flex:1,minHeight:0,display:"flex",overflow:"hidden"}}>
         {/* LEFT product grid */}
         <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",borderRight:`1px solid ${BORDER}`,overflow:"hidden"}}>
-          <div style={{padding:"10px 16px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:10,flexShrink:0}}>
+         <div style={{padding:"10px 16px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:10,flexShrink:0}}>
             <div style={{flex:1}}>
               <CustomerCombobox value={customer} onChange={name=>setCustomer(name)} customers={customers} placeholder="Walk-In Customer..."/>
+            </div>
+            <div style={{width:170}}>
+              <Sel value={priceGroupId} onChange={e=>setPriceGroupId(e.target.value)}>
+                <option value="">Default Price</option>
+                {priceGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+              </Sel>
             </div>
             <div style={{flex:2}}>
               <ProductSearchDropdown products={products} loading={prodLoading} onSelect={addToCart} placeholder="Search by name, SKU, barcode..."/>
@@ -1707,13 +1774,18 @@ const handleCompleteSale = async () => {
             )}
           </div>
           <div style={{borderTop:`1px solid ${BORDER}`,padding:"14px 16px",flexShrink:0}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div><FL>Payment Method</FL>
                 <Sel value={payMethod} onChange={e=>setPayMethod(e.target.value)} style={{fontSize:12}}>
                   {["Cash","UPI","Card","Bank Transfer"].map(o=><option key={o}>{o}</option>)}
                 </Sel>
               </div>
               <div><FL>Discount (%)</FL><Inp type="number" value={discount} onChange={e=>setDiscount(Number(e.target.value))} min="0" max="100"/></div>
+              <div><FL>Tax Rate (GST %)</FL>
+                <Sel value={taxRate} onChange={e=>setTaxRate(Number(e.target.value))} style={{fontSize:12}}>
+                  {[0,5,12,18,28].map(v=><option key={v} value={v}>{v}%</option>)}
+                </Sel>
+              </div>
             </div>
             <div style={{background:LIGHT_GRN,borderRadius:8,padding:"12px 14px",marginBottom:12}}>
               {discount>0 && <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4,color:RED}}>

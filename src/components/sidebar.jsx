@@ -11,7 +11,7 @@ import {
   Home, Users, BookUser, Package, Factory, ShoppingCart,
   BadgeDollarSign, ArrowLeftRight, SlidersHorizontal, Wallet,
   BarChart3, Bell, Settings, HeartHandshake, BriefcaseBusiness,
-  ClipboardCheck, Search, ChevronDown, Lock,
+  ClipboardCheck, Search, ChevronDown, Lock, Landmark,
 } from "lucide-react";
 import { hasFeature, FEATURES, getPlanLabel } from "../planAccess";
 import { usePermissions } from "../context/PermissionsContext";
@@ -72,6 +72,21 @@ const navItems = [
       { label: "Production Reports",      path: "/manufacturing?tab=reports" },
     ],
   },
+  {
+  label: "Accounting", icon: Landmark, path: "/accounting", feature: FEATURES.ACCOUNTING,
+  children: [
+    { label: "Dashboard",            path: "/accounting?tab=dashboard" },
+    { label: "General Ledger",       path: "/accounting?tab=gl" },
+    { label: "Accounts Receivable",  path: "/accounting?tab=ar" },
+    { label: "Accounts Payable",     path: "/accounting?tab=ap" },
+    { label: "Cash & Bank",          path: "/accounting?tab=cashbank" },
+    { label: "GST & Tax",            path: "/accounting?tab=gst" },
+    { label: "Fixed Assets",         path: "/accounting?tab=assets" },
+    { label: "Cost Center & Costing",path: "/accounting?tab=costcenter" },
+    { label: "Financial Statements", path: "/accounting?tab=statements" },
+    { label: "Budget & Expenses",    path: "/accounting?tab=budget" },
+  ],
+},
 
   {
     label: "Purchases", icon: ShoppingCart, path: "/purchases", feature: FEATURES.PURCHASES,

@@ -3,6 +3,10 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { variationsAPI } from "../api/productAPI";
+const IconEye=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+const IconEdit=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const IconDel=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>;
+const IB=(color)=>({background:`${color}15`,border:`1px solid ${color}40`,borderRadius:6,color,cursor:"pointer",padding:"6px 8px",display:"inline-flex",alignItems:"center",justifyContent:"center"});
 
 // ── Export helpers (unchanged from original) ──
 function exportCSV(variations) {
@@ -59,8 +63,9 @@ export default function Variations() {
   const [page, setPage]               = useState(1);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
-  const [showModal, setShowModal]     = useState(false);
+const [showModal, setShowModal]     = useState(false);
   const [editItem, setEditItem]       = useState(null);
+  const [viewItem, setViewItem]       = useState(null);
   const [search, setSearch]           = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [showEntries, setShowEntries] = useState(25);
@@ -102,7 +107,8 @@ export default function Variations() {
     }
   };
 
-  const handleEdit = (v) => { setEditItem(v); setShowModal(true); };
+ const handleEdit = (v) => { setEditItem(v); setShowModal(true); };
+  const handleView = (v) => { setViewItem(v); };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this variation?")) return;
@@ -181,9 +187,12 @@ export default function Variations() {
                         ))}
                       </div>
                     </td>
-                    <td style={s.td}>
-                      <button style={s.actionEdit} onClick={() => handleEdit(v)}>✏ Edit</button>
-                      <button style={s.actionDel} onClick={() => handleDelete(v.id)}>🗑 Delete</button>
+                   <td style={s.td}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button title="View" style={IB("#2563eb")} onClick={() => handleView(v)}><IconEye /></button>
+                        <button title="Edit" style={IB("#f59e0b")} onClick={() => handleEdit(v)}><IconEdit /></button>
+                        <button title="Delete" style={IB("#dc2626")} onClick={() => handleDelete(v.id)}><IconDel /></button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -211,11 +220,19 @@ export default function Variations() {
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditItem(null); }} />
       )}
+
+      {viewItem && (
+        <AddVariationModal
+          initial={viewItem}
+          readOnly
+          onSave={() => {}}
+          onClose={() => setViewItem(null)} />
+      )}
     </div>
   );
 }
 
-function AddVariationModal({ initial, onSave, onClose }) {
+function AddVariationModal({ initial, onSave, onClose, readOnly = false }) {
   const [name, setName]     = useState(initial?.name || "");
   const [values, setValues] = useState(
     initial?.values?.length
@@ -244,40 +261,42 @@ function AddVariationModal({ initial, onSave, onClose }) {
     <div style={m.overlay}>
       <div style={m.modal}>
         <div style={m.header}>
-          <span style={m.title}>{initial ? "Edit Variation" : "Add Variation"}</span>
+         <span style={m.title}>{readOnly ? "View Variation" : initial ? "Edit Variation" : "Add Variation"}</span>
           <button style={m.closeBtn} onClick={onClose}>✕</button>
         </div>
         <div style={m.body}>
           <div style={m.field}>
             <label style={m.label}>Variation Name: *</label>
-            <input style={m.input} placeholder="Variation Name" value={name} onChange={e => setName(e.target.value)} />
+            <input style={m.input} placeholder="Variation Name" value={name} onChange={e => setName(e.target.value)} disabled={readOnly} />
           </div>
           <div style={m.field}>
             <label style={m.label}>Add variation values: *</label>
-            {values.map((val, i) => (
+         {values.map((val, i) => (
               <div key={i} style={m.valueRow}>
                 <input style={{ ...m.input, flex: 1 }} placeholder="e.g. Red, Large, XL..."
-                  value={val} onChange={e => updateValue(i, e.target.value)} />
-                {values.length > 1 && (
+                  value={val} onChange={e => updateValue(i, e.target.value)} disabled={readOnly} />
+                {!readOnly && values.length > 1 && (
                   <button style={m.removeValBtn} onClick={() => removeValue(i)}>✕</button>
                 )}
-                {i === values.length - 1 && (
+                {!readOnly && i === values.length - 1 && (
                   <button style={m.addValBtn} onClick={addValue}>＋</button>
                 )}
               </div>
             ))}
-            {values.length === 1 && (
+            {!readOnly && values.length === 1 && (
               <div style={{ marginTop: 8 }}>
                 <button style={m.addValBtn} onClick={addValue}>＋</button>
               </div>
             )}
           </div>
         </div>
-        <div style={m.footer}>
-          <button style={{ ...m.btnSave, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}
-            onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "🖫 Save"}
-          </button>
+       <div style={m.footer}>
+          {!readOnly && (
+            <button style={{ ...m.btnSave, opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}
+              onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "🖫 Save"}
+            </button>
+          )}
           <button style={m.btnClose} onClick={onClose}>Close</button>
         </div>
       </div>

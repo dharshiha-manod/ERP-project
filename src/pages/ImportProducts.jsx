@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const authHeaders = () => {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("manod_token");
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 };
 
@@ -82,7 +82,8 @@ function rowToPayload(row) {
     exc_tax:                parseFloat(row["Purchase Price (Excluding Tax)"]) || 0,
     inc_tax:                parseFloat(row["Purchase Price (Including Tax)"]) || 0,
     margin:                 parseFloat(row["Profit Margin %"]) || 0,
-    exc_tax_sell:           parseFloat(row["Selling Price"]) || 0,
+   exc_tax_sell:           parseFloat(row["Selling Price"]) || 0,
+    opening_stock:          parseFloat(row["Opening Stock"]) || 0,
     status:                 "Active",
   };
 }

@@ -8,9 +8,9 @@
  * - Column Visibility toggle
  * - Clean Inter font, green accent, proper table design
  */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const BASE = "/api/manufacturing";
@@ -202,6 +202,7 @@ function exportCSV(rows, cols, filename) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
 }
 function exportExcel(rows, cols, filename) { exportCSV(rows, cols, filename.replace(".csv", ".xls")); }
+function exportPDF(rows, cols, title) { printTable(rows, cols, title); }
 function printTable(rows, cols, title) {
   const html = `<html><head><title>${title}</title><style>body{font-family:Inter,sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th{background:#1a5c38;color:#fff;padding:8px}td{padding:7px;border-bottom:1px solid #e2e8f0}</style></head><body><h2>${title}</h2><table><tr>${cols.map(c => `<th>${c.l}</th>`).join("")}</tr>${rows.map(r => `<tr>${cols.map(c => `<td>${r[c.k] ?? ""}</td>`).join("")}</tr>`).join("")}</table></body></html>`;
   const w = window.open("", "_blank"); w.document.write(html); w.document.close(); w.print();
@@ -220,7 +221,7 @@ function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols =
             {visible.map(c => (
               <th key={c.k} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase", letterSpacing: .5, whiteSpace: "nowrap" }}>{c.l}</th>
             ))}
-            <th style={{ padding: "10px 14px", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase", letterSpacing: .5 }}>Action</th>
+           <th style={{ padding: "10px 14px", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase", letterSpacing: .5, textAlign: "center", width: 110 }}>Action</th>
           </tr>
         </thead>
         <tbody>
@@ -234,16 +235,22 @@ function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols =
                   {c.render ? c.render(row[c.k], row) : (row[c.k] ?? <span style={{ color: C.gray300 }}>—</span>)}
                 </td>
               ))}
-              <td style={{ padding: "11px 14px", verticalAlign: "middle" }}>
-                <div style={{ display: "flex", gap: 4 }}>
+          <td style={{ padding: "11px 14px", verticalAlign: "middle" }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "center", justifyContent: "center" }}>
                   {onView && (
-                    <button onClick={() => onView(row)} style={{ padding: "5px 10px", borderRadius: 5, border: `1px solid ${C.blueBd}`, background: C.blueBg, color: C.blue, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: font }}>👁 View</button>
+                    <button onClick={() => onView(row)} title="View" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#2563eb", display: "flex" }}>
+                      <Eye size={17} />
+                    </button>
                   )}
                   {onEdit && (
-                    <button onClick={() => onEdit(row)} style={{ padding: "5px 10px", borderRadius: 5, border: `1px solid ${C.greenBorder}`, background: C.greenLight, color: C.green, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: font }}>✏️ Edit</button>
+                    <button onClick={() => onEdit(row)} title="Edit" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#d97706", display: "flex" }}>
+                      <Pencil size={16} />
+                    </button>
                   )}
                   {onDelete && (
-                    <button onClick={() => onDelete(row)} style={{ padding: "5px 10px", borderRadius: 5, border: `1px solid ${C.redBd}`, background: C.redBg, color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: font }}>🗑 Delete</button>
+                    <button onClick={() => onDelete(row)} title="Delete" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#dc2626", display: "flex" }}>
+                      <Trash2 size={17} />
+                    </button>
                   )}
                 </div>
               </td>
@@ -256,17 +263,12 @@ function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols =
 }
 
 // ─── Page shell ───────────────────────────────────────────────────────────────
-function PageShell({ title, sub, icon, children }) {
+function PageShell({ title, sub, children }) {
   return (
     <div style={{ fontFamily: font }}>
       <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 22 }}>{icon}</span>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: C.gray900 }}>{title}</h1>
-            {sub && <p style={{ margin: "2px 0 0", fontSize: 13, color: C.gray500 }}>{sub}</p>}
-          </div>
-        </div>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: C.gray900 }}>{title}</h1>
+        {sub && <p style={{ margin: "4px 0 0", fontSize: 13, color: C.gray500 }}>{sub}</p>}
       </div>
       {children}
     </div>
@@ -274,7 +276,7 @@ function PageShell({ title, sub, icon, children }) {
 }
 
 // ─── Toolbar for table pages ──────────────────────────────────────────────────
-function Toolbar({ onAdd, addLabel, search, onSearch, onCSV, onExcel, onPrint, showFilter, filterEls, cols, hiddenCols, setHiddenCols }) {
+function Toolbar({ onAdd, addLabel, search, onSearch, onCSV, onExcel, onPrint, onPDF, showFilter, filterEls, cols, hiddenCols, setHiddenCols }) {
   const [showColMenu, setShowColMenu] = useState(false);
   const colRef = useRef(null);
 
@@ -287,13 +289,14 @@ function Toolbar({ onAdd, addLabel, search, onSearch, onCSV, onExcel, onPrint, s
   return (
     <div style={{ marginBottom: 16 }}>
       {/* Top row: export buttons + add button */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <BtnOut onClick={onCSV}>📄 Export CSV</BtnOut>
-          <BtnOut onClick={onExcel}>📊 Export Excel</BtnOut>
-          <BtnOut onClick={onPrint}>🖨️ Print</BtnOut>
+          <ExportBtn chip="CSV" chipColor="#1a7a3e" label="Export CSV" onClick={onCSV} />
+          <ExportBtn chip="XLS" chipColor="#1a7a3e" label="Export Excel" onClick={onExcel} />
+          <BtnOut onClick={onPrint}>Print</BtnOut>
+          <BtnOut onClick={() => setShowColMenu(v => !v)}>Column visibility</BtnOut>
+          <ExportBtn chip="PDF" chipColor="#c0392b" label="Export PDF" onClick={onPDF} />
           <div ref={colRef} style={{ position: "relative" }}>
-            <BtnOut onClick={() => setShowColMenu(v => !v)}>👁 Column Visibility</BtnOut>
             {showColMenu && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 100,
@@ -321,7 +324,7 @@ function Toolbar({ onAdd, addLabel, search, onSearch, onCSV, onExcel, onPrint, s
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {filterEls}
         <div style={{ marginLeft: "auto", position: "relative" }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.gray400, fontSize: 13, pointerEvents: "none" }}>🔍</span>
+      
           <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Search…"
             style={{ ...inp, paddingLeft: 32, width: 220, fontSize: 13 }} />
         </div>
@@ -338,6 +341,20 @@ const BtnOut = ({ onClick, children }) => (
   }}>{children}</button>
 );
 
+const ExportBtn = ({ chip, chipColor, label, onClick }) => (
+  <button onClick={onClick} style={{
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "6px 12px 6px 6px", borderRadius: 6, border: `1px solid ${C.gray300}`,
+    background: C.white, cursor: "pointer", fontFamily: font,
+  }}>
+    <span style={{
+      background: chipColor, color: "#fff", fontSize: 10, fontWeight: 800,
+      padding: "3px 7px", borderRadius: 4, letterSpacing: .3, lineHeight: 1,
+    }}>{chip}</span>
+    <span style={{ fontSize: 13, color: C.gray700, fontWeight: 500 }}>{label}</span>
+  </button>
+);
+
 // ─── KPI cards row ────────────────────────────────────────────────────────────
 function KPIs({ cards }) {
   return (
@@ -345,15 +362,12 @@ function KPIs({ cards }) {
       {cards.map((k, i) => (
         <div key={i} style={{
           background: C.white, borderRadius: 10, border: `1px solid ${C.gray200}`,
-          padding: "16px 18px", display: "flex", alignItems: "center", gap: 14,
-          boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+          borderLeft: `3px solid ${k.color || C.green}`,
+          padding: "14px 18px", boxShadow: "0 1px 3px rgba(0,0,0,.06)",
         }}>
-          <div style={{ width: 42, height: 42, borderRadius: 10, background: `${k.color || C.green}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{k.icon}</div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.gray400, textTransform: "uppercase", letterSpacing: .6, marginBottom: 2, fontFamily: font }}>{k.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: C.gray900, lineHeight: 1, fontFamily: font }}>{k.value ?? "—"}</div>
-            {k.sub && <div style={{ fontSize: 11, color: C.gray400, marginTop: 2, fontFamily: font }}>{k.sub}</div>}
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.gray400, textTransform: "uppercase", letterSpacing: .6, marginBottom: 4, fontFamily: font }}>{k.label}</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: C.gray900, lineHeight: 1, fontFamily: font }}>{k.value ?? "—"}</div>
+          {k.sub && <div style={{ fontSize: 11, color: C.gray400, marginTop: 4, fontFamily: font }}>{k.sub}</div>}
         </div>
       ))}
     </div>
@@ -423,7 +437,7 @@ function PlanningTab({ show }) {
   ];
 
   return (
-    <PageShell title="Production Planning" sub="Manage production plans, timelines and team assignments" icon="📋">
+    <PageShell title="Production Planning" sub="Manage production plans, timelines and team assignments">
       <KPIs cards={[
         { icon: "📋", label: "Total Plans",  value: rows.length,                                        color: C.green },
         { icon: "🕒", label: "Planned",      value: rows.filter(r => r.status === "planned").length,     color: C.blue },
@@ -435,9 +449,10 @@ function PlanningTab({ show }) {
           <Toolbar
             onAdd={openAdd} addLabel="Add Plan"
             search={search} onSearch={setSearch}
-            onCSV={() => exportCSV(fil, COLS, "production-plans.csv")}
+       onCSV={() => exportCSV(fil, COLS, "production-plans.csv")}
             onExcel={() => exportExcel(fil, COLS, "production-plans.xls")}
             onPrint={() => printTable(fil, COLS, "Production Plans")}
+            onPDF={() => exportPDF(fil, COLS, "Production Plans")}
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden}
             filterEls={
               <select value={fStatus} onChange={e => setFS(e.target.value)} style={{ ...sel, width: 150 }}>
@@ -1339,7 +1354,7 @@ function ReportsTab({ show }) {
             {/* Top products */}
             <Card>
               <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.gray100}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: C.gray900, fontFamily: font }}>🏆 Top Products by Quantity</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.gray900, fontFamily: font }}>Top Products by Quantity</span>
                 <span style={{ fontSize: 11, color: C.gray400, fontFamily: font }}>{from} → {to}</span>
               </div>
               {data.top_products?.length > 0
@@ -1364,16 +1379,15 @@ function ReportsTab({ show }) {
             {/* QC Summary */}
             <Card>
               <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.gray100}` }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: C.gray900, fontFamily: font }}>🔬 Quality Control Summary</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.gray900, fontFamily: font }}>Quality Control Summary</span>
               </div>
               {data.qc_summary ? (
                 <div style={{ padding: 18 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-                    {[["🔬", "Inspected", data.qc_summary.total_checked, C.green], ["✅", "Passed", data.qc_summary.total_passed, C.green], ["❌", "Failed", data.qc_summary.total_failed, C.red]].map(([icon, label, val, color]) => (
-                      <div key={label} style={{ background: C.gray50, borderRadius: 8, padding: "12px 14px", textAlign: "center" }}>
-                        <div style={{ fontSize: 20 }}>{icon}</div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: font }}>{val}</div>
-                        <div style={{ fontSize: 11, color: C.gray400, fontWeight: 600, textTransform: "uppercase", fontFamily: font }}>{label}</div>
+                {[["Inspected", data.qc_summary.total_checked, C.green], ["Passed", data.qc_summary.total_passed, C.green], ["Failed", data.qc_summary.total_failed, C.red]].map(([label, val, color]) => (
+                      <div key={label} style={{ background: C.gray50, borderRadius: 8, padding: "12px 14px", textAlign: "center", borderTop: `3px solid ${color}` }}>
+                        <div style={{ fontSize: 22, fontWeight: 800, color, fontFamily: font }}>{val}</div>
+                        <div style={{ fontSize: 11, color: C.gray400, fontWeight: 600, textTransform: "uppercase", fontFamily: font, marginTop: 4 }}>{label}</div>
                       </div>
                     ))}
                   </div>
@@ -1399,9 +1413,255 @@ function ReportsTab({ show }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TAB 10 — MANUFACTURING SCHEDULE (dedicated schedule entity + timeline)
+// ══════════════════════════════════════════════════════════════════════════════
+function ScheduleTab({ show }) {
+  const [rows, setRows] = useState([]);
+  const [wo, setWo] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [load, setLoad] = useState(true);
+  const [search, setSearch] = useState("");
+  const [fType, setFT] = useState("");
+  const [fStatus, setFS] = useState("");
+  const [view, setView] = useState("timeline"); // timeline | table
+  const [viewRow, setViewRow] = useState(null);
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [hidden, setHidden] = useState([]);
+  const today = new Date().toISOString().split("T")[0];
+
+  const blank = {
+    ref_no: "", title: "", event_type: "Production Run", product_name: "",
+    start_date: today, end_date: today, start_time: "09:00", end_time: "18:00",
+    assigned_team: "", location: "", machine_name: "", priority: "medium",
+    status: "scheduled", recurrence: "none", notes: "",
+  };
+  const [form, setForm] = useState(blank);
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    setLoad(true);
+    Promise.all([
+      api("/schedule").catch(() => []),
+      api("/work-orders").catch(() => []),
+      api("/plans").catch(() => []),
+    ]).then(([s, w, p]) => { setRows(s); setWo(w); setPlans(p); }).finally(() => setLoad(false));
+  }, []);
+
+  // Merge dedicated schedule entries with Work Orders + Plans for a unified timeline
+  const merged = [
+    ...rows.map(r => ({ ...r, kind: r.event_type || "Scheduled Event", source: "schedule", ref: r.ref_no, title: r.title, start: r.start_date, end: r.end_date, team: r.assigned_team, progress: null })),
+    ...wo.map(r => ({ ...r, kind: "Work Order", source: "wo", ref: r.wo_number, title: r.product_name, start: r.start_date, end: r.end_date, team: r.assigned_team, progress: r.progress })),
+    ...plans.map(r => ({ ...r, kind: "Plan", source: "plan", ref: r.title, title: r.assigned_team || "—", start: r.start_date, end: r.end_date, team: r.assigned_team, progress: null })),
+  ].filter(e => e.start);
+
+  const fil = merged.filter(e =>
+    (!fType || e.kind === fType) &&
+    (!fStatus || e.status === fStatus) &&
+    `${e.ref} ${e.title} ${e.team}`.toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  const grouped = fil.reduce((acc, e) => {
+    const key = e.start?.slice(0, 10) || "Unscheduled";
+    (acc[key] = acc[key] || []).push(e);
+    return acc;
+  }, {});
+  const dateKeys = Object.keys(grouped).sort();
+  const eventTypes = ["Production Run", "Shift", "Delivery", "Inspection", "Training", "Downtime", "Other"];
+
+  const openAdd = () => { setForm({ ...blank, ref_no: genRef("SCH", rows) }); setEdit(null); setModal(true); };
+  const openEdit = r => {
+    setForm({
+      ref_no: r.ref_no || "", title: r.title || "", event_type: r.event_type || "Production Run",
+      product_name: r.product_name || "", start_date: r.start_date?.slice(0, 10) || today,
+      end_date: r.end_date?.slice(0, 10) || today, start_time: r.start_time || "09:00", end_time: r.end_time || "18:00",
+      assigned_team: r.assigned_team || "", location: r.location || "", machine_name: r.machine_name || "",
+      priority: r.priority || "medium", status: r.status || "scheduled", recurrence: r.recurrence || "none",
+      notes: r.notes || "",
+    });
+    setEdit(r); setModal(true);
+  };
+  const del = async r => {
+    if (!confirm(`Delete schedule "${r.title}"?`)) return;
+    try { await api(`/schedule/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); }
+    catch (e) { show(e.message, "error"); }
+  };
+  const save = async () => {
+    if (!form.title || !form.start_date) { show("Title & start date required.", "error"); return; }
+    setSaving(true);
+    try {
+      if (edit) { const d = await api(`/schedule/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("Schedule updated."); }
+      else { const d = await api("/schedule", { method: "POST", body: JSON.stringify(form) }); setRows(p => [d, ...p]); show("Schedule created."); }
+      setModal(false);
+    } catch (e) { show(e.message, "error"); } finally { setSaving(false); }
+  };
+
+  const COLS = [
+    { k: "ref_no",        l: "Ref No",   render: (v, r) => <Code v={v || r.ref} /> },
+    { k: "title",         l: "Title",    render: (v, r) => <span style={{ fontWeight: 600, color: C.gray900 }}>{v || r.title}</span> },
+    { k: "event_type",    l: "Type",     render: (v, r) => <span style={{ fontSize: 12, color: C.gray500 }}>{v || r.kind}</span> },
+    { k: "start_date",    l: "Start",    render: (v, r) => (v || r.start)?.slice(0, 10) || "—" },
+    { k: "end_date",      l: "End",      render: (v, r) => (v || r.end)?.slice(0, 10) || "—" },
+    { k: "assigned_team", l: "Team",     render: (v, r) => v || r.team || "—" },
+    { k: "priority",      l: "Priority", render: v => v ? <Badge value={v} /> : "—" },
+    { k: "status",        l: "Status",  render: v => <Badge value={v} /> },
+  ];
+
+  const tableRows = rows; // only dedicated schedule entries go in the editable table
+
+  return (
+    <PageShell title="Manufacturing Schedule" sub="Plan, assign and track all production scheduling events" icon="🗓️">
+      <KPIs cards={[
+        { icon: "🗓️", label: "Total Events", value: merged.length,                                              color: C.green },
+        { icon: "⏳", label: "Upcoming",     value: merged.filter(e => !e.end || e.end >= today).length,         color: C.blue },
+        { icon: "⚙️", label: "In Progress",  value: merged.filter(e => e.status === "in_progress").length,       color: C.amber },
+        { icon: "✅", label: "Completed",    value: merged.filter(e => e.status === "completed").length,         color: C.green },
+        { icon: "⚠️", label: "Overdue",      value: merged.filter(e => e.status === "overdue" || (e.end && e.end < today && e.status !== "completed")).length, color: C.red },
+      ]} />
+
+      <Card>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
+          <Toolbar
+            onAdd={openAdd} addLabel="Add Schedule"
+            search={search} onSearch={setSearch}
+            onCSV={() => exportCSV(tableRows, COLS, "schedule.csv")}
+            onExcel={() => exportExcel(tableRows, COLS, "schedule.xls")}
+            onPrint={() => printTable(tableRows, COLS, "Manufacturing Schedule")}
+            cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden}
+            filterEls={
+              <>
+                <select value={fType} onChange={e => setFT(e.target.value)} style={{ ...sel, width: 170 }}>
+                  <option value="">All Types</option>
+                  {eventTypes.concat(["Work Order", "Plan"]).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select value={fStatus} onChange={e => setFS(e.target.value)} style={{ ...sel, width: 150 }}>
+                  <option value="">All Status</option>
+                  {["scheduled", "in_progress", "completed", "on_hold", "overdue"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                </select>
+                <select value={view} onChange={e => setView(e.target.value)} style={{ ...sel, width: 140 }}>
+                  <option value="timeline">Timeline View</option>
+                  <option value="table">Table View</option>
+                </select>
+              </>
+            }
+          />
+        </div>
+
+        {load ? (
+          <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400, fontSize: 13, fontFamily: font }}>Loading…</div>
+        ) : view === "table" ? (
+          <>
+            <DataTable cols={COLS} rows={tableRows.filter(r => `${r.ref_no} ${r.title}`.toLowerCase().includes(search.toLowerCase()))} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+            <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {tableRows.length} scheduled entries</div>
+          </>
+        ) : dateKeys.length === 0 ? (
+          <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400, fontSize: 13, fontFamily: font }}>No scheduled events found. Click "+ Add Schedule" to create one.</div>
+        ) : (
+          <div style={{ padding: "18px 20px" }}>
+            {dateKeys.map(date => (
+              <div key={date} style={{ marginBottom: 22 }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10, marginBottom: 10,
+                  fontSize: 12, fontWeight: 700, color: date === today ? C.green : C.gray500,
+                  textTransform: "uppercase", letterSpacing: .5, fontFamily: font,
+                }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: date === today ? C.green : C.gray300 }} />
+                  {date} {date === today && "(Today)"}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 18, borderLeft: `2px solid ${C.gray100}` }}>
+                  {grouped[date].map((e, i) => {
+                    const kindColor = e.source === "wo" ? { bg: C.blueBg, c: C.blue } : e.source === "plan" ? { bg: C.purpleBg, c: C.purple } : { bg: C.greenLight, c: C.green };
+                    return (
+                      <div key={i}
+                        onClick={() => e.source === "schedule" ? setViewRow(e) : null}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 14, padding: "10px 14px",
+                          background: C.gray50, borderRadius: 8, border: `1px solid ${C.gray200}`,
+                          cursor: e.source === "schedule" ? "pointer" : "default",
+                        }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: kindColor.bg, color: kindColor.c, whiteSpace: "nowrap" }}>{e.kind}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.gray900, fontFamily: font }}>{e.ref}{e.title ? ` — ${e.title}` : ""}</div>
+                          <div style={{ fontSize: 11, color: C.gray400, fontFamily: font }}>
+                            {e.team && `Team: ${e.team}`}{e.location ? ` · ${e.location}` : ""}{e.machine_name ? ` · ${e.machine_name}` : ""} {e.end && `· Due: ${e.end.slice(0, 10)}`}
+                          </div>
+                        </div>
+                        {e.progress != null && (
+                          <div style={{ width: 90, flexShrink: 0 }}>
+                            <div style={{ background: C.gray200, borderRadius: 99, height: 6, overflow: "hidden" }}>
+                              <div style={{ width: `${Math.min(e.progress, 100)}%`, height: "100%", background: C.green }} />
+                            </div>
+                          </div>
+                        )}
+                        {e.priority && <Badge value={e.priority} />}
+                        <Badge value={e.status} />
+                        {e.source === "schedule" && (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button onClick={ev => { ev.stopPropagation(); openEdit(e); }} style={{ padding: "4px 9px", borderRadius: 5, border: `1px solid ${C.greenBorder}`, background: C.greenLight, color: C.green, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: font }}>Edit</button>
+                            <button onClick={ev => { ev.stopPropagation(); del(e); }} style={{ padding: "4px 9px", borderRadius: 5, border: `1px solid ${C.redBd}`, background: C.redBg, color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: font }}>Delete</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {viewRow && (
+        <Modal title={viewRow.title} sub={`${viewRow.ref_no} · ${viewRow.event_type}`} onClose={() => setViewRow(null)}>
+          <DR label="Ref No" value={<Code v={viewRow.ref_no} />} />
+          <DR label="Title" value={viewRow.title} />
+          <DR label="Event Type" value={viewRow.event_type} />
+          <DR label="Product" value={viewRow.product_name} />
+          <DR label="Start" value={`${viewRow.start_date?.slice(0, 10)} ${viewRow.start_time || ""}`} />
+          <DR label="End" value={`${viewRow.end_date?.slice(0, 10)} ${viewRow.end_time || ""}`} />
+          <DR label="Team" value={viewRow.assigned_team} />
+          <DR label="Location" value={viewRow.location} />
+          <DR label="Machine" value={viewRow.machine_name} />
+          <DR label="Priority" value={<Badge value={viewRow.priority} />} />
+          <DR label="Status" value={<Badge value={viewRow.status} />} />
+          <DR label="Recurrence" value={viewRow.recurrence} />
+          <DR label="Notes" value={viewRow.notes} />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+            <button onClick={() => setViewRow(null)} style={{ padding: "8px 20px", background: C.gray100, border: "none", cursor: "pointer", borderRadius: 6, fontWeight: 600, color: C.gray700, fontFamily: font }}>Close</button>
+          </div>
+        </Modal>
+      )}
+
+      {modal && (
+        <Modal title={edit ? "Edit Schedule" : "Add Schedule"} sub="Create a detailed manufacturing schedule entry" onClose={() => setModal(false)} wide>
+          <G2>
+            <Fld label="Ref No"><input style={{ ...inp, background: C.gray50 }} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
+            <Fld label="Title" req><input style={inp} value={form.title} onChange={e => sf("title", e.target.value)} placeholder="e.g. Night Shift — Line 2 Run" /></Fld>
+            <Fld label="Event Type"><select style={sel} value={form.event_type} onChange={e => sf("event_type", e.target.value)}>{eventTypes.map(t => <option key={t}>{t}</option>)}</select></Fld>
+            <Fld label="Product / Subject"><input style={inp} value={form.product_name} onChange={e => sf("product_name", e.target.value)} placeholder="Industrial Valve A3" /></Fld>
+            <Fld label="Start Date" req><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
+            <Fld label="Start Time"><input type="time" style={inp} value={form.start_time} onChange={e => sf("start_time", e.target.value)} /></Fld>
+            <Fld label="End Date"><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} /></Fld>
+            <Fld label="End Time"><input type="time" style={inp} value={form.end_time} onChange={e => sf("end_time", e.target.value)} /></Fld>
+            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
+            <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Unit A - Chennai" /></Fld>
+            <Fld label="Machine"><input style={inp} value={form.machine_name} onChange={e => sf("machine_name", e.target.value)} placeholder="CNC Machine #1" /></Fld>
+            <Fld label="Priority"><select style={sel} value={form.priority} onChange={e => sf("priority", e.target.value)}>{["low", "medium", "high"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["scheduled", "in_progress", "completed", "on_hold", "overdue"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}</select></Fld>
+            <Fld label="Recurrence"><select style={sel} value={form.recurrence} onChange={e => sf("recurrence", e.target.value)}>{["none", "daily", "weekly", "monthly"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+          </G2>
+          <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Create Schedule"} />
+        </Modal>
+      )}
+    </PageShell>
+  );
+}
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN — reads ?tab= from URL, renders matching tab (NO top nav bar)
 // ══════════════════════════════════════════════════════════════════════════════
-const VALID_TABS = new Set(["planning", "bom", "workorders", "production", "resources", "machines", "qc", "maintenance", "reports"]);
+const VALID_TABS = new Set(["planning", "bom", "workorders", "production", "resources", "machines", "qc", "maintenance", "reports", "schedule"]);
 
 export default function Manufacturing() {
   const [searchParams] = useSearchParams();
@@ -1419,8 +1679,9 @@ export default function Manufacturing() {
       {tab === "resources"   && <ResourcesTab   show={show} />}
       {tab === "machines"    && <MachinesTab    show={show} />}
       {tab === "qc"          && <QCTab          show={show} />}
-      {tab === "maintenance" && <MaintenanceTab show={show} />}
+   {tab === "maintenance" && <MaintenanceTab show={show} />}
       {tab === "reports"     && <ReportsTab     show={show} />}
+      {tab === "schedule"    && <ScheduleTab    show={show} />}
     </div>
   );
 }

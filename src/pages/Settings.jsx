@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import * as settingsAPI from "../api/settingsAPI"; // adjust path to your actual file
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const G = {
@@ -103,12 +104,43 @@ const Divider = () => <hr style={{ border: "none", borderTop: "1px solid #f0f0f0
 // ─── 1. BUSINESS SETTINGS ─────────────────────────────────────────────────────
 function BusinessSettings() {
   const [form, setForm] = useState({
-    name: "Manodtechnologies", startDate: "05/23/2026", profit: "25.00",
+    name: "", startDate: "05/23/2026", profit: "25.00",
     currency: "INR", symbolPlacement: "Before amount", timezone: "Asia/Kolkata",
     financialMonth: "January", stockMethod: "FIFO", editDays: "30",
     dateFormat: "mm/dd/yyyy", timeFormat: "24 Hour", currencyPrecision: "2", qtyPrecision: "2",
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
   const f = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  useEffect(() => {
+    (async () => {
+      const res = await settingsAPI.getBusinessSettings();
+      if (res.success && res.data) {
+        setForm((prev) => ({
+          ...prev,
+          name: res.data.business_name || "",
+          currency: res.data.currency || "INR",
+          timezone: res.data.timezone || "Asia/Kolkata",
+        }));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true); setMsg(null);
+    const res = await settingsAPI.updateBusinessSettings({
+      business_name: form.name,
+      currency: form.currency,
+      timezone: form.timezone,
+    });
+    setSaving(false);
+    setMsg(res.success ? "✅ Settings updated" : `❌ ${res.message}`);
+  };
+
+  if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
@@ -181,11 +213,11 @@ function BusinessSettings() {
           <Select value={form.qtyPrecision} onChange={f("qtyPrecision")}><option>2</option><option>3</option><option>4</option></Select>
         </FG>
       </FormRow>
-
-      <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 20, display: "flex", justifyContent: "center" }}>
-        <BtnGreen style={{ padding: "13px 44px", fontSize: 15, borderRadius: 10, background: G.green, boxShadow: "0 4px 16px rgba(26,107,60,.35)" }}>
-          💾 Update Settings
+<div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <BtnGreen onClick={handleSave} style={{ padding: "13px 44px", fontSize: 15, borderRadius: 10, background: G.green, boxShadow: "0 4px 16px rgba(26,107,60,.35)", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving..." : "💾 Update Settings"}
         </BtnGreen>
+        {msg && <span style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#1a6b3c" : "#e53935" }}>{msg}</span>}
       </div>
     </Card>
   );
@@ -195,22 +227,55 @@ function BusinessSettings() {
 const paymentMethods = ["Cash","Card","Cheque","Bank Transfer","Other","Custom Payment 1","Custom Payment 2","Custom Payment 3","Custom Payment 4","Custom Payment 5","Custom Payment 6","Custom Payment 7"];
 
 function BusinessLocations() {
-  const [locations, setLocations] = useState([
-    { id: "BL0001", name: "Manodtechnologies", landmark: "dl", city: "Delhi", zip: "110048", state: "TamilNadu", country: "India", invoiceScheme: "Default", invoiceLayoutPOS: "Default", invoiceLayoutSale: "Default" }
-  ]);
+  const [locations, setLocations] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name:"",locationId:"",landmark:"",city:"",zip:"",state:"",country:"",mobile:"",altContact:"",email:"",website:"",invoiceSchemePOS:"",invoiceSchemeSale:"",invoiceLayoutPOS:"",invoiceLayoutSale:"",priceGroup:"",custom1:"",custom2:"",custom3:"",custom4:"", payments: paymentMethods.reduce((a,k)=>({...a,[k]:true}),{}) });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
   const togglePay = k => setForm({ ...form, payments: { ...form.payments, [k]: !form.payments[k] } });
 
+  const loadLocations = async () => {
+    const res = await settingsAPI.getLocations();
+    if (res.success) {
+      setLocations(res.data.map(l => ({
+        id: l.location_id, dbId: l.id, name: l.location_name, landmark: l.address,
+        city: l.city, zip: l.postal_code, state: l.state, country: l.country,
+        invoiceScheme: "Default", invoiceLayoutPOS: "Default", invoiceLayoutSale: "Default",
+      })));
+    }
+    setLoading(false);
+  };
+  useEffect(() => { loadLocations(); }, []);
+
+  const openAdd = () => { setEditingId(null); setForm(prev => ({ ...prev, name:"",landmark:"",city:"",zip:"",state:"",country:"",mobile:"" })); setShowAdd(true); };
+  const openEdit = (loc) => {
+    setEditingId(loc.dbId);
+    setForm(prev => ({ ...prev, name: loc.name, landmark: loc.landmark || "", city: loc.city || "", zip: loc.zip || "", state: loc.state || "", country: loc.country || "" }));
+    setShowAdd(true);
+  };
+
+  const handleSave = async () => {
+    const payload = { location_name: form.name, address: form.landmark, city: form.city, postal_code: form.zip, state: form.state, country: form.country, phone: form.mobile };
+    const res = editingId ? await settingsAPI.updateLocation(editingId, payload) : await settingsAPI.createLocation(payload);
+    if (res.success) { setShowAdd(false); loadLocations(); }
+  };
+
+  const handleDeactivate = async (dbId) => {
+    await settingsAPI.deactivateLocation(dbId);
+    loadLocations();
+  };
+
   const thStyle = { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
   const tdStyle = { padding: "10px 12px", fontSize: 13, color: "#444", borderBottom: "1px solid #f4f4f4" };
+
+  if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <SectionTitle>All Business Locations</SectionTitle>
-        <BtnBlue onClick={() => setShowAdd(true)}>+ Add Location</BtnBlue>
+      <BtnBlue onClick={openAdd}>+ Add Location</BtnBlue>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -234,11 +299,11 @@ function BusinessLocations() {
                 <td style={tdStyle}>{loc.invoiceScheme}</td>
                 <td style={tdStyle}>{loc.invoiceLayoutPOS}</td>
                 <td style={tdStyle}>{loc.invoiceLayoutSale}</td>
-                <td style={tdStyle}>
+              <td style={tdStyle}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }}>✏️ Edit</BtnGreen>
+                    <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => openEdit(loc)}>✏️ Edit</BtnGreen>
                     <BtnBlue style={{ padding: "5px 12px", fontSize: 12 }}>⚙️ Settings</BtnBlue>
-                    <BtnRed style={{ padding: "5px 12px", fontSize: 12 }}>🚫 Deactivate</BtnRed>
+                    <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDeactivate(loc.dbId)}>🚫 Deactivate</BtnRed>
                   </div>
                 </td>
               </tr>
@@ -247,9 +312,8 @@ function BusinessLocations() {
         </table>
       </div>
       <p style={{ fontSize: 12, color: "#aaa", marginTop: 10 }}>Showing 1 to {locations.length} of {locations.length} entries</p>
-
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add a new business location"
-        footer={<><BtnGreen>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
+<Modal open={showAdd} onClose={() => setShowAdd(false)} title={editingId ? "Edit business location" : "Add a new business location"}
+        footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={1}><FG label="Name" required><Input value={form.name} onChange={f("name")} placeholder="Name" /></FG></FormRow>
         <FormRow cols={2}>
           <FG label="Location ID"><Input value={form.locationId} onChange={f("locationId")} placeholder="Location ID" /></FG>
@@ -331,8 +395,40 @@ function InvoiceSettings() {
     footerText: "", termsText: "", defaultDue: "0",
     layout: "Default", logoSize: "Medium",
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
   const f = k => e => setForm({ ...form, [k]: e.target.value });
   const t = k => () => setForm({ ...form, [k]: !form[k] });
+
+  useEffect(() => {
+    (async () => {
+      const res = await settingsAPI.getInvoiceSettings();
+      if (res.success && res.data) {
+        setForm(prev => ({
+          ...prev,
+          prefix: res.data.invoice_prefix ?? prev.prefix,
+          startNumber: String(res.data.invoice_start_number ?? prev.startNumber),
+          showTax: res.data.show_tax_id ?? prev.showTax,
+          termsText: res.data.notes_template || "",
+        }));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true); setMsg(null);
+    const res = await settingsAPI.updateInvoiceSettings({
+      invoice_prefix: form.prefix,
+      invoice_start_number: form.startNumber,
+      show_tax_id: form.showTax,
+      show_notes: !!form.termsText,
+      notes_template: form.termsText,
+    });
+    setSaving(false);
+    setMsg(res.success ? "✅ Settings updated" : `❌ ${res.message}`);
+  };
 
   const Toggle = ({ checked, onChange, label }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -342,6 +438,7 @@ function InvoiceSettings() {
       <span style={{ fontSize: 13, color: "#444" }}>{label}</span>
     </div>
   );
+if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
@@ -381,8 +478,11 @@ function InvoiceSettings() {
         <textarea value={form.termsText} onChange={f("termsText")} placeholder="Enter terms and conditions..."
           style={{ width: "100%", padding: "8px 11px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, minHeight: 80, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
       </FG>
-      <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 20, marginTop: 20, display: "flex", justifyContent: "center" }}>
-        <BtnGreen style={{ padding: "13px 44px", fontSize: 15, borderRadius: 10, boxShadow: "0 4px 16px rgba(26,107,60,.35)" }}>💾 Update Settings</BtnGreen>
+   <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 20, marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <BtnGreen onClick={handleSave} style={{ padding: "13px 44px", fontSize: 15, borderRadius: 10, boxShadow: "0 4px 16px rgba(26,107,60,.35)", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving..." : "💾 Update Settings"}
+        </BtnGreen>
+        {msg && <span style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#1a6b3c" : "#e53935" }}>{msg}</span>}
       </div>
     </Card>
   );
@@ -462,16 +562,40 @@ function BarcodeSettings() {
 
 // ─── 5. RECEIPT PRINTERS ─────────────────────────────────────────────────────
 function ReceiptPrinters() {
-  const [printers, setPrinters] = useState([
-    { id: 1, name: "Main Counter Printer", type: "Thermal", connection: "USB", paperWidth: "80mm", status: "Active" },
-    { id: 2, name: "Kitchen Printer", type: "Thermal", connection: "Network", paperWidth: "58mm", status: "Active" },
-  ]);
+  const [printers, setPrinters] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", type: "Thermal", connection: "USB", ip: "", port: "9100", paperWidth: "80mm", charPerLine: "48", location: "" });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
 
+  const loadPrinters = async () => {
+    const res = await settingsAPI.getPrinters();
+    if (res.success) {
+      setPrinters(res.data.map(p => ({
+        id: p.id, name: p.printer_name, connection: p.ip_address ? "Network" : "USB",
+        type: "Thermal", paperWidth: p.paper_width ? `${p.paper_width}mm` : "80mm", status: "Active",
+      })));
+    }
+    setLoading(false);
+  };
+  useEffect(() => { loadPrinters(); }, []);
+
+  const handleSave = async () => {
+    const res = await settingsAPI.createPrinter({
+      printer_name: form.name, ip_address: form.ip || null,
+      port: form.port || null, paper_width: parseInt(form.paperWidth) || 80,
+    });
+    if (res.success) { setShowAdd(false); loadPrinters(); }
+  };
+
+  const handleDelete = async (id) => {
+    await settingsAPI.deletePrinter(id);
+    loadPrinters();
+  };
+
   const thStyle = { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
   const tdStyle = { padding: "10px 12px", fontSize: 13, color: "#444", borderBottom: "1px solid #f4f4f4" };
+if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
@@ -494,7 +618,7 @@ function ReceiptPrinters() {
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 6 }}>
                   <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }}>✏️ Edit</BtnGreen>
-                  <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => setPrinters(printers.filter(x => x.id !== p.id))}>🗑️ Delete</BtnRed>
+              <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(p.id)}>🗑️ Delete</BtnRed>
                 </div>
               </td>
             </tr>
@@ -503,7 +627,7 @@ function ReceiptPrinters() {
       </table>
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Receipt Printer"
-        footer={<><BtnGreen>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
+        footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={2}>
           <FG label="Printer Name" required><Input value={form.name} onChange={f("name")} placeholder="e.g. Main Counter Printer" /></FG>
           <FG label="Printer Type" required>
@@ -540,19 +664,37 @@ function ReceiptPrinters() {
 
 // ─── 6. TAX RATES ─────────────────────────────────────────────────────────────
 function TaxRates() {
-  const [taxes, setTaxes] = useState([
-    { id: 1, name: "GST 5%", type: "Percentage", rate: 5, isDefault: false },
-    { id: 2, name: "GST 12%", type: "Percentage", rate: 12, isDefault: false },
-    { id: 3, name: "GST 18%", type: "Percentage", rate: 18, isDefault: true },
-    { id: 4, name: "GST 28%", type: "Percentage", rate: 28, isDefault: false },
-    { id: 5, name: "No Tax", type: "Fixed", rate: 0, isDefault: false },
-  ]);
+  const [taxes, setTaxes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", type: "Percentage", rate: "", isDefault: false });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
 
+  const loadTaxes = async () => {
+    const res = await settingsAPI.getTaxRates();
+    if (res.success) {
+      setTaxes(res.data.map(t => ({
+        id: t.id, name: t.tax_name, rate: t.rate,
+        type: Number(t.rate) === 0 ? "Fixed" : "Percentage", isDefault: t.is_default,
+      })));
+    }
+    setLoading(false);
+  };
+  useEffect(() => { loadTaxes(); }, []);
+
+  const handleSave = async () => {
+    const res = await settingsAPI.createTaxRate({ tax_name: form.name, rate: form.rate, is_default: form.isDefault });
+    if (res.success) { setShowAdd(false); loadTaxes(); }
+  };
+
+  const handleDelete = async (id) => {
+    await settingsAPI.deleteTaxRate(id);
+    loadTaxes();
+  };
+
   const thStyle = { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
   const tdStyle = { padding: "10px 12px", fontSize: 13, color: "#444", borderBottom: "1px solid #f4f4f4" };
+if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
@@ -578,7 +720,7 @@ function TaxRates() {
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 6 }}>
                   <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }}>✏️ Edit</BtnGreen>
-                  <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => setTaxes(taxes.filter(x => x.id !== tax.id))}>🗑️ Delete</BtnRed>
+                 <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(tax.id)}>🗑️ Delete</BtnRed>
                 </div>
               </td>
             </tr>
@@ -588,7 +730,7 @@ function TaxRates() {
       <p style={{ fontSize: 12, color: "#aaa", marginTop: 10 }}>Showing {taxes.length} tax rates</p>
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Tax Rate"
-        footer={<><BtnGreen>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
+        footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={1}><FG label="Tax Name" required><Input value={form.name} onChange={f("name")} placeholder="e.g. GST 18%" /></FG></FormRow>
         <FormRow cols={2}>
           <FG label="Tax Type" required>
