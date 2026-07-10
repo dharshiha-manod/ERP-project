@@ -778,7 +778,16 @@ function StockTransferForm({ mode }) {
 
   const productById = (pid) => productOptions.find((p) => String(p.id) === String(pid));
 
-  const updateProductRow = (idx, field, val) => {
+const updateProductRow = (idx, field, val) => {
+    if (field === "quantity") {
+      const row = products[idx];
+      const prod = productById(row.product_id);
+      const stock = prod ? Number(prod.current_stock) || 0 : null;
+      if (stock !== null && Number(val) > stock) {
+        setError(`Cannot transfer ${val} of "${prod.product_name}" — only ${stock} in stock`);
+        return;
+      }
+    }
     setProducts((prev) =>
       prev.map((p, i) => {
         if (i !== idx) return p;
@@ -818,7 +827,14 @@ function StockTransferForm({ mode }) {
       setError("At least one product is required.");
       return;
     }
-
+    for (const p of validItems) {
+      const prod = productById(p.product_id);
+      const stock = prod ? Number(prod.current_stock) || 0 : 0;
+      if (Number(p.quantity) > stock) {
+        setError(`Insufficient stock for "${prod?.product_name || 'product'}": only ${stock} available`);
+        return;
+      }
+    }
     const payload = {
       transfer_date: form.transfer_date,
       location_from: form.location_from,
@@ -923,8 +939,8 @@ function StockTransferForm({ mode }) {
           <div style={S.tableWrap}>
             <table style={S.table}>
               <thead>
-                <tr>
-                  {["Product *", "Quantity *", "Unit Cost", "Subtotal", "Action"].map((h) => (
+               <tr>
+                  {["Product *", "Stock", "Quantity *", "Unit Cost", "Subtotal", "Action"].map((h) => (
                     <th key={h} style={S.formThSmall}>{h}</th>
                   ))}
                 </tr>
@@ -946,6 +962,17 @@ function StockTransferForm({ mode }) {
                           </option>
                         ))}
                       </select>
+                   </td>
+                    <td style={S.formTdSmall}>
+                      {(() => {
+                        const prod = productById(p.product_id);
+                        const stock = prod ? Number(prod.current_stock) || 0 : null;
+                        return stock === null ? "—" : (
+                          <span style={{ background: stock === 0 ? "#f8d7da" : "#eef7f0", color: stock === 0 ? "#721c24" : "#2d6a4f", borderRadius: 4, padding: "2px 8px", fontWeight: 600, fontSize: "0.8rem" }}>
+                            {stock}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={S.formTdSmall}>
                       <input type="number" style={S.inputSm} min="1" value={p.quantity} onChange={(e) => updateProductRow(idx, "quantity", e.target.value)} required />

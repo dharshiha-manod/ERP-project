@@ -574,15 +574,26 @@ function LeaveType() {
     setModal(false); setForm({ type:"", maxCount:"", interval:"None" });
   };
 
-  const apiDelete = async (i) => {
+ const apiDelete = async (i) => {
     const rec = records[i];
     await hrmAPI.deleteLeaveType(rec.id);
     await load();
   };
-  const apiEdit = async (i, vals) => {
+
+  const [editingId,setEditingId]=useState(null);
+  const openEdit = (i) => {
     const rec = records[i];
-    await hrmAPI.updateLeaveType(rec.id, { name:vals[1], max_count:parseInt(vals[2])||0, interval:vals[3] });
-    await load();
+    setEditingId(rec.id);
+    setForm({ type: rec.name || "", maxCount: String(rec.max_count ?? ""), interval: rec.interval || "None" });
+    setModal(true);
+  };
+  const saveEditType = async () => {
+    if (!form.type) return;
+    try {
+      await hrmAPI.updateLeaveType(editingId, { name:form.type, max_count:parseInt(form.maxCount)||0, interval:form.interval });
+      await load();
+    } catch (e) { alert(e.message); }
+    setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });
   };
 
   return (
@@ -594,15 +605,15 @@ function LeaveType() {
       </div>
       <KpiRow cards={[
         { label:"Total Types", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Leave Type","Max Count","Interval"], rows } },
-        { label:"Max Annual Leave", value:"20 days", color:G.green },
-        { label:"Max Sick Leave",   value:"12 days", color:G.blue  },
+        { label:"Max Annual Leave", value:`${records.find(lt => /annual|vacation/i.test(lt.name))?.max_count ?? 0} days`, color:G.green },
+        { label:"Max Sick Leave",   value:`${records.find(lt => /sick|health/i.test(lt.name))?.max_count ?? 0} days`, color:G.blue  },
       ]} />
-      <Card>
+    <Card>
         {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-          <HRMTable columns={["ID","Leave Type","Max Count","Interval"]} rows={rows} exportFilename="leave-types" onApiDelete={apiDelete} onApiEdit={apiEdit} />}
+          <HRMTable columns={["ID","Leave Type","Max Count","Interval"]} rows={rows} exportFilename="leave-types" onApiDelete={apiDelete} onEditClick={openEdit} />}
       </Card>
       {modal && (
-        <Modal title="Add Leave Type" onClose={()=>setModal(false)}>
+        <Modal title={editingId ? "Edit Leave Type" : "Add Leave Type"} onClose={()=>{setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });}}>
           <AutoIdField label="Leave Type ID" value={newId()} />
           <Field label="Leave Type" required><FInput value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} placeholder="e.g. Sick Leave" /></Field>
           <Field label="Max Leave Count"><FInput type="number" value={form.maxCount} onChange={e=>setForm(f=>({...f,maxCount:e.target.value}))} placeholder="e.g. 12" /></Field>
@@ -615,8 +626,8 @@ function LeaveType() {
               ))}
             </div>
           </Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:10 }}>
-            <GreenBtn onClick={save}>Save</GreenBtn><DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+         <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:10 }}>
+            <GreenBtn onClick={editingId ? saveEditType : save}>{editingId ? "Update" : "Save"}</GreenBtn><DarkBtn onClick={()=>{setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -675,15 +686,31 @@ const apiDelete = async (i) => {
     await hrmAPI.deleteLeave(rec.id);
     await load();
   };
-  const apiEdit = async (i, vals) => {
+
+  const [editingId,setEditingId]=useState(null);
+  const openEdit = (i) => {
     const rec = records[i];
-    const [startPart, endPart] = String(vals[3]||"").split("–").map(s=>s.trim());
-    await hrmAPI.updateLeave(rec.id, {
-      leave_type_name:vals[1], employee_name:vals[2],
-      start_date:startPart||rec.start_date, end_date:endPart||rec.end_date,
-      reason:vals[4], status:vals[5],
+    setEditingId(rec.id);
+    setForm({
+      employee: rec.employee_name || "",
+      leaveType: rec.leave_type_name || "",
+      startDate: rec.start_date ? String(rec.start_date).slice(0,10) : "",
+      endDate: rec.end_date ? String(rec.end_date).slice(0,10) : "",
+      reason: rec.reason || "",
     });
-    await load();
+    setModal(true);
+  };
+  const saveEditLeave = async () => {
+    if (!form.leaveType||!form.startDate||!form.endDate) return;
+    try {
+      await hrmAPI.updateLeave(editingId, {
+        leave_type_name:form.leaveType, employee_name:form.employee,
+        start_date:form.startDate, end_date:form.endDate,
+        reason:form.reason, status: records.find(r=>r.id===editingId)?.status || "Pending",
+      });
+      await load();
+    } catch (e) { alert(e.message); }
+    setModal(false); setEditingId(null); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
   };
   const approveLeave = async (i) => {
     if (!window.confirm("Approve this leave request?")) return;
@@ -714,15 +741,14 @@ const apiDelete = async (i) => {
         { label:"Pending",  value:pending.length.toString(),  color:G.amber, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:pending } },
         { label:"Rejected", value:rejected.length.toString(), color:G.red,   modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:rejected } },
       ]} />
-     <Card>
+    <Card>
         {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
           <HRMTable
             columns={["Ref No","Leave Type","Employee","Date","Reason","Status"]}
             rows={rows}
             exportFilename="leaves"
             onApiDelete={apiDelete}
-            onApiEdit={apiEdit}
-            columnEditors={{ 1: leaveTypeOptions, 5: ["Pending","Approved","Rejected"] }}
+            onEditClick={openEdit}
             extraActions={(i) => rows[i][5] === "Pending" ? (
               <>
                 <button onClick={()=>approveLeave(i)} style={{ padding:"5px 12px", background:G.greenBg, color:G.green, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12 }}>✓ Approve</button>
@@ -732,8 +758,8 @@ const apiDelete = async (i) => {
           />}
       </Card>
       {modal && (
-        <Modal title="Apply Leave" onClose={()=>setModal(false)}>
-          <AutoIdField label="Reference No." value={newId()} />
+        <Modal title={editingId ? "Edit Leave" : "Apply Leave"} onClose={()=>{setModal(false); setEditingId(null); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });}}>
+          {!editingId && <AutoIdField label="Reference No." value={newId()} />}
           <Field label="Employee"><FInput value={form.employee} onChange={e=>setForm(f=>({...f,employee:e.target.value}))} placeholder="Employee name" /></Field>
           <Field label="Leave Type" required>
             <FSelect value={form.leaveType} onChange={e=>setForm(f=>({...f,leaveType:e.target.value}))}>
@@ -749,7 +775,7 @@ const apiDelete = async (i) => {
           </div>
           <Field label="Reason"><FTextarea value={form.reason} onChange={e=>setForm(f=>({...f,reason:e.target.value}))} placeholder="Reason for leave" /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <GreenBtn onClick={save}>Submit</GreenBtn><DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+            <GreenBtn onClick={editingId ? saveEditLeave : save}>{editingId ? "Update" : "Submit"}</GreenBtn><DarkBtn onClick={()=>{setModal(false); setEditingId(null); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -2085,9 +2111,8 @@ function Departments() {
   const [records,setRecords]=useState([]);
   const [loading,setLoading]=useState(true);
   const rows = records.map(d => [`DEPT-${String(d.id).padStart(3,"0")}`, d.name, d.dept_code, d.description||"—"]);
-
-  const [modal,setModal]=useState(false);
-  const [form,setForm]=useState({ dept:"", desc:"" });
+const [modal,setModal]=useState(false);
+  const [form,setForm]=useState({ dept:"", deptCode:"", desc:"" });
 
   const load = async () => {
     setLoading(true);
@@ -2099,11 +2124,21 @@ function Departments() {
   const newId=()=>`DEPT-${String(records.length+1).padStart(3,"0")}`;
   const newDeptId=(name)=>name?`DEPT-${name.slice(0,4).toUpperCase().replace(/\s/g,"")}`:"Auto-generated from name";
 
-  const apiDelete = async (i) => { await hrmAPI.deleteDepartment(records[i].id); await load(); };
-  const apiEdit = async (i, vals) => {
+const apiDelete = async (i) => { await hrmAPI.deleteDepartment(records[i].id); await load(); };
+
+  const [editingId,setEditingId]=useState(null);
+  const openEdit = (i) => {
     const rec = records[i];
-    await hrmAPI.updateDepartment(rec.id, { name:vals[1], description:vals[3] });
-    await load();
+    setEditingId(rec.id);
+    setForm({ dept: rec.name || "", deptCode: rec.dept_code || "", desc: rec.description || "" });
+    setModal(true);
+  };
+  const saveEdit = async () => {
+    try {
+      await hrmAPI.updateDepartment(editingId, { name:form.dept, dept_code:form.deptCode, description:form.desc });
+      await load();
+    } catch(e){ alert(e.message); }
+    setModal(false); setEditingId(null); setForm({ dept:"", deptCode:"", desc:"" });
   };
 
   return (
@@ -2117,25 +2152,31 @@ function Departments() {
         { label:"Total Departments", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Department","Dept Code","Description"], rows } },
         { label:"Active", value:rows.length.toString(), color:G.green },
       ]} />
-      <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-        <HRMTable columns={["ID","Department","Dept Code","Description"]} rows={rows} exportFilename="departments" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
+    <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+        <HRMTable columns={["ID","Department","Dept Code","Description"]} rows={rows} exportFilename="departments" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
       {modal && (
-        <Modal title="Add Department" onClose={()=>setModal(false)}>
-          <AutoIdField label="System ID"       value={newId()} />
-          <AutoIdField label="Department Code" value={form.dept?newDeptId(form.dept):"Auto-generated from name"} />
+        <Modal title={editingId ? "Edit Department" : "Add Department"} onClose={()=>{setModal(false); setEditingId(null); setForm({ dept:"", deptCode:"", desc:"" });}}>
+          {editingId ? (
+            <Field label="Department Code"><FInput value={form.deptCode} onChange={e=>setForm(f=>({...f,deptCode:e.target.value}))} /></Field>
+          ) : (
+            <>
+              <AutoIdField label="System ID"       value={newId()} />
+              <AutoIdField label="Department Code" value={form.dept?newDeptId(form.dept):"Auto-generated from name"} />
+            </>
+          )}
           <Field label="Department Name" required><FInput value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))} placeholder="e.g. Sales" /></Field>
           <Field label="Description"><FTextarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} placeholder="Brief description" /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
           <GreenBtn onClick={async()=>{
-              if(form.dept){
-                try {
-                  await hrmAPI.createDepartment({ name:form.dept, description:form.desc });
-                  await load();
-                } catch(e){ alert(e.message); }
-                setModal(false); setForm({ dept:"", desc:"" });
-              }
-            }}>Save</GreenBtn>
-            <DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+              if(!form.dept) return;
+              if (editingId) { await saveEdit(); return; }
+              try {
+                await hrmAPI.createDepartment({ name:form.dept, description:form.desc });
+                await load();
+              } catch(e){ alert(e.message); }
+              setModal(false); setForm({ dept:"", deptCode:"", desc:"" });
+            }}>{editingId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setModal(false); setEditingId(null); setForm({ dept:"", deptCode:"", desc:"" });}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -2164,10 +2205,13 @@ function Designations() {
   const newId=()=>`DES-${String(records.length+1).padStart(3,"0")}`;
 
   const apiDelete = async (i) => { await hrmAPI.deleteDesignation(records[i].id); await load(); };
-  const apiEdit = async (i, vals) => {
+
+  const [editingId,setEditingId]=useState(null);
+  const openEdit = (i) => {
     const rec = records[i];
-    await hrmAPI.updateDesignation(rec.id, { name:vals[1], description:vals[2] });
-    await load();
+    setEditingId(rec.id);
+    setForm({ desig: rec.name || "", desc: rec.description || "" });
+    setModal(true);
   };
 
   return (
@@ -2179,23 +2223,26 @@ function Designations() {
       </div>
       <KpiRow cards={[{ label:"Total Designations", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Designation","Description"], rows } }]} />
       <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-        <HRMTable columns={["ID","Designation","Description"]} rows={rows} exportFilename="designations" onApiDelete={apiDelete} onApiEdit={apiEdit} />}</Card>
+        <HRMTable columns={["ID","Designation","Description"]} rows={rows} exportFilename="designations" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
       {modal && (
-        <Modal title="Add Designation" onClose={()=>setModal(false)}>
+        <Modal title={editingId ? "Edit Designation" : "Add Designation"} onClose={()=>{setModal(false); setEditingId(null); setForm({ desig:"", desc:"" });}}>
           <AutoIdField label="Designation ID" value={newId()} />
           <Field label="Designation" required><FInput value={form.desig} onChange={e=>setForm(f=>({...f,desig:e.target.value}))} placeholder="e.g. Sales Executive" /></Field>
           <Field label="Description"><FTextarea value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={async()=>{
-              if(form.desig){
-                try {
+              if(!form.desig) return;
+              try {
+                if (editingId) {
+                  await hrmAPI.updateDesignation(editingId, { name:form.desig, description:form.desc });
+                } else {
                   await hrmAPI.createDesignation({ name:form.desig, description:form.desc });
-                  await load();
-                } catch(e){ alert(e.message); }
-                setModal(false); setForm({ desig:"", desc:"" });
-              }
-            }}>Save</GreenBtn>
-            <DarkBtn onClick={()=>setModal(false)}>Close</DarkBtn>
+                }
+                await load();
+              } catch(e){ alert(e.message); }
+              setModal(false); setEditingId(null); setForm({ desig:"", desc:"" });
+            }}>{editingId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setModal(false); setEditingId(null); setForm({ desig:"", desc:"" });}}>Close</DarkBtn>
           </div>
         </Modal>
       )}

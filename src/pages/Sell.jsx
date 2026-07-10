@@ -49,11 +49,17 @@ async function apiFetch(path, opts = {}) {
         signal: AbortSignal.timeout(8000),
       });
       if (r.ok) return await r.json();
-    } catch { /* try next */ }
+      const errBody = await r.json().catch(() => ({}));
+      const msg = errBody.message || errBody.error || `HTTP ${r.status}`;
+      console.error(`[apiFetch] ${path} failed:`, msg);
+      return null; // caller checks `if (res)` — but now the real reason is in console
+    } catch (e) {
+      if (e.message && !e.message.includes("Failed to fetch")) throw e;
+      /* network-level failure only — try next base */
+    }
   }
   return null;
 }
-
 // ── Module-level cache so products only load once per session ─────────────────
 const _cache = {};
 
@@ -88,7 +94,7 @@ function useProducts() {
     name: p.name || p.product_name || p.title || "Unnamed Product",
     selling_price: Number(p.exc_tax_sell || p.selling_price || p.sale_price || p.price || p.cost_price || 0),
     purchase_price: Number(p.exc_tax || p.purchase_price || p.cost || 0),
-    stock: p.stock ?? p.quantity ?? p.stock_quantity ?? undefined,
+    stock: p.current_stock ?? p.stock ?? p.quantity ?? p.stock_quantity ?? 0,
   }));
   return { products, loading };
 }
@@ -119,7 +125,7 @@ function useSellingPriceGroups() {
 }
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt   = n  => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-const genNo = px => `${px}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+const genNo = px => `${px}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}${Math.floor(Math.random()*90+10)}`;
 
 // Formats any date value (ISO timestamp, "YYYY-MM-DD", or already-formatted
 // string) down to a plain DD/MM/YYYY — fixes dates showing raw time/timezone.
@@ -980,7 +986,8 @@ export function AddSale() {
     return match ? Number(match.selling_price) : product.selling_price;
   };
 
-  const [invoiceNo,   setInvoiceNo]   = useState(()=>genNo("INV"));
+ const [invoiceNo,   setInvoiceNo]   = useState(()=>genNo("INV"));
+  const [invoiceNoTouched, setInvoiceNoTouched] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0,10));
   const [warehouse,   setWarehouse]   = useState("Manod HQ");
   const [customer,    setCustomer]    = useState("Walk-In Customer");
@@ -1024,7 +1031,11 @@ const endpoint = from === "quotation" ? `/quotations/${id}`
       setSalesperson(d.salesperson || "");
       setPayMethod(d.paymentMethod || "Cash");
       setNotes(d.notes || "");
-      setDocStatus("Submitted");
+     setDocStatus("Submitted");
+      // Convert flow reuses the draft's old number sometimes — force a
+      // fresh, guaranteed-unique invoice number so it never collides
+      // with the original draft-era number or another recent invoice.
+      if (!invoiceNoTouched) setInvoiceNo(genNo("INV") + "-" + Math.floor(Math.random()*900+100));
       // Carry over quotation-level discount & shipping too — drafts don't
       // have these fields so they just stay at their existing defaults (0).
       if (from === "quotation") {
@@ -1035,8 +1046,9 @@ const endpoint = from === "quotation" ? `/quotations/${id}`
       // "tax" value on a draft's items is a stale/default value from the DB —
       // always force 0 on convert-from-draft. Quotations DO track tax
       // properly (AddQuotation has a Tax Rate field), so carry it over as-is.
-     const mappedItems = (d.items || []).map(it => ({
+  const mappedItems = (d.items || []).map(it => ({
         id: it.id || it.productId || (Date.now() + Math.random()),
+        productId: it.productId || null,   // ← was missing: this is what createInvoice's stock loop reads
         product: it.product || it.name || "Unnamed Product",
         sku: it.sku || "",
         qty: Number(it.qty || 1),
@@ -1067,7 +1079,18 @@ const addProduct = async p => {
       qty:1, unit:"Pcs", unitPrice, discount:0, tax:0,
     }]);
   };
-  const upd = (id,k,v) => setItems(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
+ const upd = (id,k,v) => {
+    if (k === "qty") {
+      const row = items.find(i=>i.id===id);
+      const prod = row ? products.find(p=>p.id===row.productId) : null;
+      const stock = prod ? Number(prod.stock) || 0 : null;
+      if (stock !== null && Number(v) > stock) {
+        alert(`Cannot sell ${v} of "${row.product}" — only ${stock} in stock`);
+        return;
+      }
+    }
+    setItems(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
+  };
   const del = id => setItems(prev=>prev.filter(i=>i.id!==id));
 
   const lSub  = r => r.qty * r.unitPrice;
@@ -1099,8 +1122,19 @@ const addProduct = async p => {
     return d.toISOString().slice(0,10);
   };
 const handleSave = async () => {
+    if (saving) return; // guard against double-submit / double-fire
     if (!customer) { alert("Customer is required."); return; }
     if (items.length===0) { alert("Add at least one product."); return; }
+    if (docStatus === "Submitted") {
+      for (const r of items) {
+        const prod = products.find(p=>p.id===r.productId);
+        const stock = prod ? Number(prod.stock) || 0 : null;
+        if (stock !== null && Number(r.qty) > stock) {
+          alert(`Insufficient stock for "${r.product}": only ${stock} available (you entered ${r.qty})`);
+          return;
+        }
+      }
+    }
     setSaving(true);
 
     // "Save as Draft" here must go to the dedicated drafts table
@@ -1119,12 +1153,12 @@ const handleSave = async () => {
       else alert("Save failed — check server");
       return;
     }
-
-    const res = await apiFetch("/sales-invoice",{
+let invNoToUse = invoiceNo || genNo("INV");
+    let res = await apiFetch("/sales-invoice",{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-        invoiceNo, invoiceDate, customer, customerType, warehouse,
+        invoiceNo: invNoToUse, invoiceDate, customer, customerType, warehouse,
         salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
         paymentStatus, paidAmount:Number(paidAmount)||0,
         dueDate:dueDateISO(), shippingAmt:Number(shipping),
@@ -1132,6 +1166,25 @@ const handleSave = async () => {
         grandTotal:grandTotal.toFixed(2), notes, items,
       }),
     });
+
+    // Invoice number collided (409) — regenerate a fresh one and retry once
+    if (!res) {
+      invNoToUse = genNo("INV") + "-" + Math.floor(Math.random()*900+100);
+      setInvoiceNo(invNoToUse);
+      res = await apiFetch("/sales-invoice",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
+          invoiceNo: invNoToUse, invoiceDate, customer, customerType, warehouse,
+          salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
+          paymentStatus, paidAmount:Number(paidAmount)||0,
+          dueDate:dueDateISO(), shippingAmt:Number(shipping),
+          globalDiscount:globalDisc, taxAmt:taxAmt.toFixed(2),
+          grandTotal:grandTotal.toFixed(2), notes, items,
+        }),
+      });
+    }
+
     if (res) {
       // This was a Convert-to-Invoice — remove the original draft/quotation
       // now that a real invoice has been created from it, so it doesn't
@@ -1260,15 +1313,18 @@ const handleSave = async () => {
                 </div>
               ) : (
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead><tr style={{background:"#f8fafc"}}>
-                    {["#","Product","SKU","Qty","Unit","Unit Price","Disc %","Tax %","Total",""].map((h,i)=>(
+                <thead><tr style={{background:"#f8fafc"}}>
+                    {["#","Product","SKU","Stock","Qty","Unit","Unit Price","Disc %","Tax %","Total",""].map((h,i)=>(
                       <th key={i} style={{padding:"8px 10px",fontWeight:600,fontSize:11,color:TEXT_MUTED,
                         borderBottom:`1px solid ${BORDER}`,textTransform:"uppercase",
-                        textAlign:i>=3&&i<=8?"right":"left",whiteSpace:"nowrap"}}>{h}</th>
+                        textAlign:i>=3&&i<=9?"right":"left",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
-                    {items.map((r,i)=>(
+                    {items.map((r,i)=>{
+                      const prod = products.find(p=>p.id===r.productId);
+                      const stock = prod ? Number(prod.stock) || 0 : null;
+                      return (
                       <tr key={r.id} style={{borderBottom:`1px solid ${BORDER}`}}>
                         <td style={{padding:"8px 10px",color:TEXT_MUTED,width:28}}>{i+1}</td>
                         <td style={{padding:"8px 10px",minWidth:130}}>
@@ -1276,6 +1332,14 @@ const handleSave = async () => {
                             style={{width:"100%",border:`1px solid ${BORDER}`,borderRadius:4,padding:"4px 6px",fontSize:12,fontFamily:F}}/>
                         </td>
                         <td style={{padding:"8px 10px",fontSize:11,color:TEXT_MUTED}}>{r.sku||"—"}</td>
+                        <td style={{padding:"8px 10px",textAlign:"right"}}>
+                          {stock===null ? "—" : (
+                            <span style={{fontSize:11,color:stock>0?"#16a34a":RED,
+                              background:stock>0?"#f0fdf4":"#fef2f2",padding:"2px 6px",borderRadius:4,fontWeight:600}}>
+                              {stock}
+                            </span>
+                          )}
+                        </td>
                         <td style={{padding:"8px 10px"}}><NInp value={r.qty} min={1} onChange={e=>upd(r.id,"qty",Number(e.target.value))}/></td>
                         <td style={{padding:"8px 10px"}}>
                           <select value={r.unit} onChange={e=>upd(r.id,"unit",e.target.value)}
@@ -1287,9 +1351,10 @@ const handleSave = async () => {
                         <td style={{padding:"8px 10px"}}><NInp value={r.discount} width={55} max={100} onChange={e=>upd(r.id,"discount",Number(e.target.value))}/></td>
                         <td style={{padding:"8px 10px"}}><NInp value={r.tax} width={55} max={100} onChange={e=>upd(r.id,"tax",Number(e.target.value))}/></td>
                         <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:GREEN,whiteSpace:"nowrap"}}>Rs. {fmt(lTot(r))}</td>
-                        <td style={{padding:"8px 6px"}}><IBtn icon={IC.x} onClick={()=>del(r.id)} color={RED}/></td>
+                    <td style={{padding:"8px 6px"}}><IBtn icon={IC.x} onClick={()=>del(r.id)} color={RED}/></td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1562,10 +1627,15 @@ export function POSCreate() {
   };
 
   const addToCart = async p => {
+    const stock = Number(p.stock) || 0;
     const price = await getPriceForGroup(p);
     setCart(prev=>{
       const ex=prev.find(c=>c.id===p.id);
-      if(ex) return prev.map(c=>c.id===p.id?{...c,qty:c.qty+1}:c);
+      if(ex) {
+        if (ex.qty + 1 > stock) { alert(`Cannot add more "${p.name}" — only ${stock} in stock`); return prev; }
+        return prev.map(c=>c.id===p.id?{...c,qty:c.qty+1}:c);
+      }
+      if (stock < 1) { alert(`"${p.name}" is out of stock`); return prev; }
       return [...prev,{id:p.id,name:p.name,sku:p.sku||"",price,qty:1}];
     });
   };
@@ -1585,8 +1655,14 @@ export function POSCreate() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceGroupId]);
-  const updQty = (id,qty) => {
+ const updQty = (id,qty) => {
     if(qty<1){setCart(prev=>prev.filter(c=>c.id!==id));return;}
+    const prod = products.find(p=>p.id===id);
+    const stock = prod ? Number(prod.stock) || 0 : null;
+    if (stock !== null && qty > stock) {
+      alert(`Cannot sell ${qty} of "${prod.name}" — only ${stock} in stock`);
+      return;
+    }
     setCart(prev=>prev.map(c=>c.id===id?{...c,qty}:c));
   };
   const removeFromCart = id => setCart(prev=>prev.filter(c=>c.id!==id));
@@ -1603,6 +1679,11 @@ export function POSCreate() {
   );
 const handleCompleteSale = async () => {
     if(cart.length===0){alert("Add at least one product.");return;}
+    for (const c of cart) {
+      const prod = products.find(p=>p.id===c.id);
+      const stock = prod ? Number(prod.stock) || 0 : 0;
+      if (c.qty > stock) { alert(`Insufficient stock for "${c.name}": only ${stock} available`); return; }
+    }
     setSaving(true);
     const refNo = genNo("POS");
     const res = await apiFetch("/pos-sales",{
@@ -1834,9 +1915,9 @@ export function AddDraft() {
     setCustomer(name);
     if (obj?.customer_type || obj?.type) setCustomerType(obj.customer_type || obj.type);
   };
-  const addProduct = p => {
+ const addProduct = p => {
     if (!items.some(i=>i.id===p.id))
-      setItems(prev=>[...prev,{id:p.id,product:p.name,name:p.name,sku:p.sku||"",qty:1,unitPrice:p.selling_price}]);
+      setItems(prev=>[...prev,{id:p.id,productId:p.id,product:p.name,name:p.name,sku:p.sku||"",qty:1,unitPrice:p.selling_price,stock:Number(p.stock)||0}]);
   };
   const upd = (id,k,v) => setItems(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
   const subtotal = items.reduce((s,r)=>s+r.qty*r.unitPrice, 0);
@@ -1917,10 +1998,10 @@ export function AddDraft() {
                 ?<div style={{padding:28,textAlign:"center",color:TEXT_MUTED,fontSize:13}}>
                   {prodLoading?<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner/>Loading products...</span>:"Search above to add products"}
                 </div>
-                :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+             :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{background:"#f8fafc"}}>
-                    {["#","Product","SKU","Qty","Unit Price (Rs.)","Total (Rs.)",""].map((h,i)=>(
-                      <th key={i} style={{padding:"8px 10px",fontWeight:600,fontSize:11,color:TEXT_MUTED,borderBottom:`1px solid ${BORDER}`,textTransform:"uppercase",textAlign:i>=3&&i<=5?"right":"left"}}>{h}</th>
+                    {["#","Product","SKU","Stock","Qty","Unit Price (Rs.)","Total (Rs.)",""].map((h,i)=>(
+                      <th key={i} style={{padding:"8px 10px",fontWeight:600,fontSize:11,color:TEXT_MUTED,borderBottom:`1px solid ${BORDER}`,textTransform:"uppercase",textAlign:i>=3&&i<=6?"right":"left"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -1929,6 +2010,11 @@ export function AddDraft() {
                         <td style={{padding:"8px 10px",color:TEXT_MUTED,width:28}}>{i+1}</td>
                         <td style={{padding:"8px 10px",fontWeight:600}}>{r.name}</td>
                         <td style={{padding:"8px 10px",color:TEXT_MUTED,fontSize:11}}>{r.sku||"—"}</td>
+                        <td style={{padding:"8px 10px",textAlign:"right"}}>
+                          <span style={{fontSize:11,color:r.stock>0?"#16a34a":RED,background:r.stock>0?"#f0fdf4":"#fef2f2",padding:"2px 6px",borderRadius:4,fontWeight:600}}>
+                            {r.stock ?? "—"}
+                          </span>
+                        </td>
                         <td style={{padding:"8px 10px",textAlign:"right"}}><NInp value={r.qty} min={1} onChange={e=>upd(r.id,"qty",Number(e.target.value))}/></td>
                         <td style={{padding:"8px 10px",textAlign:"right"}}>Rs. {fmt(r.unitPrice)}</td>
                         <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:GREEN}}>Rs. {fmt(r.qty*r.unitPrice)}</td>
@@ -2071,7 +2157,7 @@ export function AddQuotation() {
   };
   const addProduct = p => {
     if (!items.some(i=>i.id===p.id))
-      setItems(prev=>[...prev,{id:p.id,product:p.name,sku:p.sku||"",qty:1,unit:"Pcs",unitPrice:p.selling_price,discount:0,tax:taxRate}]);
+      setItems(prev=>[...prev,{id:p.id,productId:p.id,product:p.name,sku:p.sku||"",stock:Number(p.stock)||0,qty:1,unit:"Pcs",unitPrice:p.selling_price,discount:0,tax:taxRate}]);
   };
   const upd = (id,k,v) => setItems(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
 
@@ -2166,10 +2252,10 @@ const handleSave = async () => {
             <div style={{marginTop:12,border:`1px solid ${BORDER}`,borderRadius:8,overflow:"hidden"}}>
               {items.length===0
                 ?<div style={{padding:28,textAlign:"center",color:TEXT_MUTED,fontSize:13}}>Search above to add products</div>
-                :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              :<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead><tr style={{background:"#f8fafc"}}>
-                    {["#","Product","Qty","Unit","Unit Price","Disc %","Tax %","Total",""].map((h,i)=>(
-                      <th key={i} style={{padding:"8px 10px",fontWeight:600,fontSize:11,color:TEXT_MUTED,borderBottom:`1px solid ${BORDER}`,textTransform:"uppercase",textAlign:i>=2&&i<=7?"right":"left"}}>{h}</th>
+                    {["#","Product","Stock","Qty","Unit","Unit Price","Disc %","Tax %","Total",""].map((h,i)=>(
+                      <th key={i} style={{padding:"8px 10px",fontWeight:600,fontSize:11,color:TEXT_MUTED,borderBottom:`1px solid ${BORDER}`,textTransform:"uppercase",textAlign:i>=2&&i<=8?"right":"left"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -2177,6 +2263,11 @@ const handleSave = async () => {
                       <tr key={r.id} style={{borderBottom:`1px solid ${BORDER}`}}>
                         <td style={{padding:"8px 10px",color:TEXT_MUTED,width:28}}>{i+1}</td>
                         <td style={{padding:"8px 10px",fontWeight:600}}>{r.product}</td>
+                        <td style={{padding:"8px 10px",textAlign:"right"}}>
+                          <span style={{fontSize:11,color:r.stock>0?"#16a34a":RED,background:r.stock>0?"#f0fdf4":"#fef2f2",padding:"2px 6px",borderRadius:4,fontWeight:600}}>
+                            {r.stock ?? "—"}
+                          </span>
+                        </td>
                         <td style={{padding:"8px 10px",textAlign:"right"}}><NInp value={r.qty} min={1} onChange={e=>upd(r.id,"qty",Number(e.target.value))}/></td>
                         <td style={{padding:"8px 10px"}}>
                           <select value={r.unit} onChange={e=>upd(r.id,"unit",e.target.value)} style={{border:`1px solid ${BORDER}`,borderRadius:4,padding:"4px 6px",fontSize:12,fontFamily:F}}>
@@ -2322,6 +2413,7 @@ export function SellReturn() {
   const [view, setView] = useState("list");
   const { data, loading, refresh } = useAPI("/sales-returns");
   const returns = data?.data || [];
+  const [statusF, setStatusF] = useState("All"); // NEW — drives KPI-card filtering
   const [viewRec, setViewRec] = useState(null);
   const [editRec, setEditRec] = useState(null);
 
@@ -2395,11 +2487,18 @@ export function SellReturn() {
     if (res) { setEditRec(null); refresh(); } else alert("Update failed — check server.");
   };
 
-  if (view==="list") {
+const [search, setSearch] = useState("");
+  const filteredReturns = returns.filter(r => {
+    if (statusF !== "All" && (r.refundStatus || "Pending") !== statusF) return false;
+    if (search && !`${r.returnNo} ${r.customer}`.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+if (view==="list") {
     const cols=[
       {label:"Return No."},{label:"Date"},
       {label:"Customer"},{label:"Reference Invoice"},{label:"Reason"},
-      {label:"Refund Status"},{label:"Refunded / Balance (Rs.)",right:true},
+      {label:"Status"},{label:"Refund Status"},{label:"Refunded / Balance (Rs.)",right:true},
       {label:"Amount (Rs.)",right:true},{label:"Action",center:true},
     ];
     const rows=returns.map((r,i)=>{
@@ -2410,6 +2509,7 @@ export function SellReturn() {
         <Td>{fmtDate(r.returnDate)}</Td><Td>{r.customer||"—"}</Td>
         <Td mono muted>{r.invoiceRef||"—"}</Td>
         <Td muted>{r.reason||"—"}</Td>
+        <Td><Badge status={r.docStatus||"Draft"}/></Td>
         <Td><Badge status={r.refundStatus||"Pending"}/></Td>
         <Td right>
           <div style={{lineHeight:1.5}}>
@@ -2418,20 +2518,53 @@ export function SellReturn() {
           </div>
         </Td>
         <Td right><span style={{fontWeight:700,color:RED}}>- Rs. {fmt(r.grandTotal)}</span></Td>
-        <Td center><div style={{display:"flex",gap:2,justifyContent:"center"}}>
+       <Td center><div style={{display:"flex",gap:2,justifyContent:"center"}}>
           <IBtn icon={IC.eye} title="View" onClick={()=>setViewRec(r)}/>
           <IBtn icon={IC.edit} title="Edit" onClick={()=>setEditRec(r)}/>
-          <IBtn icon={IC.print} title="Print" onClick={()=>window.print()}/>
           <IBtn icon={IC.trash} title="Delete" color={RED} onClick={()=>handleDelete(r)}/>
         </div></Td>
       </>
     );});
+
+    const handleExport = () => {
+      downloadCSV(
+        `sales_returns_${Date.now()}.csv`,
+        ["Return No.","Date","Customer","Reference Invoice","Reason","Status","Refund Status","Refunded (Rs.)","Balance (Rs.)","Amount (Rs.)"],
+        filteredReturns.map(r => [r.returnNo, fmtDate(r.returnDate), r.customer, r.invoiceRef,
+          r.reason||"", r.docStatus||"Draft", r.refundStatus||"Pending",
+          r.refundAmount||0, Math.max(0,Number(r.grandTotal||0)-Number(r.refundAmount||0)), r.grandTotal])
+      );
+    };
+
+    const totalRefunded = filteredReturns.reduce((a,r)=>a+Number(r.refundAmount||0),0);
+    const totalBalance  = filteredReturns.reduce((a,r)=>a+Math.max(0,Number(r.grandTotal||0)-Number(r.refundAmount||0)),0);
+
     return (
       <div style={PAGE}>
         <PageHeader title="Sales Returns" breadcrumb="Home / Sell / Returns"
           actions={<PrimaryBtn label="New Return" icon={IC.plus} onClick={()=>setView("add")}/>}/>
-        <div style={{flex:1,minHeight:0,padding:"16px 24px",display:"flex",flexDirection:"column"}}>
-          <TablePage columns={cols} rows={rows} loading={loading} emptyText="No returns recorded yet."/>
+        <div style={{padding:"16px 24px 0",display:"flex",gap:14,flexShrink:0}}>
+          <StatCard label="Total Returns" value={returns.length} sub="All time" accent={GREEN}
+            active={statusF==="All"}
+            onClick={()=>setStatusF("All")}/>
+          <StatCard label="Pending Refunds" value={returns.filter(r=>(r.refundStatus||"Pending")==="Pending").length} sub="Awaiting refund" accent={AMBER}
+            active={statusF==="Pending"}
+            onClick={()=>setStatusF(prev=>prev==="Pending"?"All":"Pending")}/>
+          <StatCard label="Partial Refunds" value={returns.filter(r=>r.refundStatus==="Partial").length} sub="Partially refunded" accent="#6366f1"
+            active={statusF==="Partial"}
+            onClick={()=>setStatusF(prev=>prev==="Partial"?"All":"Partial")}/>
+          <StatCard label="Fully Refunded" value={returns.filter(r=>r.refundStatus==="Refunded").length} sub="Completed" accent="#22c55e"
+            active={statusF==="Refunded"}
+            onClick={()=>setStatusF(prev=>prev==="Refunded"?"All":"Refunded")}/>
+          <StatCard label="Total Refund Balance" value={`Rs. ${fmt(totalBalance)}`} sub={`Rs. ${fmt(totalRefunded)} refunded`} accent={RED}/>
+        </div>
+      <div style={{flex:1,minHeight:0,padding:"14px 24px",display:"flex",flexDirection:"column"}}>
+          <TablePage columns={cols} rows={rows} loading={loading} emptyText="No returns recorded yet."
+            topBar={<>
+              <GhostBtn label="Export CSV" icon={IC.csv} onClick={handleExport}/>
+              <SearchBox value={search} onChange={setSearch} placeholder="Search return or customer..."/>
+            </>}
+            footer={<span style={{fontSize:12,color:TEXT_MUTED}}>Showing {filteredReturns.length} of {returns.length} return(s)</span>}/>
         </div>
 
         {viewRec && (

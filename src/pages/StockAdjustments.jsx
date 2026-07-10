@@ -395,7 +395,20 @@ function ProductPicker({items, setItems, allProds, showToast}) {
     setOpen(false); setQ('');
   };
 
-  const upd = (key,field,val) => setItems(prev=>prev.map(it=>{ if(it._key!==key) return it; const u={...it,[field]:val}; u.subtotal=+(parseFloat(u.quantity||0)*parseFloat(u.unit_cost||0)).toFixed(2); return u; }));
+  const upd = (key,field,val) => setItems(prev=>prev.map(it=>{
+    if(it._key!==key) return it;
+    if(field==='quantity'){
+      const qty = parseFloat(val||0);
+      const stock = parseFloat(it.current_stock||0);
+      if(qty > stock){
+        showToast(`Cannot adjust "${it.product_name}" by ${qty} — only ${stock} in stock`,'error');
+        return it;
+      }
+    }
+    const u={...it,[field]:val};
+    u.subtotal=+(parseFloat(u.quantity||0)*parseFloat(u.unit_cost||0)).toFixed(2);
+    return u;
+  }));
   const del = (key) => setItems(prev=>prev.filter(it=>it._key!==key));
   const total = items.reduce((s,it)=>s+(it.subtotal||0),0);
 
@@ -563,9 +576,17 @@ function EditModal({id, onClose, onSaved, showToast}) {
   },[id]);
 
   const save = async () => {
-    if(!form.location)        { showToast('Location is required','error'); return; }
+if(!form.location)        { showToast('Location is required','error'); return; }
     if(!form.adjustment_type) { showToast('Type is required','error');     return; }
     if(items.length===0)      { showToast('Add at least one product','error'); return; }
+    for(const it of items){
+      const qty = parseFloat(it.quantity)||0;
+      const stock = parseFloat(it.current_stock)||0;
+      if(qty > stock){
+        showToast(`Insufficient stock for "${it.product_name}": only ${stock} available`,'error');
+        return;
+      }
+    }
     setSaving(true);
     try {
       await updateStockAdjustment(id,{
@@ -869,6 +890,14 @@ export function AddStockAdjustment() {
     if(!form.location)        { showToast('Location is required','error');      return; }
     if(!form.adjustment_type) { showToast('Adjustment type is required','error'); return; }
     if(items.length===0)      { showToast('Add at least one product','error');   return; }
+    for(const it of items){
+      const qty = parseFloat(it.quantity)||0;
+      const stock = parseFloat(it.current_stock)||0;
+      if(qty > stock){
+        showToast(`Insufficient stock for "${it.product_name}": only ${stock} available`,'error');
+        return;
+      }
+    }
     setSaving(true);
     try {
       await createStockAdjustment({

@@ -7,6 +7,12 @@
  * - Export CSV / Excel / Print / PDF buttons
  * - Column Visibility toggle
  * - Clean Inter font, green accent, proper table design
+ *
+ * UPDATED: BOM ingredients, BOM finished product, Production's product,
+ * and Work Order's product are now linked to your real Products table via
+ * dropdowns (product_id) instead of free-text. Saving a Production run
+ * deducts BOM components and adds finished-good stock server-side inside
+ * one DB transaction — see services/manufacturingService.js.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -14,6 +20,7 @@ import { Eye, Pencil, Trash2 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const BASE = "/api/manufacturing";
+const PROD_BASE = "/api/products";
 const hdrs = () => ({
   "Content-Type": "application/json",
   Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}`,
@@ -24,6 +31,26 @@ async function api(path, opts = {}) {
   try { body = await res.json(); } catch { body = {}; }
   if (!res.ok) throw new Error(body?.message || body?.error || `Error ${res.status}`);
   return body;
+}
+// Separate helper for hitting the Products API (dropdown source for this module)
+async function apiProducts(path = "", opts = {}) {
+  const res = await fetch(`${PROD_BASE}${path}`, { headers: hdrs(), ...opts });
+  let body;
+  try { body = await res.json(); } catch { body = {}; }
+  if (!res.ok) throw new Error(body?.message || body?.error || `Error ${res.status}`);
+  return body;
+}
+// Shared hook: loads the product list once per tab that needs it
+function useProductOptions() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiProducts("?limit=1000")
+      .then(d => setProducts(d.products || []))
+      .catch(() => setProducts([]))
+      .finally(() => setLoading(false));
+  }, []);
+  return { products, loadingProducts: loading };
 }
 
 // ─── Auto-ref generators (frontend fallback; backend auto-generates too) ──────
@@ -102,6 +129,41 @@ function Code({ v }) {
       fontWeight: 700, color: C.green, background: C.greenLight,
       padding: "2px 8px", borderRadius: 4, border: `1px solid ${C.greenBorder}`,
     }}>{v}</span>
+  );
+}
+
+// ─── Product dropdown (shared) ────────────────────────────────────────────────
+// Plain, dependency-free searchable-ish select used across BOM / Production /
+// Work Orders wherever a product must be picked from the real Products table.
+function ProductSelect({ products, value, onChange, placeholder = "Select product...", disabled }) {
+  const [query, setQuery] = useState("");
+  const filtered = query
+    ? products.filter(p => (p.name || "").toLowerCase().includes(query.toLowerCase()))
+    : products;
+  return (
+    <div>
+      <select
+        style={{ ...sel, opacity: disabled ? 0.6 : 1 }}
+        disabled={disabled}
+        value={value || ""}
+        onChange={e => onChange(e.target.value)}
+      >
+        <option value="">{placeholder}</option>
+        {filtered.map(p => (
+          <option key={p.id} value={p.id}>
+            {p.name}{p.sku ? ` (${p.sku})` : ""} · stock: {p.current_stock ?? 0}
+          </option>
+        ))}
+      </select>
+      {products.length > 8 && (
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Type to filter the list above…"
+          style={{ ...inp, marginTop: 4, fontSize: 11, padding: "5px 10px" }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -397,9 +459,18 @@ function PlanningTab({ show }) {
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
 
-  const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "" };
+  const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "", product_id: "", target_quantity: "", bom_id: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const { products } = useProductOptions();
+  const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
+  const [boms, setBoms] = useState([]);
+  useEffect(() => { api("/bom").then(setBoms).catch(() => {}); }, []);
+  const availableBOMs = boms.filter(b => String(b.product_id) === String(form.product_id));
+  const selectProduct = (productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    setForm(f => ({ ...f, product_id: productId, bom_id: "" }));
+  };
 
   useEffect(() => {
     setLoad(true);
@@ -412,7 +483,7 @@ function PlanningTab({ show }) {
   );
 
   const openAdd = () => { setForm(blank); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ title: r.title, description: r.description || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", status: r.status, priority: r.priority, assigned_team: r.assigned_team || "" }); setEdit(r); setModal(true); };
+const openEdit = r => { setForm({ title: r.title, description: r.description || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", status: r.status, priority: r.priority, assigned_team: r.assigned_team || "", product_id: r.product_id || "", target_quantity: r.target_quantity ?? "", bom_id: r.bom_id || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.title}"?`)) return;
     try { await api(`/plans/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -486,7 +557,10 @@ function PlanningTab({ show }) {
       {modal && (
         <Modal title={edit ? "Edit Plan" : "New Production Plan"} sub="Define timeline, team and goals" onClose={() => setModal(false)}>
           <G2>
-            <Fld label="Plan Title" req span><input style={inp} value={form.title} onChange={e => sf("title", e.target.value)} placeholder="e.g. Q3 Valve Production Run" /></Fld>
+<Fld label="Plan Title" req span><input style={inp} value={form.title} onChange={e => sf("title", e.target.value)} placeholder="e.g. Q3 Valve Production Run" /></Fld>
+            <Fld label="Product"><ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} placeholder="Select product..." /></Fld>
+            <Fld label="Target Quantity"><input type="number" style={inp} value={form.target_quantity} onChange={e => sf("target_quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="BOM / Recipe"><select style={sel} value={form.bom_id} onChange={e => sf("bom_id", e.target.value)} disabled={!form.product_id}><option value="">{form.product_id ? "No BOM (optional)" : "Select a product first"}</option>{availableBOMs.map(b => <option key={b.id} value={b.id}>{b.product_code} · v{b.version}</option>)}</select></Fld>
             <Fld label="Start Date" req><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
             <Fld label="End Date" req><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} /></Fld>
             <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}</select></Fld>
@@ -502,7 +576,7 @@ function PlanningTab({ show }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 2 — BOM
+// TAB 2 — BOM  (ingredients + finished product now linked to real Products)
 // ══════════════════════════════════════════════════════════════════════════════
 function BOMTab({ show }) {
   const [rows, setRows] = useState([]);
@@ -513,12 +587,40 @@ function BOMTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const { products } = useProductOptions();
+  // Split into finished goods (what a BOM can produce) and raw materials
+  // (what a BOM can consume), based on each product's item_type.
+  // Missing/legacy products (no type set) are treated as "both" so nothing
+  // that already existed before this field was added silently disappears.
+  const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
+  const rawMaterials = products.filter(p => !p.item_type || p.item_type === "Raw Material" || p.item_type === "Packing Material" || p.item_type === "Semi-Finished Product");
 
-  const blankI = () => ({ item_name: "", quantity: "", unit: "pcs", cost: "" });
-  const blank = { product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()] };
+  const blankI = () => ({ product_id: "", item_name: "", quantity: "", unit: "pcs", cost: "" });
+  const blank = { product_id: "", product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()] };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const si = (i, k, v) => setForm(f => ({ ...f, ingredients: f.ingredients.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+
+  // When an ingredient row's product changes, snapshot name/unit/cost from the product record
+  const selectIngredientProduct = (i, productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    setForm(f => ({
+      ...f,
+      ingredients: f.ingredients.map((x, j) => j === i ? {
+        ...x,
+        product_id: productId,
+        item_name: prod?.name || x.item_name,
+        unit: prod?.unit || x.unit,
+        cost: prod?.exc_tax ?? x.cost,
+      } : x),
+    }));
+  };
+
+  // When the finished-product dropdown changes, snapshot its name
+  const selectFinishedProduct = (productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    setForm(f => ({ ...f, product_id: productId, product_name: prod?.name || f.product_name }));
+  };
 
   useEffect(() => {
     setLoad(true);
@@ -529,13 +631,14 @@ function BOMTab({ show }) {
   const fil = rows.filter(r => `${r.product_name} ${r.product_code}`.toLowerCase().includes(search.toLowerCase()));
 
   const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()] }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()] }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete BOM for "${r.product_name}"?`)) return;
     try { await api(`/bom/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
   };
   const save = async () => {
-    if (!form.product_name || !form.quantity) { show("Product name & quantity required.", "error"); return; }
+    if (!form.product_id) { show("Please select the finished product.", "error"); return; }
+    if (!form.quantity) { show("Base quantity is required.", "error"); return; }
     setSaving(true);
     try {
       if (edit) { const d = await api(`/bom/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("BOM updated."); }
@@ -586,7 +689,7 @@ function BOMTab({ show }) {
                 <thead><tr style={{ background: C.green }}>{["Item", "Qty", "Unit", "Unit Cost", "Total"].map(h => <th key={h} style={{ padding: "7px 12px", textAlign: "left", color: C.white, fontWeight: 700 }}>{h}</th>)}</tr></thead>
                 <tbody>{viewRow.ingredients.map((ing, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}`, background: i % 2 ? C.gray50 : C.white }}>
-                    <td style={{ padding: "8px 12px", fontWeight: 600 }}>{ing.item_name}</td>
+                    <td style={{ padding: "8px 12px", fontWeight: 600 }}>{ing.item_name}{ing.product_id ? "" : <span style={{ color: C.gray400, fontWeight: 400, fontSize: 11 }}> (unlinked)</span>}</td>
                     <td style={{ padding: "8px 12px" }}>{ing.quantity}</td>
                     <td style={{ padding: "8px 12px", color: C.gray500 }}>{ing.unit}</td>
                     <td style={{ padding: "8px 12px" }}>₹{(parseFloat(ing.cost) || 0).toLocaleString("en-IN")}</td>
@@ -605,7 +708,9 @@ function BOMTab({ show }) {
       {modal && (
         <Modal title={edit ? "Edit BOM" : "New Bill of Materials"} sub="Define product structure and material costs" onClose={() => setModal(false)} wide>
           <G2>
-            <Fld label="Product Name" req span><input style={inp} value={form.product_name} onChange={e => sf("product_name", e.target.value)} placeholder="Industrial Valve A3" /></Fld>
+            <Fld label="Finished Product" req span>
+              <ProductSelect products={finishedProducts} value={form.product_id} onChange={selectFinishedProduct} placeholder="Select the product this BOM produces..." />
+            </Fld>
             <Fld label="BOM Code"><input style={{ ...inp, background: C.gray50 }} value={form.product_code} onChange={e => sf("product_code", e.target.value)} placeholder="Auto-generated" /></Fld>
             <Fld label="Base Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
             <Fld label="Unit"><select style={sel} value={form.unit} onChange={e => sf("unit", e.target.value)}>{["pcs", "kg", "ltrs", "mtrs", "boxes"].map(u => <option key={u}>{u}</option>)}</select></Fld>
@@ -614,14 +719,19 @@ function BOMTab({ show }) {
             <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
           </G2>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 8px" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Components</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Components (raw materials)</span>
             <button onClick={() => setForm(f => ({ ...f, ingredients: [...f.ingredients, blankI()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Row</button>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
-            <thead><tr style={{ background: C.gray50, borderBottom: `1px solid ${C.gray200}` }}>{["Item Name", "Qty", "Unit", "Cost ₹", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: C.gray50, borderBottom: `1px solid ${C.gray200}` }}>{["Product (raw material)", "Qty", "Unit", "Cost ₹", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
             <tbody>{form.ingredients.map((ing, i) => (
               <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}` }}>
-                <td style={{ padding: "4px 4px" }}><input style={{ ...inp, fontSize: 12 }} value={ing.item_name} onChange={e => si(i, "item_name", e.target.value)} placeholder="Steel Body" /></td>
+                <td style={{ padding: "4px 4px", minWidth: 180 }}>
+                  <select style={{ ...sel, fontSize: 12 }} value={ing.product_id} onChange={e => selectIngredientProduct(i, e.target.value)}>
+                    <option value="">Select raw material...</option>
+                    {rawMaterials.map(p => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>)}
+                  </select>
+                </td>
                 <td style={{ padding: "4px 4px", width: 70 }}><input type="number" style={{ ...inp, fontSize: 12 }} value={ing.quantity} onChange={e => si(i, "quantity", e.target.value)} min={0} /></td>
                 <td style={{ padding: "4px 4px", width: 70 }}><input style={{ ...inp, fontSize: 12 }} value={ing.unit} onChange={e => si(i, "unit", e.target.value)} /></td>
                 <td style={{ padding: "4px 4px", width: 90 }}><input type="number" style={{ ...inp, fontSize: 12 }} value={ing.cost} onChange={e => si(i, "cost", e.target.value)} min={0} /></td>
@@ -637,7 +747,7 @@ function BOMTab({ show }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 3 — WORK ORDERS
+// TAB 3 — WORK ORDERS  (product now linked to real Products)
 // ══════════════════════════════════════════════════════════════════════════════
 function WorkOrdersTab({ show }) {
   const [rows, setRows] = useState([]);
@@ -649,10 +759,31 @@ function WorkOrdersTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const { products } = useProductOptions();
+  const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
 
-  const blank = { wo_number: "", product_name: "", quantity: "", unit: "pcs", start_date: "", end_date: "", priority: "medium", status: "planned", assigned_team: "", progress: 0, notes: "" };
+  const blank = { wo_number: "", product_id: "", product_name: "", quantity: "", unit: "pcs", start_date: "", end_date: "", priority: "medium", status: "planned", assigned_team: "", progress: 0, notes: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+const [plans, setPlans] = useState([]);
+  useEffect(() => { api("/plans").then(setPlans).catch(() => {}); }, []);
+
+  const selectProduct = (productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    const plan = plans.find(p => String(p.product_id) === String(productId));
+    setForm(f => ({
+      ...f,
+      product_id: productId,
+      product_name: prod?.name || f.product_name,
+      unit: prod?.unit || f.unit,
+      quantity: plan?.target_quantity || f.quantity,
+      start_date: plan?.start_date?.slice(0, 10) || f.start_date,
+      end_date: plan?.end_date?.slice(0, 10) || f.end_date,
+      priority: plan?.priority || f.priority,
+      assigned_team: plan?.assigned_team || f.assigned_team,
+    }));
+  };
 
   useEffect(() => {
     setLoad(true);
@@ -662,13 +793,14 @@ function WorkOrdersTab({ show }) {
   const fil = rows.filter(r => (!fStatus || r.status === fStatus) && `${r.wo_number} ${r.product_name} ${r.assigned_team}`.toLowerCase().includes(search.toLowerCase()));
 
   const openAdd = () => { setForm({ ...blank, wo_number: genRef("WO", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ wo_number: r.wo_number, product_name: r.product_name, quantity: r.quantity, unit: r.unit, start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ wo_number: r.wo_number, product_id: r.product_id || "", product_name: r.product_name, quantity: r.quantity, unit: r.unit, start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.wo_number}"?`)) return;
     try { await api(`/work-orders/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
   };
   const save = async () => {
-    if (!form.product_name || !form.quantity) { show("Product & quantity required.", "error"); return; }
+    if (!form.product_id) { show("Please select a product.", "error"); return; }
+    if (!form.quantity) { show("Quantity is required.", "error"); return; }
     setSaving(true);
     try {
       if (edit) { const d = await api(`/work-orders/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("Updated."); }
@@ -751,7 +883,7 @@ function WorkOrdersTab({ show }) {
         <Modal title={edit ? `Edit ${edit.wo_number}` : "New Work Order"} onClose={() => setModal(false)}>
           <G2>
             <Fld label="WO Number"><input style={{ ...inp, background: C.gray50 }} value={form.wo_number} onChange={e => sf("wo_number", e.target.value)} placeholder="Auto-generated" /></Fld>
-            <Fld label="Product Name" req><input style={inp} value={form.product_name} onChange={e => sf("product_name", e.target.value)} /></Fld>
+            <Fld label="Product" req><ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} /></Fld>
             <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
             <Fld label="Unit"><select style={sel} value={form.unit} onChange={e => sf("unit", e.target.value)}>{["pcs", "kg", "mtrs", "ltrs", "boxes"].map(u => <option key={u}>{u}</option>)}</select></Fld>
             <Fld label="Start Date"><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
@@ -770,10 +902,11 @@ function WorkOrdersTab({ show }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 4 — PRODUCTION
+// TAB 4 — PRODUCTION  (the stock-moving event: product + BOM dropdowns)
 // ══════════════════════════════════════════════════════════════════════════════
 function ProductionTab({ show }) {
   const [rows, setRows] = useState([]);
+  const [boms, setBoms] = useState([]);
   const [load, setLoad] = useState(true);
   const [search, setSearch] = useState("");
   const [viewRow, setViewRow] = useState(null);
@@ -781,33 +914,75 @@ function ProductionTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const { products } = useProductOptions();
+  const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
   const today = new Date().toISOString().split("T")[0];
 
-  const blank = { ref_no: "", location: "", product: "", quantity: "", total_cost: "", date: today, recipe_used: "", notes: "" };
+  const blank = { ref_no: "", location: "", product_id: "", product: "", quantity: "", total_cost: "", date: today, bom_id: "", notes: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
     setLoad(true);
-    api("/production").then(d => setRows(d)).catch(() => {}).finally(() => setLoad(false));
+    Promise.all([api("/production"), api("/bom").catch(() => [])])
+      .then(([prod, bomList]) => { setRows(prod); setBoms(bomList); })
+      .catch(() => {})
+      .finally(() => setLoad(false));
   }, []);
 
   const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0);
   const totalCost = rows.reduce((s, r) => s + (parseFloat(r.total_cost) || 0), 0);
 
+  // Only show BOMs that produce the currently-selected finished product
+  const availableBOMs = boms.filter(b => String(b.product_id) === String(form.product_id));
+  const selectedBOM = boms.find(b => String(b.id) === String(form.bom_id));
+
+  // Live preview of what will be deducted, scaled to the entered quantity
+  const scale = selectedBOM && form.quantity ? (parseFloat(form.quantity) / (parseFloat(selectedBOM.quantity) || 1)) : 0;
+  const previewComponents = selectedBOM
+    ? selectedBOM.ingredients.map(i => ({
+        ...i,
+        needed: (parseFloat(i.quantity) || 0) * scale,
+        productMeta: products.find(p => String(p.id) === String(i.product_id)),
+      }))
+    : [];
+  const previewCost = previewComponents.reduce((s, i) => s + i.needed * (parseFloat(i.cost) || 0), 0);
+
+  const [workOrders, setWorkOrders] = useState([]);
+  const [plans, setPlans] = useState([]);
+  useEffect(() => {
+    api("/work-orders").then(setWorkOrders).catch(() => {});
+    api("/plans").then(setPlans).catch(() => {});
+  }, []);
+
+  const selectProduct = (productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    const openWO = workOrders.find(w => String(w.product_id) === String(productId) && w.status !== "completed");
+    const plan = plans.find(p => String(p.product_id) === String(productId));
+    const matchingBOM = boms.find(b => String(b.product_id) === String(productId));
+    setForm(f => ({
+      ...f,
+      product_id: productId,
+      product: prod?.name || "",
+      quantity: openWO?.quantity || plan?.target_quantity || f.quantity,
+      bom_id: matchingBOM ? String(matchingBOM.id) : "",
+    }));
+  };
+
   const openAdd = () => { setForm({ ...blank, ref_no: genRef("PRD", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product: r.product, quantity: r.quantity, total_cost: r.total_cost || "", date: r.date?.slice(0, 10) || today, recipe_used: r.recipe_used || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product_id: r.product_id || "", product: r.product, quantity: r.quantity, total_cost: r.total_cost || "", date: r.date?.slice(0, 10) || today, bom_id: r.bom_id || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
   const del = async r => {
-    if (!confirm(`Delete "${r.ref_no}"?`)) return;
-    try { await api(`/production/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
+    if (!confirm(`Delete "${r.ref_no}"? This will reverse its stock effect (component stock restored, finished-good stock removed).`)) return;
+    try { await api(`/production/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted — stock reversed.", "info"); } catch (e) { show(e.message, "error"); }
   };
   const save = async () => {
-    if (!form.product || !form.quantity) { show("Product & quantity required.", "error"); return; }
+    if (!form.product_id) { show("Please select the product being produced.", "error"); return; }
+    if (!form.quantity || form.quantity <= 0) { show("Quantity must be greater than 0.", "error"); return; }
     setSaving(true);
     try {
-      if (edit) { const d = await api(`/production/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("Updated."); }
-      else { const d = await api("/production", { method: "POST", body: JSON.stringify(form) }); setRows(p => [d, ...p]); show("Saved."); }
+      if (edit) { const d = await api(`/production/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("Updated — stock adjusted."); }
+      else { const d = await api("/production", { method: "POST", body: JSON.stringify(form) }); setRows(p => [d, ...p]); show("Saved — stock updated."); }
       setModal(false);
     } catch (e) { show(e.message, "error"); } finally { setSaving(false); }
   };
@@ -823,7 +998,7 @@ function ProductionTab({ show }) {
   ];
 
   return (
-    <PageShell title="Production" sub="Record and track production runs" icon="🏭">
+    <PageShell title="Production" sub="Record production runs — saving deducts BOM components and adds finished-good stock" icon="🏭">
       <KPIs cards={[
         { icon: "🏭", label: "Total Runs",  value: rows.length,                                        color: C.green },
         { icon: "📦", label: "Total Qty",   value: totalQty,                                           color: C.blue },
@@ -854,17 +1029,59 @@ function ProductionTab({ show }) {
       )}
 
       {modal && (
-        <Modal title={edit ? "Edit Production" : "Add Production Record"} onClose={() => setModal(false)}>
+        <Modal title={edit ? "Edit Production" : "Add Production Record"} onClose={() => setModal(false)} wide>
           <G2>
             <Fld label="Reference No"><input style={{ ...inp, background: C.gray50 }} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
             <Fld label="Date"><input type="date" style={inp} value={form.date} onChange={e => sf("date", e.target.value)} /></Fld>
-            <Fld label="Product" req><input style={inp} value={form.product} onChange={e => sf("product", e.target.value)} /></Fld>
-            <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Product (finished good)" req span>
+              <ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} placeholder="Select the product being produced..." />
+            </Fld>
+            <Fld label="Quantity Produced" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
             <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Unit A - Chennai" /></Fld>
-            <Fld label="Total Cost (₹)"><input type="number" style={inp} value={form.total_cost} onChange={e => sf("total_cost", e.target.value)} min={0} /></Fld>
-            <Fld label="Recipe / BOM"><input style={inp} value={form.recipe_used} onChange={e => sf("recipe_used", e.target.value)} placeholder="BOM-0001" /></Fld>
+            <Fld label="BOM / Recipe Used">
+              <select style={sel} value={form.bom_id} onChange={e => sf("bom_id", e.target.value)} disabled={!form.product_id}>
+                <option value="">
+                  {form.product_id ? (availableBOMs.length ? "No BOM (manual cost)" : "No BOM defined for this product") : "Select a product first"}
+                </option>
+                {availableBOMs.map(b => <option key={b.id} value={b.id}>{b.product_code} · v{b.version}</option>)}
+              </select>
+            </Fld>
+            <Fld label="Total Cost (₹)">
+              <input type="number" style={{ ...inp, background: form.bom_id ? C.gray50 : C.white }} value={form.bom_id ? previewCost.toFixed(2) : form.total_cost} onChange={e => sf("total_cost", e.target.value)} min={0} disabled={!!form.bom_id} />
+            </Fld>
             <Fld label="Notes"><input style={inp} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
           </G2>
+
+          {form.bom_id && (
+            <div style={{ marginTop: 18, background: C.greenLight, border: `1px solid ${C.greenBorder}`, borderRadius: 8, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8, fontFamily: font }}>
+                Stock impact preview {form.quantity ? `(for ${form.quantity} units)` : ""}
+              </div>
+              {previewComponents.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.gray500 }}>This BOM has no components.</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                  <thead><tr>{["Component", "Will deduct", "Stock available"].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 8px", color: C.gray600, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                  <tbody>{previewComponents.map((c, i) => {
+                    const short = c.productMeta && (c.productMeta.current_stock ?? 0) < c.needed;
+                    return (
+                      <tr key={i}>
+                        <td style={{ padding: "4px 8px", fontWeight: 600 }}>{c.item_name}</td>
+                        <td style={{ padding: "4px 8px" }}>{c.needed.toFixed(2)} {c.unit}</td>
+                        <td style={{ padding: "4px 8px", color: short ? C.red : C.gray600, fontWeight: short ? 700 : 400 }}>
+                          {c.productMeta ? c.productMeta.current_stock ?? 0 : "unlinked"} {short ? "⚠ insufficient" : ""}
+                        </td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+              )}
+              <div style={{ fontSize: 11, color: C.gray500, marginTop: 8 }}>
+                Finished stock for <b>{form.product}</b> will increase by <b>{form.quantity || 0}</b> when saved.
+              </div>
+            </div>
+          )}
+
           <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Save Production"} />
         </Modal>
       )}
@@ -969,21 +1186,293 @@ function ResourcesTab({ show }) {
     </PageShell>
   );
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB 6 — MACHINES  (Advanced: OEE dashboard, health timeline, full profile)
+// ══════════════════════════════════════════════════════════════════════════════
+function OEEGauge({ pct, label, color }) {
+  const clamped = Math.max(0, Math.min(100, pct || 0));
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ position: "relative", width: 84, height: 84, margin: "0 auto" }}>
+        <svg width="84" height="84" viewBox="0 0 84 84">
+          <circle cx="42" cy="42" r="36" fill="none" stroke={C.gray200} strokeWidth="8" />
+          <circle cx="42" cy="42" r="36" fill="none" stroke={color} strokeWidth="8"
+            strokeDasharray={`${clamped * 2.26} 226`} strokeLinecap="round"
+            transform="rotate(-90 42 42)" />
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, color: C.gray900, fontFamily: font }}>
+          {clamped.toFixed(0)}%
+        </div>
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase", letterSpacing: .4, marginTop: 6, fontFamily: font }}>{label}</div>
+    </div>
+  );
+}
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB 6 — MACHINES
-// ══════════════════════════════════════════════════════════════════════════════
+function MachineDetailModal({ machineId, onClose, show }) {
+  const [detail, setDetail] = useState(null);
+  const [oee, setOee] = useState(null);
+  const [load, setLoad] = useState(true);
+  const [tab, setTab] = useState("overview");
+  const [logModal, setLogModal] = useState(false);
+  const [logForm, setLogForm] = useState({ event_type: "running", reason: "", start_time: "", end_time: "", units_produced: "", units_rejected: "", notes: "" });
+  const [savingLog, setSavingLog] = useState(false);
+  const today = new Date().toISOString().split("T")[0];
+  const monthStart = new Date(new Date().setDate(1)).toISOString().split("T")[0];
+
+  const load1 = useCallback(() => {
+    setLoad(true);
+    Promise.all([
+      api(`/machines/${machineId}/detail`),
+      api(`/machines/${machineId}/oee?from=${monthStart}&to=${today}`).catch(() => null),
+    ]).then(([d, o]) => { setDetail(d); setOee(o); }).catch(() => {}).finally(() => setLoad(false));
+  }, [machineId]);
+
+  useEffect(() => { load1(); }, [load1]);
+
+  const saveLog = async () => {
+    if (!logForm.start_time) { show("Start time required.", "error"); return; }
+    setSavingLog(true);
+    try {
+      await api(`/machines/${machineId}/logs`, { method: "POST", body: JSON.stringify(logForm) });
+      setLogModal(false);
+      setLogForm({ event_type: "running", reason: "", start_time: "", end_time: "", units_produced: "", units_rejected: "", notes: "" });
+      show("Log entry added.");
+      load1();
+    } catch (e) { show(e.message, "error"); } finally { setSavingLog(false); }
+  };
+
+  const delLog = async (logId) => {
+    if (!confirm("Delete this log entry?")) return;
+    try { await api(`/machines/logs/${logId}`, { method: "DELETE" }); show("Log deleted.", "info"); load1(); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  if (load || !detail) {
+    return (
+      <Modal title="Loading machine profile…" onClose={onClose} wide>
+        <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400 }}>Loading…</div>
+      </Modal>
+    );
+  }
+
+  const TABS = [
+    { k: "overview", l: "Overview" },
+    { k: "oee", l: "OEE / Utilization" },
+    { k: "health", l: "Health Timeline" },
+    { k: "maintenance", l: "Maintenance History" },
+    { k: "documents", l: "Documents" },
+  ];
+
+  return (
+    <Modal title={detail.name} sub={`${detail.machine_code || "No code"} · ${detail.type || "—"} · ${detail.location || "—"}`} onClose={onClose} wide>
+      <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.gray200}`, marginBottom: 16, flexWrap: "wrap" }}>
+        {TABS.map(t => (
+          <button key={t.k} onClick={() => setTab(t.k)} style={{
+            padding: "8px 14px", border: "none", background: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 700, fontFamily: font,
+            color: tab === t.k ? C.green : C.gray500,
+            borderBottom: tab === t.k ? `2px solid ${C.green}` : "2px solid transparent",
+          }}>{t.l}</button>
+        ))}
+      </div>
+
+      {tab === "overview" && (
+        <div>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+            <Badge value={detail.status} />
+            {detail.next_maintenance && new Date(detail.next_maintenance) < new Date() && <Badge value="overdue" />}
+          </div>
+          <DR label="Machine Code" value={<Code v={detail.machine_code} />} />
+          <DR label="Type" value={detail.type} />
+          <DR label="Location" value={detail.location} />
+          <DR label="Manufacturer" value={detail.manufacturer} />
+          <DR label="Model" value={detail.model} />
+          <DR label="Serial Number" value={detail.serial_number} />
+          <DR label="Purchase Date" value={detail.purchase_date?.slice(0, 10)} />
+          <DR label="Install Date" value={detail.install_date?.slice(0, 10)} />
+          <DR label="Rated Capacity" value={detail.rated_capacity ? `${detail.rated_capacity} ${detail.rated_capacity_unit || "units/hr"}` : "—"} />
+          <DR label="Power Rating" value={detail.power_rating} />
+          <DR label="Warranty Expiry" value={detail.warranty_expiry?.slice(0, 10)} />
+          <DR label="Last Maintenance" value={detail.last_maintenance?.slice(0, 10)} />
+          <DR label="Next Maintenance" value={detail.next_maintenance?.slice(0, 10)} />
+          <DR label="Notes" value={detail.notes} />
+        </div>
+      )}
+
+      {tab === "oee" && (
+        <div>
+          <div style={{ fontSize: 11, color: C.gray400, marginBottom: 14, fontFamily: font }}>Period: {monthStart} → {today}</div>
+          {oee ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-around", padding: "16px 0", background: C.gray50, borderRadius: 10, marginBottom: 16 }}>
+                <OEEGauge pct={oee.oee_pct} label="Overall OEE" color={oee.oee_pct >= 75 ? C.green : oee.oee_pct >= 50 ? C.amber : C.red} />
+                <OEEGauge pct={oee.availability_pct} label="Availability" color={C.blue} />
+                <OEEGauge pct={oee.performance_pct} label="Performance" color={C.purple} />
+                <OEEGauge pct={oee.quality_pct} label="Quality" color={C.green} />
+              </div>
+              <G2 cols={3}>
+                <div style={{ background: C.white, border: `1px solid ${C.gray200}`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.gray900 }}>{oee.run_hours}h</div>
+                  <div style={{ fontSize: 11, color: C.gray400, fontFamily: font }}>Run Time</div>
+                </div>
+                <div style={{ background: C.white, border: `1px solid ${C.gray200}`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.red }}>{oee.down_hours}h</div>
+                  <div style={{ fontSize: 11, color: C.gray400, fontFamily: font }}>Downtime</div>
+                </div>
+                <div style={{ background: C.white, border: `1px solid ${C.gray200}`, borderRadius: 8, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.gray900 }}>{oee.units_produced}</div>
+                  <div style={{ fontSize: 11, color: C.gray400, fontFamily: font }}>Units Produced</div>
+                </div>
+              </G2>
+              {Object.keys(oee.downtime_breakdown || {}).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.gray600, marginBottom: 8, fontFamily: font }}>Downtime Reasons</div>
+                  {Object.entries(oee.downtime_breakdown).map(([reason, hrs]) => (
+                    <div key={reason} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.gray100}`, fontSize: 12 }}>
+                      <span>{reason}</span><span style={{ fontWeight: 700, color: C.red }}>{hrs.toFixed(1)}h</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : <div style={{ color: C.gray400, fontSize: 13, padding: 24, textAlign: "center" }}>No log data yet for this period. Add a health log entry to start tracking OEE.</div>}
+        </div>
+      )}
+
+      {tab === "health" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <button onClick={() => setLogModal(true)} style={{ padding: "7px 14px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Log Event</button>
+          </div>
+          {detail.logs?.length === 0 ? (
+            <div style={{ color: C.gray400, fontSize: 13, padding: 24, textAlign: "center" }}>No events logged yet.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {detail.logs.map(l => {
+                const evColor = { running: C.green, idle: C.amber, downtime: C.red, maintenance: C.purple }[l.event_type] || C.gray500;
+                return (
+                  <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.gray50, borderRadius: 8, border: `1px solid ${C.gray200}` }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: evColor, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.gray900, textTransform: "capitalize" }}>{l.event_type}{l.reason ? ` — ${l.reason}` : ""}</div>
+                      <div style={{ fontSize: 11, color: C.gray400 }}>
+                        {new Date(l.start_time).toLocaleString()} {l.end_time ? `→ ${new Date(l.end_time).toLocaleString()}` : "(ongoing)"}
+                        {l.units_produced ? ` · ${l.units_produced} produced` : ""}{l.units_rejected ? ` · ${l.units_rejected} rejected` : ""}
+                      </div>
+                    </div>
+                    <button onClick={() => delLog(l.id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer" }}><Trash2 size={15} /></button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "maintenance" && (
+        <div>
+          {detail.maintenance_history?.length === 0 ? (
+            <div style={{ color: C.gray400, fontSize: 13, padding: 24, textAlign: "center" }}>No maintenance records for this machine yet.</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+              <thead><tr style={{ background: C.gray50 }}>{["Ref", "Type", "Scheduled", "Completed", "Cost", "Status"].map(h => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700, color: C.gray500 }}>{h}</th>)}</tr></thead>
+              <tbody>{detail.maintenance_history.map(m => (
+                <tr key={m.id} style={{ borderBottom: `1px solid ${C.gray100}` }}>
+                  <td style={{ padding: "8px 10px" }}><Code v={m.ref_no} /></td>
+                  <td style={{ padding: "8px 10px" }}>{m.maintenance_type}</td>
+                  <td style={{ padding: "8px 10px" }}>{m.scheduled_date?.slice(0, 10)}</td>
+                  <td style={{ padding: "8px 10px" }}>{m.completed_date?.slice(0, 10) || "—"}</td>
+                  <td style={{ padding: "8px 10px", color: C.amber, fontWeight: 700 }}>{m.cost ? `₹${Number(m.cost).toLocaleString("en-IN")}` : "—"}</td>
+                  <td style={{ padding: "8px 10px" }}><Badge value={m.status} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {tab === "documents" && (
+        <MachineDocuments machineId={machineId} documents={detail.documents} onChange={load1} show={show} />
+      )}
+
+      {logModal && (
+        <Modal title="Log Machine Event" onClose={() => setLogModal(false)}>
+          <G2>
+            <Fld label="Event Type" req><select style={sel} value={logForm.event_type} onChange={e => setLogForm(f => ({ ...f, event_type: e.target.value }))}>{["running", "idle", "downtime", "maintenance"].map(t => <option key={t}>{t}</option>)}</select></Fld>
+            <Fld label="Reason"><input style={inp} value={logForm.reason} onChange={e => setLogForm(f => ({ ...f, reason: e.target.value }))} placeholder="e.g. Belt replacement" /></Fld>
+            <Fld label="Start Time" req><input type="datetime-local" style={inp} value={logForm.start_time} onChange={e => setLogForm(f => ({ ...f, start_time: e.target.value }))} /></Fld>
+            <Fld label="End Time"><input type="datetime-local" style={inp} value={logForm.end_time} onChange={e => setLogForm(f => ({ ...f, end_time: e.target.value }))} /></Fld>
+            <Fld label="Units Produced"><input type="number" style={inp} value={logForm.units_produced} onChange={e => setLogForm(f => ({ ...f, units_produced: e.target.value }))} min={0} /></Fld>
+            <Fld label="Units Rejected"><input type="number" style={inp} value={logForm.units_rejected} onChange={e => setLogForm(f => ({ ...f, units_rejected: e.target.value }))} min={0} /></Fld>
+            <Fld label="Notes" span><textarea style={ta} value={logForm.notes} onChange={e => setLogForm(f => ({ ...f, notes: e.target.value }))} /></Fld>
+          </G2>
+          <MFoot onClose={() => setLogModal(false)} onSave={saveLog} saving={savingLog} label="Save Log" />
+        </Modal>
+      )}
+    </Modal>
+  );
+}
+
+function MachineDocuments({ machineId, documents, onChange, show }) {
+  const [form, setForm] = useState({ doc_name: "", doc_url: "", doc_type: "manual" });
+  const [saving, setSaving] = useState(false);
+
+  const add = async () => {
+    if (!form.doc_name || !form.doc_url) { show("Name and URL required.", "error"); return; }
+    setSaving(true);
+    try {
+      await api(`/machines/${machineId}/documents`, { method: "POST", body: JSON.stringify(form) });
+      setForm({ doc_name: "", doc_url: "", doc_type: "manual" });
+      show("Document added.");
+      onChange();
+    } catch (e) { show(e.message, "error"); } finally { setSaving(false); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("Remove this document?")) return;
+    try { await api(`/machines/documents/${id}`, { method: "DELETE" }); show("Removed.", "info"); onChange(); }
+    catch (e) { show(e.message, "error"); }
+  };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px auto", gap: 8, marginBottom: 16 }}>
+        <input style={inp} placeholder="Document name" value={form.doc_name} onChange={e => setForm(f => ({ ...f, doc_name: e.target.value }))} />
+        <input style={inp} placeholder="URL" value={form.doc_url} onChange={e => setForm(f => ({ ...f, doc_url: e.target.value }))} />
+        <select style={sel} value={form.doc_type} onChange={e => setForm(f => ({ ...f, doc_type: e.target.value }))}>
+          {["manual", "spec_sheet", "certificate", "other"].map(t => <option key={t}>{t}</option>)}
+        </select>
+        <button onClick={add} disabled={saving} style={{ padding: "0 16px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{saving ? "…" : "+ Add"}</button>
+      </div>
+      {documents?.length === 0 ? (
+        <div style={{ color: C.gray400, fontSize: 13, padding: 24, textAlign: "center" }}>No documents attached.</div>
+      ) : (
+        documents.map(d => (
+          <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: C.gray50, borderRadius: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: C.greenLight, color: C.green }}>{d.doc_type}</span>
+            <a href={d.doc_url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13, color: C.blue, textDecoration: "none" }}>{d.doc_name}</a>
+            <button onClick={() => del(d.id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer" }}><Trash2 size={14} /></button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function MachinesTab({ show }) {
   const [rows, setRows] = useState([]);
   const [load, setLoad] = useState(true);
   const [search, setSearch] = useState("");
   const [viewRow, setViewRow] = useState(null);
+  const [detailMachineId, setDetailMachineId] = useState(null);
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [fleetOee, setFleetOee] = useState(null);
 
-  const blank = { name: "", machine_code: "", type: "", location: "", manufacturer: "", model: "", purchase_date: "", status: "active", last_maintenance: "", next_maintenance: "", notes: "" };
+  const blank = { name: "", machine_code: "", type: "", location: "", manufacturer: "", model: "", purchase_date: "", status: "active", last_maintenance: "", next_maintenance: "", notes: "", rated_capacity: "", rated_capacity_unit: "units/hr", power_rating: "", serial_number: "", warranty_expiry: "", install_date: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -992,10 +1481,16 @@ function MachinesTab({ show }) {
     api("/machines").then(d => setRows(d)).catch(() => {}).finally(() => setLoad(false));
   }, []);
 
+  useEffect(() => {
+    const monthStart = new Date(new Date().setDate(1)).toISOString().split("T")[0];
+    const today = new Date().toISOString().split("T")[0];
+    api(`/machines/oee?from=${monthStart}&to=${today}`).then(setFleetOee).catch(() => {});
+  }, [rows]);
+
   const fil = rows.filter(r => `${r.name} ${r.machine_code} ${r.type} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
 
   const openAdd = () => { setForm({ ...blank, machine_code: genRef("MCH", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ name: r.name, machine_code: r.machine_code || "", type: r.type || "", location: r.location || "", manufacturer: r.manufacturer || "", model: r.model || "", purchase_date: r.purchase_date?.slice(0, 10) || "", status: r.status, last_maintenance: r.last_maintenance?.slice(0, 10) || "", next_maintenance: r.next_maintenance?.slice(0, 10) || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ name: r.name, machine_code: r.machine_code || "", type: r.type || "", location: r.location || "", manufacturer: r.manufacturer || "", model: r.model || "", purchase_date: r.purchase_date?.slice(0, 10) || "", status: r.status, last_maintenance: r.last_maintenance?.slice(0, 10) || "", next_maintenance: r.next_maintenance?.slice(0, 10) || "", notes: r.notes || "", rated_capacity: r.rated_capacity || "", rated_capacity_unit: r.rated_capacity_unit || "units/hr", power_rating: r.power_rating || "", serial_number: r.serial_number || "", warranty_expiry: r.warranty_expiry?.slice(0, 10) || "", install_date: r.install_date?.slice(0, 10) || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.name}"?`)) return;
     try { await api(`/machines/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -1010,23 +1505,25 @@ function MachinesTab({ show }) {
     } catch (e) { show(e.message, "error"); } finally { setSaving(false); }
   };
 
+  const oeeFor = (machineId) => fleetOee?.machines?.find(m => String(m.machine_id) === String(machineId));
+
   const COLS = [
     { k: "machine_code",     l: "Machine Code",    render: v => <Code v={v} /> },
     { k: "name",             l: "Machine Name",    render: (v, r) => <div><div style={{ fontWeight: 600, color: C.gray900 }}>{v}</div><div style={{ fontSize: 11, color: C.gray400 }}>{r.manufacturer} {r.model}</div></div> },
     { k: "type",             l: "Type",            render: v => <span style={{ fontSize: 12, color: C.gray500 }}>{v || "—"}</span> },
     { k: "location",         l: "Location",        render: v => <span style={{ fontSize: 12, color: C.gray500 }}>{v || "—"}</span> },
-    { k: "last_maintenance", l: "Last Maintenance", render: v => v?.slice(0, 10) || "—" },
+    { k: "id",                l: "OEE (MTD)",       render: (v) => { const o = oeeFor(v); return o ? <span style={{ fontWeight: 700, color: o.oee_pct >= 75 ? C.green : o.oee_pct >= 50 ? C.amber : C.red }}>{o.oee_pct}%</span> : "—"; } },
     { k: "next_maintenance", l: "Next Maintenance", render: v => v?.slice(0, 10) || "—" },
     { k: "status",           l: "Status",          render: v => <Badge value={v} /> },
   ];
 
   return (
-    <PageShell title="Machines" sub="Machine registry, maintenance schedules and status" icon="🔩">
+    <PageShell title="Machines" sub="Machine registry, OEE dashboard, health timeline and maintenance history" icon="🔩">
       <KPIs cards={[
         { icon: "🔩", label: "Total",       value: rows.length,                                              color: C.green },
-        { icon: "✅", label: "Active",       value: rows.filter(r => r.status === "active").length,           color: C.green },
+        { icon: "✅", label: "Active",       value: rows.filter(r => r.status === "active" || r.status === "running").length, color: C.green },
         { icon: "🔧", label: "Maintenance", value: rows.filter(r => r.status === "maintenance").length,       color: C.red },
-        { icon: "❌", label: "Inactive",    value: rows.filter(r => r.status === "inactive").length,          color: C.gray500 },
+        { icon: "📊", label: "Fleet OEE (MTD)", value: fleetOee ? `${fleetOee.fleet_average_oee}%` : "—",     color: C.blue },
       ]} />
       <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
@@ -1034,29 +1531,16 @@ function MachinesTab({ show }) {
             onCSV={() => exportCSV(fil, COLS, "machines.csv")} onExcel={() => exportExcel(fil, COLS, "machines.xls")} onPrint={() => printTable(fil, COLS, "Machines")}
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden} />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
-        <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={r => setDetailMachineId(r.id)} onEdit={openEdit} onDelete={del} />
+        <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries · click 👁 for full profile, OEE and health timeline</div>
       </Card>
 
-      {viewRow && (
-        <Modal title={viewRow.name} sub="Machine Details" onClose={() => setViewRow(null)}>
-          <DR label="Machine Code" value={<Code v={viewRow.machine_code} />} />
-          <DR label="Machine Name" value={viewRow.name} />
-          <DR label="Type" value={viewRow.type} />
-          <DR label="Location" value={viewRow.location} />
-          <DR label="Manufacturer" value={viewRow.manufacturer} />
-          <DR label="Model" value={viewRow.model} />
-          <DR label="Purchase Date" value={viewRow.purchase_date?.slice(0, 10)} />
-          <DR label="Status" value={<Badge value={viewRow.status} />} />
-          <DR label="Last Maintenance" value={viewRow.last_maintenance?.slice(0, 10)} />
-          <DR label="Next Maintenance" value={viewRow.next_maintenance?.slice(0, 10)} />
-          <DR label="Notes" value={viewRow.notes} />
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button onClick={() => setViewRow(null)} style={{ padding: "8px 20px", background: C.gray100, border: "none", cursor: "pointer", borderRadius: 6, fontWeight: 600, color: C.gray700, fontFamily: font }}>Close</button></div>
-        </Modal>
+      {detailMachineId && (
+        <MachineDetailModal machineId={detailMachineId} onClose={() => setDetailMachineId(null)} show={show} />
       )}
 
       {modal && (
-        <Modal title={edit ? "Edit Machine" : "Add Machine"} onClose={() => setModal(false)}>
+        <Modal title={edit ? "Edit Machine" : "Add Machine"} onClose={() => setModal(false)} wide>
           <G2>
             <Fld label="Machine Name" req><input style={inp} value={form.name} onChange={e => sf("name", e.target.value)} /></Fld>
             <Fld label="Machine Code"><input style={{ ...inp, background: C.gray50 }} value={form.machine_code} onChange={e => sf("machine_code", e.target.value)} placeholder="Auto-generated" /></Fld>
@@ -1064,8 +1548,14 @@ function MachinesTab({ show }) {
             <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Bay A" /></Fld>
             <Fld label="Manufacturer"><input style={inp} value={form.manufacturer} onChange={e => sf("manufacturer", e.target.value)} /></Fld>
             <Fld label="Model"><input style={inp} value={form.model} onChange={e => sf("model", e.target.value)} /></Fld>
+            <Fld label="Serial Number"><input style={inp} value={form.serial_number} onChange={e => sf("serial_number", e.target.value)} /></Fld>
             <Fld label="Purchase Date"><input type="date" style={inp} value={form.purchase_date} onChange={e => sf("purchase_date", e.target.value)} /></Fld>
-            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["active", "inactive", "maintenance"].map(s => <option key={s}>{s}</option>)}</select></Fld>
+            <Fld label="Install Date"><input type="date" style={inp} value={form.install_date} onChange={e => sf("install_date", e.target.value)} /></Fld>
+            <Fld label="Warranty Expiry"><input type="date" style={inp} value={form.warranty_expiry} onChange={e => sf("warranty_expiry", e.target.value)} /></Fld>
+            <Fld label="Rated Capacity"><input type="number" style={inp} value={form.rated_capacity} onChange={e => sf("rated_capacity", e.target.value)} min={0} placeholder="e.g. 120" /></Fld>
+            <Fld label="Capacity Unit"><input style={inp} value={form.rated_capacity_unit} onChange={e => sf("rated_capacity_unit", e.target.value)} placeholder="units/hr" /></Fld>
+            <Fld label="Power Rating"><input style={inp} value={form.power_rating} onChange={e => sf("power_rating", e.target.value)} placeholder="15 kW" /></Fld>
+            <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["active", "running", "idle", "maintenance", "inactive"].map(s => <option key={s}>{s}</option>)}</select></Fld>
             <Fld label="Last Maintenance"><input type="date" style={inp} value={form.last_maintenance} onChange={e => sf("last_maintenance", e.target.value)} /></Fld>
             <Fld label="Next Maintenance"><input type="date" style={inp} value={form.next_maintenance} onChange={e => sf("next_maintenance", e.target.value)} /></Fld>
             <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
@@ -1076,7 +1566,6 @@ function MachinesTab({ show }) {
     </PageShell>
   );
 }
-
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB 7 — QUALITY CONTROL
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1092,9 +1581,14 @@ function QCTab({ show }) {
   const [hidden, setHidden] = useState([]);
   const today = new Date().toISOString().split("T")[0];
 
-  const blank = { ref_no: "", product: "", batch_no: "", inspected_by: "", inspection_date: today, quantity_checked: "", quantity_passed: "", quantity_failed: "", status: "pending", remarks: "" };
+ const blank = { ref_no: "", product: "", product_id: "", batch_no: "", inspected_by: "", inspection_date: today, quantity_checked: "", quantity_passed: "", quantity_failed: "", status: "pending", remarks: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const { products } = useProductOptions();
+  const selectProduct = (productId) => {
+    const prod = products.find(p => String(p.id) === String(productId));
+    setForm(f => ({ ...f, product_id: productId, product: prod?.name || "" }));
+  };
 
   useEffect(() => {
     setLoad(true);
@@ -1107,13 +1601,13 @@ function QCTab({ show }) {
   const passRate = totalChecked > 0 ? Math.round(totalPassed / totalChecked * 100) : 0;
 
   const openAdd = () => { setForm({ ...blank, ref_no: genRef("QC", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ ref_no: r.ref_no, product: r.product, batch_no: r.batch_no || "", inspected_by: r.inspected_by || "", inspection_date: r.inspection_date?.slice(0, 10) || today, quantity_checked: r.quantity_checked, quantity_passed: r.quantity_passed, quantity_failed: r.quantity_failed, status: r.status, remarks: r.remarks || "" }); setEdit(r); setModal(true); };
+ const openEdit = r => { setForm({ ref_no: r.ref_no, product: r.product, product_id: r.product_id || "", batch_no: r.batch_no || "", inspected_by: r.inspected_by || "", inspection_date: r.inspection_date?.slice(0, 10) || today, quantity_checked: r.quantity_checked, quantity_passed: r.quantity_passed, quantity_failed: r.quantity_failed, status: r.status, remarks: r.remarks || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm("Delete this QC record?")) return;
     try { await api(`/quality-checks/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
   };
-  const save = async () => {
-    if (!form.product || !form.quantity_checked) { show("Product & quantity required.", "error"); return; }
+const save = async () => {
+    if (!form.product_id || !form.quantity_checked) { show("Product & quantity required.", "error"); return; }
     setSaving(true);
     try {
       if (edit) { const d = await api(`/quality-checks/${edit.id}`, { method: "PUT", body: JSON.stringify(form) }); setRows(p => p.map(x => x.id === edit.id ? d : x)); show("Updated."); }
@@ -1180,7 +1674,7 @@ function QCTab({ show }) {
           <G2>
             <Fld label="QC Ref No"><input style={{ ...inp, background: C.gray50 }} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
             <Fld label="Inspection Date"><input type="date" style={inp} value={form.inspection_date} onChange={e => sf("inspection_date", e.target.value)} /></Fld>
-            <Fld label="Product" req span><input style={inp} value={form.product} onChange={e => sf("product", e.target.value)} /></Fld>
+<Fld label="Product" req span><ProductSelect products={products} value={form.product_id} onChange={selectProduct} placeholder="Select product..." /></Fld>
             <Fld label="Batch No"><input style={inp} value={form.batch_no} onChange={e => sf("batch_no", e.target.value)} placeholder="BATCH-A3-01" /></Fld>
             <Fld label="Inspector"><input style={inp} value={form.inspected_by} onChange={e => sf("inspected_by", e.target.value)} /></Fld>
             <Fld label="Qty Checked" req><input type="number" style={inp} value={form.quantity_checked} onChange={e => sf("quantity_checked", e.target.value)} min={0} /></Fld>
@@ -1209,20 +1703,45 @@ function MaintenanceTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
-
-  const blank = { ref_no: "", machine_name: "", maintenance_type: "Preventive", technician: "", scheduled_date: "", completed_date: "", status: "scheduled", cost: "", description: "", notes: "" };
+const blank = { ref_no: "", machine_name: "", machine_id: "", maintenance_type: "Preventive", technician: "", scheduled_date: "", completed_date: "", status: "scheduled", cost: "", description: "", notes: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const [machines, setMachines] = useState([]);
+  const [showQuickMachine, setShowQuickMachine] = useState(false);
+  const [quickMachineName, setQuickMachineName] = useState("");
+  const [savingQuickMachine, setSavingQuickMachine] = useState(false);
+
+  const selectMachine = (machineId) => {
+    if (machineId === "__add_new__") { setQuickMachineName(""); setShowQuickMachine(true); return; }
+    const m = machines.find(x => String(x.id) === String(machineId));
+    setForm(f => ({ ...f, machine_id: machineId, machine_name: m?.name || f.machine_name }));
+  };
+
+  const saveQuickMachine = async () => {
+    if (!quickMachineName.trim()) { show("Machine name required.", "error"); return; }
+    setSavingQuickMachine(true);
+    try {
+      const created = await api("/machines", { method: "POST", body: JSON.stringify({ name: quickMachineName, machine_code: genRef("MCH", machines) }) });
+      setMachines(m => [...m, created]);
+      setForm(f => ({ ...f, machine_id: created.id, machine_name: created.name }));
+      setShowQuickMachine(false);
+      show("Machine added.");
+    } catch (e) { show(e.message, "error"); }
+    finally { setSavingQuickMachine(false); }
+  };
 
   useEffect(() => {
     setLoad(true);
-    api("/maintenance").then(d => setRows(d)).catch(() => {}).finally(() => setLoad(false));
+    Promise.all([api("/maintenance"), api("/machines").catch(() => [])])
+      .then(([d, mList]) => { setRows(d); setMachines(mList); })
+      .catch(() => {})
+      .finally(() => setLoad(false));
   }, []);
 
   const fil = rows.filter(r => (!fType || r.maintenance_type === fType) && `${r.ref_no} ${r.machine_name} ${r.technician}`.toLowerCase().includes(search.toLowerCase()));
 
   const openAdd = () => { setForm({ ...blank, ref_no: genRef("MNT", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ ref_no: r.ref_no, machine_name: r.machine_name, maintenance_type: r.maintenance_type, technician: r.technician || "", scheduled_date: r.scheduled_date?.slice(0, 10) || "", completed_date: r.completed_date?.slice(0, 10) || "", status: r.status, cost: r.cost || "", description: r.description || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, machine_name: r.machine_name, machine_id: r.machine_id || "", maintenance_type: r.maintenance_type, technician: r.technician || "", scheduled_date: r.scheduled_date?.slice(0, 10) || "", completed_date: r.completed_date?.slice(0, 10) || "", status: r.status, cost: r.cost || "", description: r.description || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm("Delete this maintenance record?")) return;
     try { await api(`/maintenance/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -1293,7 +1812,37 @@ function MaintenanceTab({ show }) {
         <Modal title={edit ? "Edit Maintenance" : "Schedule Maintenance"} onClose={() => setModal(false)}>
           <G2>
             <Fld label="Ref No"><input style={{ ...inp, background: C.gray50 }} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
-            <Fld label="Machine Name" req><input style={inp} value={form.machine_name} onChange={e => sf("machine_name", e.target.value)} /></Fld>
+         <Fld label="Machine Name" req>
+              {showQuickMachine ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    style={inp}
+                    autoFocus
+                    value={quickMachineName}
+                    onChange={e => setQuickMachineName(e.target.value)}
+                    placeholder="New machine name"
+                    onKeyDown={e => { if (e.key === "Enter") saveQuickMachine(); if (e.key === "Escape") setShowQuickMachine(false); }}
+                  />
+                  <button
+                    type="button"
+                    onClick={saveQuickMachine}
+                    disabled={savingQuickMachine}
+                    style={{ padding: "8px 12px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: savingQuickMachine ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                  >{savingQuickMachine ? "Saving…" : "Save"}</button>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickMachine(false)}
+                    style={{ padding: "8px 12px", borderRadius: 6, border: `1px solid ${C.gray300}`, background: C.white, color: C.gray600, fontSize: 12, cursor: "pointer" }}
+                  >✕</button>
+                </div>
+              ) : (
+                <select style={sel} value={form.machine_id} onChange={e => selectMachine(e.target.value)}>
+                  <option value="">Select machine...</option>
+                  {machines.map(m => <option key={m.id} value={m.id}>{m.name}{m.machine_code ? ` (${m.machine_code})` : ""}</option>)}
+                  <option value="__add_new__" style={{ fontWeight: 700, color: C.green }}>+ Add new machine…</option>
+                </select>
+              )}
+            </Fld>
             <Fld label="Type"><select style={sel} value={form.maintenance_type} onChange={e => sf("maintenance_type", e.target.value)}>{["Preventive", "Corrective", "Predictive", "Emergency"].map(t => <option key={t}>{t}</option>)}</select></Fld>
             <Fld label="Technician"><input style={inp} value={form.technician} onChange={e => sf("technician", e.target.value)} /></Fld>
             <Fld label="Scheduled Date" req><input type="date" style={inp} value={form.scheduled_date} onChange={e => sf("scheduled_date", e.target.value)} /></Fld>

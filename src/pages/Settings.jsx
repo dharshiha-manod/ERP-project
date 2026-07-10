@@ -113,21 +113,21 @@ function BusinessSettings() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const f = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-
-  useEffect(() => {
-    (async () => {
-      const res = await settingsAPI.getBusinessSettings();
-      if (res.success && res.data) {
-        setForm((prev) => ({
-          ...prev,
-          name: res.data.business_name || "",
-          currency: res.data.currency || "INR",
-          timezone: res.data.timezone || "Asia/Kolkata",
-        }));
-      }
-      setLoading(false);
-    })();
-  }, []);
+useEffect(() => {
+  (async () => {
+    const res = await settingsAPI.getBusinessSettings();
+    if (res.success && res.data) {
+      setForm((prev) => ({
+        ...prev,
+        name: res.data.business_name || "",
+        currency: res.data.currency || "INR",
+        timezone: res.data.timezone || "Asia/Kolkata",
+      }));
+    }
+    // If 404 (no settings row yet), keep default form values so user can create one
+    setLoading(false);
+  })();
+}, []); 
 
   const handleSave = async () => {
     setSaving(true); setMsg(null);
@@ -256,10 +256,15 @@ function BusinessLocations() {
   };
 
   const handleSave = async () => {
-    const payload = { location_name: form.name, address: form.landmark, city: form.city, postal_code: form.zip, state: form.state, country: form.country, phone: form.mobile };
-    const res = editingId ? await settingsAPI.updateLocation(editingId, payload) : await settingsAPI.createLocation(payload);
-    if (res.success) { setShowAdd(false); loadLocations(); }
-  };
+  const payload = { location_name: form.name, address: form.landmark, city: form.city, postal_code: form.zip, state: form.state, country: form.country, phone: form.mobile };
+  const res = editingId ? await settingsAPI.updateLocation(editingId, payload) : await settingsAPI.createLocation(payload);
+  if (res.success) {
+    setShowAdd(false);
+    loadLocations();
+  } else {
+    alert(res.message || 'Failed to save location');
+  }
+};
 
   const handleDeactivate = async (dbId) => {
     await settingsAPI.deactivateLocation(dbId);

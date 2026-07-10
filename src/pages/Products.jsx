@@ -9,6 +9,7 @@ const TAX_TYPES    = ["Exclusive","Inclusive"];
 const PRODUCT_TYPES= ["Single","Variable"];
 const BARCODE_TYPES= ["Code 128 (C128)","EAN-13","EAN-8","QR Code","UPC-A"];
 const LOCATIONS    = ["Manodtechnologies (BL0001)"];
+const ITEM_TYPES   = ["Finished Product", "Raw Material", "Semi-Finished Product", "Packing Material", "Service"];
 
 // ── Auto-generate SKU ──────────────────────────────────────
 const genSKU = (name = "") => {
@@ -20,6 +21,7 @@ const genSKU = (name = "") => {
 const EMPTY_FORM = {
   name:"", sku:"", barcodeType:"Code 128 (C128)",
   unit:"", brand:"", category:"", subCategory:"", variationTemplate:"", warranty:"",
+  itemType:"Finished Product",
   businessLocation:"Manodtechnologies (BL0001)",
   alertQty:"", manageStock:true,
   description:"", weight:"", prepTime:"",
@@ -189,36 +191,44 @@ const [units,       setUnits]       = useState([]);
   const [warranties,  setWarranties]  = useState([]);
 const [variationTemplates, setVariationTemplates] = useState([]);
   const [saving,      setSaving]      = useState(false);
-
- const initForm = editProduct ? {
+const initForm = editProduct ? {
     name:                editProduct.name || "",
     sku:                 editProduct.sku  || "",
     barcodeType:         editProduct.barcode_type || "Code 128 (C128)",
     unit:                editProduct.unit  || "",
     brand:               editProduct.brand || "",
-  category:            editProduct.category || "",
+    category:            editProduct.category || "",
     subCategory:         editProduct.sub_category || "",
     variationTemplate:   editProduct.variation_template || "",
     warranty:            editProduct.warranty || "",
+    itemType:            editProduct.item_type || "Finished Product",
     businessLocation:    editProduct.business_location || "Manodtechnologies (BL0001)",
     alertQty:            editProduct.alert_qty ?? "",
-    manageStock:         editProduct.manage_stock ?? true,
+    manageStock:         editProduct.manage_stock !== undefined ? editProduct.manage_stock : true,
     description:         editProduct.description || "",
-    weight:              editProduct.weight ?? "",
-    prepTime:            editProduct.prep_time ?? "",
-    tax:                 editProduct.tax || "None",
-    sellingPriceTaxType: editProduct.selling_price_tax_type || "Exclusive",
-    productType:         editProduct.product_type || "Single",
- excTax:              editProduct.exc_tax ?? "",
-    incTax:              editProduct.inc_tax ?? "",
-    margin:              editProduct.margin ?? "25.00",
-    excTaxSell:          editProduct.exc_tax_sell ?? "",
-    openingStock:        editProduct.current_stock ?? "",
-    openingStockValue:   "",
-    image:null, imagePreview:null,
+    weight:               editProduct.weight ?? "",
+    prepTime:             editProduct.prep_time ?? "",
+    tax:                  editProduct.tax || "None",
+    sellingPriceTaxType:  editProduct.selling_price_tax_type || "Exclusive",
+    productType:          editProduct.product_type || "Single",
+    excTax:               editProduct.exc_tax ?? "",
+    incTax:               editProduct.inc_tax ?? "",
+    margin:               editProduct.margin ?? "25.00",
+    excTaxSell:            editProduct.exc_tax_sell ?? "",
+    openingStock:          editProduct.current_stock ?? "",
+    openingStockValue:     "",
+    image:                 null,
+    imagePreview:          editProduct.image_url || null,
+    _skuManual:            true,
   } : EMPTY_FORM;
 const [form, setForm] = useState(initForm);
+
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  console.log("DEBUG editProduct.warranty:", editProduct?.warranty, "| full editProduct:", editProduct);
+
+  console.log("DEBUG editProduct.warranty:", editProduct?.warranty, "| full editProduct:", editProduct);
 
   // ── Group Pricing state ──
   const [priceGroups, setPriceGroups] = useState([]);
@@ -298,23 +308,24 @@ const [form, setForm] = useState(initForm);
  // Load dropdowns — each isolated so one failure can't block the others
   useEffect(() => {
     (async () => {
-      try {
+   try {
         const u = await unitsAPI.getAll({ limit:200 });
-        setUnits((u.units||[]).map(x => ({ value: x.name, label: x.name })));
+        setUnits((u.units||[]).map(x => ({ value: x.name, label: x.short_name ? `${x.name} (${x.short_name})` : x.name })));
       } catch (e) { console.error("Units load error:", e.message); }
 
-      try {
+ try {
         const b = await brandsAPI.getAll({ limit:200 });
         setBrands((b.brands||[]).map(x => ({ value: x.name, label: x.name })));
       } catch (e) { console.error("Brands load error:", e.message); }
 
       try {
-        const c = await categoriesAPI.getAll({ limit:500 });
-        const allC = c.categories||[];
-        setAllCats(allC);
-        setCategories(allC.filter(x => !x.parent_id).map(x => ({ value: x.name, label: x.name })));
-        setSubCats(allC.filter(x => !!x.parent_id).map(x => ({ value: x.name, label: x.name })));
-      } catch (e) { console.error("Categories load error:", e.message); }
+  const c = await categoriesAPI.getAll({ limit:500 });
+  const allC = c.categories||[];
+  setAllCats(allC);
+  // Show ALL categories in the main Category dropdown
+  setCategories(allC.map(x => ({ value: x.name, label: x.name })));
+  setSubCats(allC.filter(x => !!x.parent_id).map(x => ({ value: x.name, label: x.name })));
+} catch (e) { console.error("Categories load error:", e.message); }
 
      try {
         const vt = await variationsAPI.getAll({ limit:200 });
@@ -324,22 +335,34 @@ const [form, setForm] = useState(initForm);
         console.log("variationTemplates options:", (vt.variations||[]).map(x => x.name));
       } catch (e) { console.error("Variations load error:", e.message); }
 
-      try {
-        const wRes = await fetch(`${gpBase}/products/warranties?limit=200`, { headers: gpAuthHeaders() });
-        const w = await wRes.json();
-        if (!wRes.ok) throw new Error(w.error || "Failed to load warranties");
-        setWarranties((w.warranties||[]).map(x => ({ value: x.name, label: `${x.name} (${x.duration} ${x.duration_type})` })));
-      } catch (e) { console.error("Warranties load error:", e.message); }
+ try {
+  const wRes = await fetch(`${gpBase}/products/warranties?limit=200`, { headers: gpAuthHeaders() });
+  const w = await wRes.json();
+  if (!wRes.ok) throw new Error(w.error || "Failed to load warranties");
+  let list = (w.warranties||[]).map(x => ({ value: x.name, label: `${x.name} (${x.duration} ${x.duration_type})` }));
+  if (editProduct?.warranty && !list.some(o => o.value === editProduct.warranty)) {
+    list = [{ value: editProduct.warranty, label: editProduct.warranty }, ...list];
+  }
+  setWarranties(list);
+  if (editProduct?.warranty) {
+    setForm(f => ({ ...f, warranty: editProduct.warranty }));
+  }
+} catch (e) { console.error("Warranties load error:", e.message); }
     })();
   }, []);
 
   // Filter sub-cats when category changes
-  const filteredSubCats = form.category
+ const filteredSubCats = form.category
     ? (() => {
         const parent = allCats.find(c => c.name === form.category && !c.parent_id);
-        return parent
+        const list = parent
           ? allCats.filter(c => c.parent_id === parent.id).map(c => ({ value:c.name, label:c.name }))
           : subCats;
+        // Keep the current value visible even if it hasn't loaded into the filtered list yet
+        if (form.subCategory && !list.some(o => o.value === form.subCategory)) {
+          return [{ value: form.subCategory, label: form.subCategory }, ...list];
+        }
+        return list;
       })()
     : subCats;
 
@@ -355,7 +378,7 @@ const [form, setForm] = useState(initForm);
     if (form.productType === "Variable" && !form.variationTemplate) { alert("Please select a Variation for a Variable product"); return; }
     setSaving(true);
     try {
-     const payload = {
+    const payload = {
         name:                   form.name,
         sku:                    form.sku || genSKU(form.name),
         barcode_type:           form.barcodeType,
@@ -366,6 +389,7 @@ const [form, setForm] = useState(initForm);
         variation_template:     form.variationTemplate || null,
         business_location:      form.businessLocation,
         warranty:               form.warranty || null,
+        item_type:              form.itemType || "Finished Product",
        
         alert_qty:              form.alertQty || 0,
         manage_stock:           form.manageStock,
@@ -379,7 +403,7 @@ const [form, setForm] = useState(initForm);
         inc_tax:                form.incTax || 0,
         margin:                 form.margin || 0,
 exc_tax_sell:           form.excTaxSell || 0,
-        opening_stock:          parseInt(form.openingStock) || 0,
+      opening_stock:          form.openingStock !== undefined && form.openingStock !== null && form.openingStock !== "" ? parseInt(form.openingStock) : 0,
         status:                 "Active",
         image:                  form.imagePreview || null,
       };
@@ -504,7 +528,7 @@ exc_tax_sell:           form.excTaxSell || 0,
           </div>
         </div>
 
-      <div style={{ maxWidth:320, marginBottom:4 }}>
+     <div style={f.row2}>
           <div style={f.field}>
             <label style={f.lbl}>
               Warranty
@@ -512,6 +536,15 @@ exc_tax_sell:           form.excTaxSell || 0,
             </label>
             <SearchableSelect options={warranties} value={form.warranty}
               onChange={v => set("warranty", v)} placeholder="Search warranty..."/>
+          </div>
+          <div style={f.field}>
+            <label style={f.lbl}>
+              Item Type *
+              <span style={f.hint} title="Determines whether this product can be used as a BOM component or is a finished product">ⓘ</span>
+            </label>
+            <select style={f.inp} value={form.itemType} onChange={e => set("itemType", e.target.value)}>
+              {ITEM_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
           </div>
         </div>
 
@@ -1113,7 +1146,7 @@ const stockColor = (qty, alertQty) => {
             <button onClick={()=>{setShowEdit(false);setEditProduct(null);}}
               style={{ position:"absolute", right:20, top:20, background:"none", border:"none", fontSize:24, cursor:"pointer", color:"#666" }}>×</button>
             <h2 style={{ margin:"0 0 20px", fontSize:22, fontWeight:700 }}>Edit Product</h2>
-            <AddProductForm editProduct={editProduct} onSaved={()=>{setShowEdit(false);setEditProduct(null);load();}}/>
+            <AddProductForm key={editProduct?.id || "new"} editProduct={editProduct} onSaved={()=>{setShowEdit(false);setEditProduct(null);load();}}/>
           </div>
         </div>
       )}
