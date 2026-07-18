@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import expensesAPI from "../api/expensesAPI";
+import * as settingsAPI from "../api/settingsAPI";
 
 /* ─── shared design tokens ─────────────────────────────── */
 const T = {
@@ -588,11 +589,12 @@ function ExpenseFormPage({ mode = "create" }) {
   const [isRecurring, setIsRecurring] = useState(false);
   const [isRefund, setIsRefund] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(mode !== "create");
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    location: "Manodtechnologies (BL0001)",
+const [form, setForm] = useState({
+    location: "",
     category: "", sub_category: "", expense_number: "",
     expense_date: new Date().toISOString().slice(0, 10),
     expense_for: "",
@@ -618,10 +620,22 @@ function ExpenseFormPage({ mode = "create" }) {
     ? Math.max(0, grandTotal - (parseFloat(form.amount_paid) || 0))
     : form.payment_status === "paid" ? 0 : grandTotal;
 
-  const loadCategories = () => {
+const loadCategories = () => {
     expensesAPI.categories.list().then((d) => setCategories(d.categories || [])).catch(() => {});
   };
   useEffect(loadCategories, []);
+
+  useEffect(() => {
+    settingsAPI.getLocations().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setLocations(res.data);
+        if (mode === "create") {
+          const def = res.data.find((l) => l.is_default) || res.data[0];
+          if (def) setForm((f) => ({ ...f, location: def.location_name }));
+        }
+      }
+    }).catch(() => {});
+  }, [mode]);
 
   // Edit / View → fetch the existing expense and prefill the form
   useEffect(() => {
@@ -649,7 +663,7 @@ function ExpenseFormPage({ mode = "create" }) {
           ? Math.round((storedTotal - storedDue) * 100) / 100
           : "";
         setForm({
-          location: e.location || "Manodtechnologies (BL0001)",
+        location: e.location || "",
           category: e.category_name || "",
           sub_category: e.sub_category_name || "",
           expense_number: e.expense_number || "",
@@ -806,12 +820,15 @@ function ExpenseFormPage({ mode = "create" }) {
         <fieldset disabled={readOnly} style={{ border: "none", padding: 0, margin: 0 }}>
         <div style={{ ...styles.card, marginBottom: 16, padding: "20px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={styles.label}>Business Location:*</label>
-              <select style={styles.select} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}>
-                <option>Manodtechnologies (BL0001)</option>
-              </select>
-            </div>
+           <div>
+  <label style={styles.label}>Business Location:*</label>
+  <select style={styles.select} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required disabled={readOnly}>
+    <option value="">{locations.length === 0 ? "Loading…" : "-- Select location --"}</option>
+    {locations.map((l) => (
+      <option key={l.id} value={l.location_name}>{l.location_name}</option>
+    ))}
+  </select>
+</div>
             <div>
               <Combobox
                 label="Expense Category:"

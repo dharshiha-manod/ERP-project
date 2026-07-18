@@ -155,13 +155,58 @@ function ProductSelect({ products, value, onChange, placeholder = "Select produc
           </option>
         ))}
       </select>
-      {products.length > 8 && (
+     {products.length > 8 && (
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Type to filter the list above…"
           style={{ ...inp, marginTop: 4, fontSize: 11, padding: "5px 10px" }}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Multi-select checklist (Resources / Machines assignment) ────────────────
+// A blocked=true item (machine/resource under maintenance) is shown disabled
+// with a warning, per the "cannot be assigned to new plans" requirement.
+function MultiSelect({ options, value = [], onChange, placeholder = "None selected", labelKey = "name", blockedStatus = "maintenance" }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const toggle = (id) => {
+    onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id]);
+  };
+  const selectedLabels = options.filter(o => value.includes(o.id)).map(o => o[labelKey]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div onClick={() => setOpen(v => !v)} style={{ ...sel, minHeight: 36, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, cursor: "pointer" }}>
+        {selectedLabels.length === 0
+          ? <span style={{ color: C.gray400 }}>{placeholder}</span>
+          : selectedLabels.map((l, i) => (
+              <span key={i} style={{ fontSize: 11, fontWeight: 600, background: C.greenLight, color: C.green, padding: "2px 8px", borderRadius: 12, border: `1px solid ${C.greenBorder}` }}>{l}</span>
+            ))
+        }
+      </div>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 200, background: C.white, border: `1px solid ${C.gray200}`, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.14)", maxHeight: 220, overflowY: "auto", padding: "6px 0" }}>
+          {options.length === 0 && <div style={{ padding: "10px 14px", fontSize: 12, color: C.gray400 }}>No options available.</div>}
+          {options.map(o => {
+            const blocked = o.status === blockedStatus;
+            return (
+              <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", cursor: blocked ? "not-allowed" : "pointer", fontSize: 13, color: blocked ? C.gray400 : C.gray700, fontFamily: font }}>
+                <input type="checkbox" checked={value.includes(o.id)} disabled={blocked} onChange={() => toggle(o.id)} />
+                {o[labelKey]}
+                {blocked && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: "auto" }}>⚠ under maintenance</span>}
+              </label>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -422,11 +467,14 @@ function KPIs({ cards }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${cards.length}, 1fr)`, gap: 14, marginBottom: 20 }}>
       {cards.map((k, i) => (
-        <div key={i} style={{
+        <div key={i} onClick={k.onClick} style={{
           background: C.white, borderRadius: 10, border: `1px solid ${C.gray200}`,
           borderLeft: `3px solid ${k.color || C.green}`,
           padding: "14px 18px", boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-        }}>
+          cursor: k.onClick ? "pointer" : "default", transition: "all .15s",
+        }}
+          onMouseEnter={e => { if (k.onClick) e.currentTarget.style.background = C.gray50; }}
+          onMouseLeave={e => { if (k.onClick) e.currentTarget.style.background = C.white; }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.gray400, textTransform: "uppercase", letterSpacing: .6, marginBottom: 4, fontFamily: font }}>{k.label}</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: C.gray900, lineHeight: 1, fontFamily: font }}>{k.value ?? "—"}</div>
           {k.sub && <div style={{ fontSize: 11, color: C.gray400, marginTop: 4, fontFamily: font }}>{k.sub}</div>}
@@ -459,18 +507,45 @@ function PlanningTab({ show }) {
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
 
-  const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "", product_id: "", target_quantity: "", bom_id: "" };
+  const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "", product_id: "", target_quantity: "", bom_id: "", work_center: "", estimated_hours: "", resource_ids: [], machine_ids: [] };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const { products } = useProductOptions();
+ const { products } = useProductOptions();
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
   const [boms, setBoms] = useState([]);
   useEffect(() => { api("/bom").then(setBoms).catch(() => {}); }, []);
-  const availableBOMs = boms.filter(b => String(b.product_id) === String(form.product_id));
+  const [resources, setResources] = useState([]);
+  const [machines, setMachines] = useState([]);
+  useEffect(() => { api("/resources").then(setResources).catch(() => {}); api("/machines").then(setMachines).catch(() => {}); }, []);
+ const availableBOMs = boms.filter(b => String(b.product_id) === String(form.product_id));
   const selectProduct = (productId) => {
-    const prod = products.find(p => String(p.id) === String(productId));
-    setForm(f => ({ ...f, product_id: productId, bom_id: "" }));
+    // Auto-attach the most relevant BOM for this product so the material
+    // preview below appears immediately, without forcing a second click.
+    const matchingBOM = boms.find(b => String(b.product_id) === String(productId));
+    setForm(f => ({ ...f, product_id: productId, bom_id: matchingBOM ? String(matchingBOM.id) : "" }));
   };
+
+  // ── Material Requirements Preview ──────────────────────────────────
+  // Formula: Required = (Target Quantity ÷ BOM Base Quantity) × BOM Item Quantity
+  // Pure read-time projection — BOM itself is never touched or recalculated.
+  const selectedBOM = boms.find(b => String(b.id) === String(form.bom_id));
+  const planScale = selectedBOM && form.target_quantity
+    ? (parseFloat(form.target_quantity) / (parseFloat(selectedBOM.quantity) || 1))
+    : 0;
+  const materialRequirements = selectedBOM
+    ? (selectedBOM.ingredients || []).map(ing => {
+        const needed = (parseFloat(ing.quantity) || 0) * planScale;
+        const productMeta = products.find(p => String(p.id) === String(ing.product_id));
+        const available = productMeta?.current_stock ?? null;
+        return {
+          ...ing,
+          needed,
+          available,
+          short: available !== null && available < needed,
+        };
+      })
+    : [];
+  const hasShortage = materialRequirements.some(m => m.short);
 
   useEffect(() => {
     setLoad(true);
@@ -483,7 +558,7 @@ function PlanningTab({ show }) {
   );
 
   const openAdd = () => { setForm(blank); setEdit(null); setModal(true); };
-const openEdit = r => { setForm({ title: r.title, description: r.description || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", status: r.status, priority: r.priority, assigned_team: r.assigned_team || "", product_id: r.product_id || "", target_quantity: r.target_quantity ?? "", bom_id: r.bom_id || "" }); setEdit(r); setModal(true); };
+const openEdit = r => { setForm({ title: r.title, description: r.description || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", status: r.status, priority: r.priority, assigned_team: r.assigned_team || "", product_id: r.product_id || "", target_quantity: r.target_quantity ?? "", bom_id: r.bom_id || "", work_center: r.work_center || "", estimated_hours: r.estimated_hours ?? "", resource_ids: r.resource_ids || [], machine_ids: r.machine_ids || [] }); setEdit(r); setModal(true); }; 
   const del = async r => {
     if (!confirm(`Delete "${r.title}"?`)) return;
     try { await api(`/plans/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -548,6 +623,10 @@ const openEdit = r => { setForm({ title: r.title, description: r.description || 
           <DR label="Priority" value={<Badge value={viewRow.priority} />} />
           <DR label="Status" value={<Badge value={viewRow.status} />} />
           <DR label="Description" value={viewRow.description} />
+          <DR label="Work Center" value={viewRow.work_center} />
+          <DR label="Est. Hours" value={viewRow.estimated_hours} />
+          <DR label="Assigned Resources" value={resources.filter(r => (viewRow.resource_ids || []).includes(r.id)).map(r => r.name).join(", ") || "—"} />
+          <DR label="Assigned Machines" value={machines.filter(m => (viewRow.machine_ids || []).includes(m.id)).map(m => m.name).join(", ") || "—"} />
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setViewRow(null)} style={{ ...inp, width: "auto", padding: "8px 20px", background: C.gray100, border: "none", cursor: "pointer", borderRadius: 6, fontWeight: 600, color: C.gray700 }}>Close</button>
           </div>
@@ -565,9 +644,46 @@ const openEdit = r => { setForm({ title: r.title, description: r.description || 
             <Fld label="End Date" req><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} /></Fld>
             <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}</select></Fld>
             <Fld label="Priority"><select style={sel} value={form.priority} onChange={e => sf("priority", e.target.value)}>{["low", "medium", "high"].map(s => <option key={s}>{s}</option>)}</select></Fld>
-            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
-            <Fld label="Description" span><textarea style={ta} value={form.description} onChange={e => sf("description", e.target.value)} /></Fld>
+       <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
+            <Fld label="Work Center (optional)"><input style={inp} value={form.work_center} onChange={e => sf("work_center", e.target.value)} placeholder="Line 2 / Bay A" /></Fld>
+            <Fld label="Estimated Production Hours"><input type="number" style={inp} value={form.estimated_hours} onChange={e => sf("estimated_hours", e.target.value)} min={0} /></Fld>
+            <Fld label="Assigned Resources" span>
+              <MultiSelect options={resources} value={form.resource_ids} onChange={ids => sf("resource_ids", ids)} placeholder="Select resources…" />
+            </Fld>
+            <Fld label="Assigned Machines" span>
+              <MultiSelect options={machines} value={form.machine_ids} onChange={ids => sf("machine_ids", ids)} placeholder="Select machines…" />
+            </Fld>
+        <Fld label="Description" span><textarea style={ta} value={form.description} onChange={e => sf("description", e.target.value)} /></Fld>
           </G2>
+
+          {form.bom_id && form.target_quantity > 0 && (
+            <div style={{ marginTop: 18, background: hasShortage ? C.redBg : C.greenLight, border: `1px solid ${hasShortage ? C.redBd : C.greenBorder}`, borderRadius: 8, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: hasShortage ? C.red : C.green, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8, fontFamily: font }}>
+                Material Requirements {hasShortage ? "— Insufficient Stock" : "(auto-calculated from BOM)"}
+              </div>
+              {materialRequirements.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.gray500 }}>This BOM has no components.</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                  <thead><tr>{["Material", "Required", "In Stock", ""].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 8px", color: C.gray600, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                  <tbody>{materialRequirements.map((m, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "4px 8px", fontWeight: 600 }}>{m.item_name}</td>
+                      <td style={{ padding: "4px 8px" }}>{m.needed.toFixed(2)} {m.unit}</td>
+                      <td style={{ padding: "4px 8px", color: m.short ? C.red : C.gray600, fontWeight: m.short ? 700 : 400 }}>
+                        {m.available !== null ? m.available : "unlinked"}
+                      </td>
+                      <td style={{ padding: "4px 8px" }}>{m.short && <span style={{ color: C.red, fontWeight: 700 }}>⚠ Short by {(m.needed - (m.available || 0)).toFixed(2)}</span>}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              )}
+              <div style={{ fontSize: 11, color: C.gray500, marginTop: 8 }}>
+                Formula: Required = (Target Qty ÷ BOM Base Qty) × BOM Item Qty. This is a live preview — stock is only reserved/deducted when Production is recorded.
+              </div>
+            </div>
+          )}
+
           <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Create Plan"} />
         </Modal>
       )}
@@ -729,10 +845,18 @@ function BOMTab({ show }) {
                 <td style={{ padding: "4px 4px", minWidth: 180 }}>
                   <select style={{ ...sel, fontSize: 12 }} value={ing.product_id} onChange={e => selectIngredientProduct(i, e.target.value)}>
                     <option value="">Select raw material...</option>
-                    {rawMaterials.map(p => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>)}
+                    {rawMaterials.map(p => <option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""} · stock: {p.current_stock ?? 0}</option>)}
                   </select>
                 </td>
-                <td style={{ padding: "4px 4px", width: 70 }}><input type="number" style={{ ...inp, fontSize: 12 }} value={ing.quantity} onChange={e => si(i, "quantity", e.target.value)} min={0} /></td>
+                <td style={{ padding: "4px 4px", width: 90 }}>
+                  <input type="number" style={{ ...inp, fontSize: 12, borderColor: ing.product_id && (products.find(p => String(p.id) === String(ing.product_id))?.current_stock ?? 0) < Number(ing.quantity || 0) ? C.red : C.gray300 }} value={ing.quantity} onChange={e => si(i, "quantity", e.target.value)} min={0} />
+                  {ing.product_id && (() => {
+                    const stock = products.find(p => String(p.id) === String(ing.product_id))?.current_stock ?? 0;
+                    return Number(ing.quantity || 0) > stock
+                      ? <div style={{ fontSize: 10, color: C.red, marginTop: 2 }}>⚠ only {stock} in stock</div>
+                      : null;
+                  })()}
+                </td>
                 <td style={{ padding: "4px 4px", width: 70 }}><input style={{ ...inp, fontSize: 12 }} value={ing.unit} onChange={e => si(i, "unit", e.target.value)} /></td>
                 <td style={{ padding: "4px 4px", width: 90 }}><input type="number" style={{ ...inp, fontSize: 12 }} value={ing.cost} onChange={e => si(i, "cost", e.target.value)} min={0} /></td>
                 <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, ingredients: f.ingredients.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
@@ -762,28 +886,83 @@ function WorkOrdersTab({ show }) {
   const { products } = useProductOptions();
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
 
-  const blank = { wo_number: "", product_id: "", product_name: "", quantity: "", unit: "pcs", start_date: "", end_date: "", priority: "medium", status: "planned", assigned_team: "", progress: 0, notes: "" };
+  const blank = { wo_number: "", plan_id: "", product_id: "", product_name: "", quantity: "", unit: "pcs", bom_id: "", start_date: "", end_date: "", priority: "medium", status: "planned", assigned_team: "", progress: 0, notes: "", resource_ids: [], machine_ids: [] };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-const [plans, setPlans] = useState([]);
+  const [plans, setPlans] = useState([]);
   useEffect(() => { api("/plans").then(setPlans).catch(() => {}); }, []);
 
-  const selectProduct = (productId) => {
+  const [boms, setBoms] = useState([]);
+  useEffect(() => { api("/bom").then(setBoms).catch(() => {}); }, []);
+
+  const [resources, setResources] = useState([]);
+  const [machines, setMachines] = useState([]);
+  useEffect(() => { api("/resources").then(setResources).catch(() => {}); api("/machines").then(setMachines).catch(() => {}); }, []);
+
+  // Selecting a Plan pulls in EVERYTHING — product, qty, BOM, resources,
+  // machines, team, timeline — nothing needs to be re-entered manually.
+  const selectPlan = (planId) => {
+    if (!planId) { setForm(f => ({ ...f, plan_id: "" })); return; }
+    const plan = plans.find(p => String(p.id) === String(planId));
+    if (!plan) return;
+    const prod = products.find(p => String(p.id) === String(plan.product_id));
+    setForm(f => ({
+      ...f,
+      plan_id: planId,
+      product_id: plan.product_id || "",
+      product_name: prod?.name || "",
+      unit: prod?.unit || f.unit,
+      quantity: plan.target_quantity || f.quantity,
+      bom_id: plan.bom_id || "",
+      start_date: plan.start_date?.slice(0, 10) || f.start_date,
+      end_date: plan.end_date?.slice(0, 10) || f.end_date,
+      priority: plan.priority || f.priority,
+      assigned_team: plan.assigned_team || f.assigned_team,
+      resource_ids: plan.resource_ids || [],
+      machine_ids: plan.machine_ids || [],
+    }));
+  };
+
+// Manual product pick (only relevant when no plan is selected) — auto-fills
+  // everything derivable from the Product master + matching BOM/Plan the
+  // moment a product is chosen, so nothing needs re-entering by hand.
+ const selectProduct = (productId) => {
+    if (!productId) { setForm(f => ({ ...f, product_id: "", product_name: "" })); return; }
     const prod = products.find(p => String(p.id) === String(productId));
-    const plan = plans.find(p => String(p.product_id) === String(productId));
+    const matchingBOM = boms.find(b => String(b.product_id) === String(productId));
+    const matchingPlan = plans.find(p => String(p.product_id) === String(productId));
     setForm(f => ({
       ...f,
       product_id: productId,
-      product_name: prod?.name || f.product_name,
-      unit: prod?.unit || f.unit,
-      quantity: plan?.target_quantity || f.quantity,
-      start_date: plan?.start_date?.slice(0, 10) || f.start_date,
-      end_date: plan?.end_date?.slice(0, 10) || f.end_date,
-      priority: plan?.priority || f.priority,
-      assigned_team: plan?.assigned_team || f.assigned_team,
+      product_name: prod?.name || "",
+      unit: matchingBOM?.unit || matchingPlan?.unit || prod?.unit || f.unit,
+      bom_id: matchingBOM ? String(matchingBOM.id) : "",
+      plan_id: matchingPlan ? String(matchingPlan.id) : f.plan_id,
+      quantity: matchingPlan?.target_quantity || matchingBOM?.quantity || f.quantity,
+      start_date: matchingPlan?.start_date?.slice(0, 10) || f.start_date,
+      end_date: matchingPlan?.end_date?.slice(0, 10) || f.end_date,
+      priority: matchingPlan?.priority || f.priority,
+      assigned_team: matchingPlan?.assigned_team || f.assigned_team,
+      resource_ids: matchingPlan?.resource_ids || f.resource_ids,
+      machine_ids: matchingPlan?.machine_ids || f.machine_ids,
     }));
   };
+
+  // ── Material Requirements Preview (same formula as Planning tab) ──
+  const selectedWOBOM = boms.find(b => String(b.id) === String(form.bom_id));
+  const woScale = selectedWOBOM && form.quantity
+    ? (parseFloat(form.quantity) / (parseFloat(selectedWOBOM.quantity) || 1))
+    : 0;
+  const woMaterialRequirements = selectedWOBOM
+    ? (selectedWOBOM.ingredients || []).map(ing => {
+        const needed = (parseFloat(ing.quantity) || 0) * woScale;
+        const productMeta = products.find(p => String(p.id) === String(ing.product_id));
+        const available = productMeta?.current_stock ?? null;
+        return { ...ing, needed, available, short: available !== null && available < needed };
+      })
+    : [];
+  const woHasShortage = woMaterialRequirements.some(m => m.short);
 
   useEffect(() => {
     setLoad(true);
@@ -793,7 +972,7 @@ const [plans, setPlans] = useState([]);
   const fil = rows.filter(r => (!fStatus || r.status === fStatus) && `${r.wo_number} ${r.product_name} ${r.assigned_team}`.toLowerCase().includes(search.toLowerCase()));
 
   const openAdd = () => { setForm({ ...blank, wo_number: genRef("WO", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ wo_number: r.wo_number, product_id: r.product_id || "", product_name: r.product_name, quantity: r.quantity, unit: r.unit, start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ wo_number: r.wo_number, plan_id: r.plan_id || "", product_id: r.product_id || "", product_name: r.product_name, quantity: r.quantity, unit: r.unit, bom_id: r.bom_id || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "", resource_ids: r.resource_ids || [], machine_ids: r.machine_ids || [] }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.wo_number}"?`)) return;
     try { await api(`/work-orders/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -874,26 +1053,75 @@ const [plans, setPlans] = useState([]);
           <DR label="Priority" value={<Badge value={viewRow.priority} />} />
           <DR label="Status" value={<Badge value={viewRow.status} />} />
           <DR label="Progress" value={`${viewRow.progress || 0}%`} />
+          <DR label="Assigned Resources" value={resources.filter(r => (viewRow.resource_ids || []).includes(r.id)).map(r => r.name).join(", ") || "—"} />
+          <DR label="Assigned Machines" value={machines.filter(m => (viewRow.machine_ids || []).includes(m.id)).map(m => m.name).join(", ") || "—"} />
           <DR label="Notes" value={viewRow.notes} />
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><button onClick={() => setViewRow(null)} style={{ padding: "8px 20px", background: C.gray100, border: "none", cursor: "pointer", borderRadius: 6, fontWeight: 600, color: C.gray700, fontFamily: font }}>Close</button></div>
         </Modal>
       )}
 
       {modal && (
-        <Modal title={edit ? `Edit ${edit.wo_number}` : "New Work Order"} onClose={() => setModal(false)}>
-          <G2>
+        <Modal title={edit ? `Edit ${edit.wo_number}` : "New Work Order"} onClose={() => setModal(false)} wide>
+         <G2>
+            <Fld label="From Production Plan" span>
+              <select style={sel} value={form.plan_id} onChange={e => selectPlan(e.target.value)}>
+                <option value="">No plan — enter manually</option>
+                {plans.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+              </select>
+            </Fld>
             <Fld label="WO Number"><input style={{ ...inp, background: C.gray50 }} value={form.wo_number} onChange={e => sf("wo_number", e.target.value)} placeholder="Auto-generated" /></Fld>
-            <Fld label="Product" req><ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} /></Fld>
-            <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Product" req><ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} disabled={!!form.plan_id} /></Fld>
+            <Fld label="Quantity" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} disabled={!!form.plan_id} /></Fld>
             <Fld label="Unit"><select style={sel} value={form.unit} onChange={e => sf("unit", e.target.value)}>{["pcs", "kg", "mtrs", "ltrs", "boxes"].map(u => <option key={u}>{u}</option>)}</select></Fld>
-            <Fld label="Start Date"><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} /></Fld>
-            <Fld label="End Date"><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} /></Fld>
+            <Fld label="BOM / Recipe">
+              <select style={sel} value={form.bom_id} onChange={e => sf("bom_id", e.target.value)} disabled={!!form.plan_id}>
+                <option value="">{form.product_id ? "No BOM" : "Select a product first"}</option>
+                {boms.filter(b => String(b.product_id) === String(form.product_id)).map(b => <option key={b.id} value={b.id}>{b.product_code} · v{b.version}</option>)}
+              </select>
+            </Fld>
+            <Fld label="Start Date"><input type="date" style={inp} value={form.start_date} onChange={e => sf("start_date", e.target.value)} disabled={!!form.plan_id} /></Fld>
+            <Fld label="End Date"><input type="date" style={inp} value={form.end_date} onChange={e => sf("end_date", e.target.value)} disabled={!!form.plan_id} /></Fld>
             <Fld label="Priority"><select style={sel} value={form.priority} onChange={e => sf("priority", e.target.value)}>{["low", "medium", "high"].map(s => <option key={s}>{s}</option>)}</select></Fld>
             <Fld label="Status"><select style={sel} value={form.status} onChange={e => sf("status", e.target.value)}>{["planned", "in_progress", "completed", "on_hold"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}</select></Fld>
-            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" /></Fld>
+            <Fld label="Assigned Team"><input style={inp} value={form.assigned_team} onChange={e => sf("assigned_team", e.target.value)} placeholder="Team Alpha" disabled={!!form.plan_id} /></Fld>
             <Fld label="Progress (%)"><input type="number" style={inp} value={form.progress} onChange={e => sf("progress", Math.min(100, Math.max(0, +e.target.value)))} min={0} max={100} /></Fld>
-            <Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
+            <Fld label="Assigned Resources" span>
+              <MultiSelect options={resources} value={form.resource_ids} onChange={ids => sf("resource_ids", ids)} placeholder="Inherited from plan or select manually…" />
+            </Fld>
+            <Fld label="Assigned Machines" span>
+              <MultiSelect options={machines} value={form.machine_ids} onChange={ids => sf("machine_ids", ids)} placeholder="Inherited from plan or select manually…" />
+            </Fld>
+<Fld label="Notes" span><textarea style={ta} value={form.notes} onChange={e => sf("notes", e.target.value)} /></Fld>
           </G2>
+
+          {form.bom_id && form.quantity > 0 && (
+            <div style={{ marginTop: 18, background: woHasShortage ? C.redBg : C.greenLight, border: `1px solid ${woHasShortage ? C.redBd : C.greenBorder}`, borderRadius: 8, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: woHasShortage ? C.red : C.green, textTransform: "uppercase", letterSpacing: .5, marginBottom: 8, fontFamily: font }}>
+                Material Requirements {woHasShortage ? "— Insufficient Stock" : "(auto-calculated from BOM)"}
+              </div>
+              {woMaterialRequirements.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.gray500 }}>This BOM has no components.</div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                  <thead><tr>{["Material", "Required", "In Stock", ""].map(h => <th key={h} style={{ textAlign: "left", padding: "4px 8px", color: C.gray600, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                  <tbody>{woMaterialRequirements.map((m, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "4px 8px", fontWeight: 600 }}>{m.item_name}</td>
+                      <td style={{ padding: "4px 8px" }}>{m.needed.toFixed(2)} {m.unit}</td>
+                      <td style={{ padding: "4px 8px", color: m.short ? C.red : C.gray600, fontWeight: m.short ? 700 : 400 }}>
+                        {m.available !== null ? m.available : "unlinked"}
+                      </td>
+                      <td style={{ padding: "4px 8px" }}>{m.short && <span style={{ color: C.red, fontWeight: 700 }}>⚠ Short by {(m.needed - (m.available || 0)).toFixed(2)}</span>}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              )}
+              <div style={{ fontSize: 11, color: C.gray500, marginTop: 8 }}>
+                Materials are reserved when production starts and consumed when the Production record is saved — not before.
+              </div>
+            </div>
+          )}
+
           <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Create Work Order"} />
         </Modal>
       )}
@@ -918,7 +1146,8 @@ function ProductionTab({ show }) {
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
   const today = new Date().toISOString().split("T")[0];
 
-  const blank = { ref_no: "", location: "", product_id: "", product: "", quantity: "", total_cost: "", date: today, bom_id: "", notes: "" };
+ const SCRAP_REASONS = ["Machine Defect", "Material Defect", "Human Error", "Quality Rejection", "Calibration Issue", "Other"];
+const blank = { ref_no: "", location: "", product_id: "", product: "", quantity: "", scrap_qty: "", scrap_reason: "", total_cost: "", date: today, bom_id: "", notes: "", wo_id: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -930,9 +1159,11 @@ function ProductionTab({ show }) {
       .finally(() => setLoad(false));
   }, []);
 
-  const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
+const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0);
   const totalCost = rows.reduce((s, r) => s + (parseFloat(r.total_cost) || 0), 0);
+  const totalScrap = rows.reduce((s, r) => s + (parseFloat(r.scrap_qty) || 0), 0);
+  const scrapRate = (totalQty + totalScrap) > 0 ? Math.round((totalScrap / (totalQty + totalScrap)) * 1000) / 10 : 0;
 
   // Only show BOMs that produce the currently-selected finished product
   const availableBOMs = boms.filter(b => String(b.product_id) === String(form.product_id));
@@ -949,8 +1180,9 @@ function ProductionTab({ show }) {
     : [];
   const previewCost = previewComponents.reduce((s, i) => s + i.needed * (parseFloat(i.cost) || 0), 0);
 
-  const [workOrders, setWorkOrders] = useState([]);
+ const [workOrders, setWorkOrders] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [startingId, setStartingId] = useState(null);
   useEffect(() => {
     api("/work-orders").then(setWorkOrders).catch(() => {});
     api("/plans").then(setPlans).catch(() => {});
@@ -961,17 +1193,38 @@ function ProductionTab({ show }) {
     const openWO = workOrders.find(w => String(w.product_id) === String(productId) && w.status !== "completed");
     const plan = plans.find(p => String(p.product_id) === String(productId));
     const matchingBOM = boms.find(b => String(b.product_id) === String(productId));
+    const resolvedUnit = matchingBOM?.unit || openWO?.unit || plan?.unit || prod?.unit || form.unit;
     setForm(f => ({
       ...f,
       product_id: productId,
       product: prod?.name || "",
+      unit: resolvedUnit,
       quantity: openWO?.quantity || plan?.target_quantity || f.quantity,
       bom_id: matchingBOM ? String(matchingBOM.id) : "",
+      wo_id: openWO?.id || "",
     }));
   };
 
+  const startRun = async (woId) => {
+    setStartingId(woId);
+    try {
+      await api(`/work-orders/${woId}/start`, { method: "POST" });
+      show("Production started — machines/resources set to Running.");
+      api("/work-orders").then(setWorkOrders).catch(() => {});
+    } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
+  };
+
+  const finishRun = async (woId) => {
+    setStartingId(woId);
+    try {
+      await api(`/work-orders/${woId}/finish`, { method: "POST" });
+      show("Production finished — machines/resources set to Idle.");
+      api("/work-orders").then(setWorkOrders).catch(() => {});
+    } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
+  };
+
   const openAdd = () => { setForm({ ...blank, ref_no: genRef("PRD", rows) }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product_id: r.product_id || "", product: r.product, quantity: r.quantity, total_cost: r.total_cost || "", date: r.date?.slice(0, 10) || today, bom_id: r.bom_id || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product_id: r.product_id || "", product: r.product, quantity: r.quantity, scrap_qty: r.scrap_qty || "", scrap_reason: r.scrap_reason || "", total_cost: r.total_cost || "", date: r.date?.slice(0, 10) || today, bom_id: r.bom_id || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.ref_no}"? This will reverse its stock effect (component stock restored, finished-good stock removed).`)) return;
     try { await api(`/production/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted — stock reversed.", "info"); } catch (e) { show(e.message, "error"); }
@@ -987,23 +1240,54 @@ function ProductionTab({ show }) {
     } catch (e) { show(e.message, "error"); } finally { setSaving(false); }
   };
 
-  const COLS = [
+const COLS = [
     { k: "date",        l: "Date",     render: v => v?.slice(0, 10) || "—" },
     { k: "ref_no",      l: "Ref No",   render: v => <Code v={v} /> },
     { k: "location",    l: "Location", render: v => <span style={{ fontSize: 12, color: C.gray500 }}>{v || "—"}</span> },
     { k: "product",     l: "Product",  render: v => <span style={{ fontWeight: 600, color: C.gray900 }}>{v}</span> },
-    { k: "quantity",    l: "Quantity", render: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+    { k: "quantity",    l: "Good Qty", render: v => <span style={{ fontWeight: 700, color: C.green }}>{v}</span> },
+    { k: "scrap_qty",   l: "Scrap Qty", render: v => v > 0 ? <span style={{ fontWeight: 700, color: C.red }}>{v}</span> : <span style={{ color: C.gray300 }}>—</span> },
     { k: "total_cost",  l: "Total Cost", render: v => v ? <span style={{ fontWeight: 700, color: C.amber }}>₹{Number(v).toLocaleString("en-IN")}</span> : "—" },
     { k: "recipe_used", l: "BOM / Recipe", render: v => <Code v={v} /> },
   ];
+
+  const activeWOs = workOrders.filter(w => w.status === "planned" || w.status === "in_progress");
 
   return (
     <PageShell title="Production" sub="Record production runs — saving deducts BOM components and adds finished-good stock" icon="🏭">
       <KPIs cards={[
         { icon: "🏭", label: "Total Runs",  value: rows.length,                                        color: C.green },
-        { icon: "📦", label: "Total Qty",   value: totalQty,                                           color: C.blue },
+        { icon: "📦", label: "Total Good Qty", value: totalQty,                                        color: C.blue },
+        { icon: "⚠️", label: "Total Scrap", value: totalScrap, sub: `${scrapRate}% scrap rate`,        color: C.red },
         { icon: "💰", label: "Total Cost",  value: `₹${totalCost.toLocaleString("en-IN")}`,            color: C.amber },
       ]} />
+
+      {activeWOs.length > 0 && (
+        <Card>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.gray100}`, fontSize: 13, fontWeight: 700, color: C.gray900, fontFamily: font }}>
+            Active Work Orders — start/finish flips machine & resource status automatically
+          </div>
+          <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {activeWOs.map(w => (
+              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.gray50, borderRadius: 8, border: `1px solid ${C.gray200}` }}>
+                <Code v={w.wo_number} />
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.gray900 }}>{w.product_name} · {w.quantity} {w.unit}</div>
+                <Badge value={w.status} />
+                {w.status === "planned" ? (
+                  <button onClick={() => startRun(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
+                    {startingId === w.id ? "Starting…" : "Start Production"}
+                  </button>
+                ) : (
+                  <button onClick={() => finishRun(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.amber}`, background: C.amberBg, color: C.amber, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
+                    {startingId === w.id ? "Finishing…" : "Finish Production"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add Production" search={search} onSearch={setSearch}
@@ -1014,12 +1298,14 @@ function ProductionTab({ show }) {
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
 
-      {viewRow && (
+   {viewRow && (
         <Modal title={viewRow.ref_no} sub="Production Record Details" onClose={() => setViewRow(null)}>
           <DR label="Reference No" value={<Code v={viewRow.ref_no} />} />
           <DR label="Date" value={viewRow.date?.slice(0, 10)} />
           <DR label="Product" value={viewRow.product} />
-          <DR label="Quantity" value={viewRow.quantity} />
+          <DR label="Good Quantity" value={<span style={{ color: C.green, fontWeight: 700 }}>{viewRow.quantity}</span>} />
+          <DR label="Scrap Quantity" value={viewRow.scrap_qty > 0 ? <span style={{ color: C.red, fontWeight: 700 }}>{viewRow.scrap_qty}</span> : "—"} />
+          <DR label="Scrap Reason" value={viewRow.scrap_reason || "—"} />
           <DR label="Location" value={viewRow.location} />
           <DR label="Total Cost" value={viewRow.total_cost ? `₹${Number(viewRow.total_cost).toLocaleString("en-IN")}` : "—"} />
           <DR label="Recipe / BOM" value={<Code v={viewRow.recipe_used} />} />
@@ -1033,10 +1319,20 @@ function ProductionTab({ show }) {
           <G2>
             <Fld label="Reference No"><input style={{ ...inp, background: C.gray50 }} value={form.ref_no} onChange={e => sf("ref_no", e.target.value)} placeholder="Auto-generated" /></Fld>
             <Fld label="Date"><input type="date" style={inp} value={form.date} onChange={e => sf("date", e.target.value)} /></Fld>
-            <Fld label="Product (finished good)" req span>
+          <Fld label="Product (finished good)" req span>
               <ProductSelect products={finishedProducts} value={form.product_id} onChange={selectProduct} placeholder="Select the product being produced..." />
             </Fld>
-            <Fld label="Quantity Produced" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Linked Work Order">
+              <select style={sel} value={form.wo_id} onChange={e => sf("wo_id", e.target.value)} disabled={!form.product_id}>
+                <option value="">No linked WO (manual entry)</option>
+                {workOrders.filter(w => String(w.product_id) === String(form.product_id) && w.status !== "completed").map(w => <option key={w.id} value={w.id}>{w.wo_number}</option>)}
+              </select>
+            </Fld>  
+            <Fld label="Good Quantity Produced" req><input type="number" style={inp} value={form.quantity} onChange={e => sf("quantity", e.target.value)} min={0} /></Fld>
+            <Fld label="Scrap / Rejected Qty"><input type="number" style={inp} value={form.scrap_qty} onChange={e => sf("scrap_qty", e.target.value)} min={0} /></Fld>
+            {Number(form.scrap_qty) > 0 && (
+              <Fld label="Scrap Reason"><select style={sel} value={form.scrap_reason} onChange={e => sf("scrap_reason", e.target.value)}><option value="">Select reason...</option>{SCRAP_REASONS.map(r => <option key={r}>{r}</option>)}</select></Fld>
+            )}
             <Fld label="Location"><input style={inp} value={form.location} onChange={e => sf("location", e.target.value)} placeholder="Unit A - Chennai" /></Fld>
             <Fld label="BOM / Recipe Used">
               <select style={sel} value={form.bom_id} onChange={e => sf("bom_id", e.target.value)} disabled={!form.product_id}>
@@ -1076,8 +1372,9 @@ function ProductionTab({ show }) {
                   })}</tbody>
                 </table>
               )}
-              <div style={{ fontSize: 11, color: C.gray500, marginTop: 8 }}>
-                Finished stock for <b>{form.product}</b> will increase by <b>{form.quantity || 0}</b> when saved.
+             <div style={{ fontSize: 11, color: C.gray500, marginTop: 8 }}>
+                Finished stock for <b>{form.product}</b> will increase by <b>{form.quantity || 0}</b> good units when saved.
+                {Number(form.scrap_qty) > 0 && <> Component consumption is scaled for <b>{Number(form.quantity || 0) + Number(form.scrap_qty)}</b> total attempted units (good + scrap).</>}
               </div>
             </div>
           )}
@@ -1525,6 +1822,11 @@ function MachinesTab({ show }) {
         { icon: "🔧", label: "Maintenance", value: rows.filter(r => r.status === "maintenance").length,       color: C.red },
         { icon: "📊", label: "Fleet OEE (MTD)", value: fleetOee ? `${fleetOee.fleet_average_oee}%` : "—",     color: C.blue },
       ]} />
+      {rows.some(r => r.status === "maintenance") && (
+        <div style={{ background: C.redBg, border: `1px solid ${C.redBd}`, borderRadius: 8, padding: "10px 16px", marginBottom: 14, fontSize: 12, color: C.red, fontWeight: 600, fontFamily: font }}>
+          ⚠ {rows.filter(r => r.status === "maintenance").length} machine(s) under maintenance are excluded from Production Planning and Work Order assignment until their status changes.
+        </div>
+      )}
       <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add Machine" search={search} onSearch={setSearch}
@@ -1585,9 +1887,14 @@ function QCTab({ show }) {
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const { products } = useProductOptions();
-  const selectProduct = (productId) => {
+ const selectProduct = (productId) => {
     const prod = products.find(p => String(p.id) === String(productId));
-    setForm(f => ({ ...f, product_id: productId, product: prod?.name || "" }));
+    setForm(f => ({
+      ...f,
+      product_id: productId,
+      product: prod?.name || "",
+      quantity_checked: f.quantity_checked || (prod?.current_stock ?? ""),
+    }));
   };
 
   useEffect(() => {
@@ -1999,17 +2306,23 @@ function ScheduleTab({ show }) {
   }, []);
 
   // Merge dedicated schedule entries with Work Orders + Plans for a unified timeline
+const linkedPlanIds = new Set(wo.filter(w => w.plan_id).map(w => String(w.plan_id)));
   const merged = [
     ...rows.map(r => ({ ...r, kind: r.event_type || "Scheduled Event", source: "schedule", ref: r.ref_no, title: r.title, start: r.start_date, end: r.end_date, team: r.assigned_team, progress: null })),
     ...wo.map(r => ({ ...r, kind: "Work Order", source: "wo", ref: r.wo_number, title: r.product_name, start: r.start_date, end: r.end_date, team: r.assigned_team, progress: r.progress })),
-    ...plans.map(r => ({ ...r, kind: "Plan", source: "plan", ref: r.title, title: r.assigned_team || "—", start: r.start_date, end: r.end_date, team: r.assigned_team, progress: null })),
+    // Only show a Plan on the timeline if it hasn't already progressed into a Work Order
+    ...plans.filter(p => !linkedPlanIds.has(String(p.id)))
+            .map(r => ({ ...r, kind: "Plan", source: "plan", ref: r.title, title: r.assigned_team || "—", start: r.start_date, end: r.end_date, team: r.assigned_team, progress: null })),
   ].filter(e => e.start);
 
-  const fil = merged.filter(e =>
-    (!fType || e.kind === fType) &&
-    (!fStatus || e.status === fStatus) &&
-    `${e.ref} ${e.title} ${e.team}`.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => new Date(a.start) - new Date(b.start));
+const fil = merged.filter(e => {
+    if (fType && e.kind !== fType) return false;
+    if (fStatus === "__upcoming__") { if (e.status === "completed" || (e.end && e.end < today)) return false; }
+    else if (fStatus === "__overdue__") { if (!(e.status === "overdue" || (e.end && e.end < today && e.status !== "completed"))) return false; }
+    else if (fStatus && e.status !== fStatus) return false;
+    if (search && !`${e.ref} ${e.title} ${e.team}`.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }).sort((a, b) => new Date(a.start) - new Date(b.start));
 
   const grouped = fil.reduce((acc, e) => {
     const key = e.start?.slice(0, 10) || "Unscheduled";
@@ -2061,12 +2374,17 @@ function ScheduleTab({ show }) {
 
   return (
     <PageShell title="Manufacturing Schedule" sub="Plan, assign and track all production scheduling events" icon="🗓️">
-      <KPIs cards={[
-        { icon: "🗓️", label: "Total Events", value: merged.length,                                              color: C.green },
-        { icon: "⏳", label: "Upcoming",     value: merged.filter(e => !e.end || e.end >= today).length,         color: C.blue },
-        { icon: "⚙️", label: "In Progress",  value: merged.filter(e => e.status === "in_progress").length,       color: C.amber },
-        { icon: "✅", label: "Completed",    value: merged.filter(e => e.status === "completed").length,         color: C.green },
-        { icon: "⚠️", label: "Overdue",      value: merged.filter(e => e.status === "overdue" || (e.end && e.end < today && e.status !== "completed")).length, color: C.red },
+    <KPIs cards={[
+        { icon: "🗓️", label: "Total Events", value: merged.length,                                              color: C.green,
+          onClick: () => { setFT(""); setFS(""); } },
+        { icon: "⏳", label: "Upcoming",     value: merged.filter(e => e.status !== "completed" && (!e.end || e.end >= today)).length, color: C.blue,
+          onClick: () => setFS(prev => prev === "__upcoming__" ? "" : "__upcoming__") },
+        { icon: "⚙️", label: "In Progress",  value: merged.filter(e => e.status === "in_progress").length,       color: C.amber,
+          onClick: () => setFS(prev => prev === "in_progress" ? "" : "in_progress") },
+        { icon: "✅", label: "Completed",    value: merged.filter(e => e.status === "completed").length,         color: C.green,
+          onClick: () => setFS(prev => prev === "completed" ? "" : "completed") },
+        { icon: "⚠️", label: "Overdue",      value: merged.filter(e => e.status === "overdue" || (e.end && e.end < today && e.status !== "completed")).length, color: C.red,
+          onClick: () => setFS(prev => prev === "__overdue__" ? "" : "__overdue__") },
       ]} />
 
       <Card>

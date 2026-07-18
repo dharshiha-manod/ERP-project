@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as settingsAPI from "../api/settingsAPI"; // adjust path to your actual file
+import { useBusiness } from "../context/BusinessContext";
+
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const G = {
@@ -17,8 +19,8 @@ const btnBase = {
   letterSpacing: ".01em", transition: "transform .12s, box-shadow .12s",
   fontFamily: "inherit",
 };
-const BtnGreen = ({ children, onClick, style = {} }) => (
-  <button onClick={onClick} style={{ ...btnBase, background: G.green, color: "#fff", boxShadow: "0 3px 10px rgba(26,107,60,.30)", ...style }}
+const BtnGreen = ({ children, onClick, style = {}, type = "button" }) => (
+  <button type={type} onClick={onClick} style={{ ...btnBase, background: G.green, color: "#fff", boxShadow: "0 3px 10px rgba(26,107,60,.30)", ...style }}
     onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 5px 16px rgba(26,107,60,.38)"; }}
     onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 3px 10px rgba(26,107,60,.30)"; }}>
     {children}
@@ -31,13 +33,17 @@ const BtnBlack = ({ children, onClick }) => (
     {children}
   </button>
 );
-const BtnRed = ({ children, onClick }) => (
-  <button onClick={onClick} style={{ ...btnBase, background: G.red, color: "#fff", boxShadow: "0 3px 8px rgba(231,76,60,.30)" }}>
+const BtnBlue = ({ children, onClick, style = {} }) => (
+  <button onClick={onClick} style={{ ...btnBase, background: G.blue, color: "#fff", boxShadow: "0 3px 10px rgba(52,152,219,.30)", ...style }}
+    onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+    onMouseLeave={e => { e.currentTarget.style.transform = ""; }}>
     {children}
   </button>
 );
-const BtnBlue = ({ children, onClick }) => (
-  <button onClick={onClick} style={{ ...btnBase, background: G.blue, color: "#fff", boxShadow: "0 3px 8px rgba(52,152,219,.28)" }}>
+const BtnRed = ({ children, onClick, style = {} }) => (
+  <button onClick={onClick} style={{ ...btnBase, background: G.red, color: "#fff", boxShadow: "0 3px 10px rgba(231,76,60,.30)", ...style }}
+    onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+    onMouseLeave={e => { e.currentTarget.style.transform = ""; }}>
     {children}
   </button>
 );
@@ -103,11 +109,14 @@ const Divider = () => <hr style={{ border: "none", borderTop: "1px solid #f0f0f0
 
 // ─── 1. BUSINESS SETTINGS ─────────────────────────────────────────────────────
 function BusinessSettings() {
+  const { refreshBusiness } = useBusiness();
+  const logoInputRef = useRef(null);
   const [form, setForm] = useState({
     name: "", startDate: "05/23/2026", profit: "25.00",
     currency: "INR", symbolPlacement: "Before amount", timezone: "Asia/Kolkata",
     financialMonth: "January", stockMethod: "FIFO", editDays: "30",
     dateFormat: "mm/dd/yyyy", timeFormat: "24 Hour", currencyPrecision: "2", qtyPrecision: "2",
+    logoFile: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -129,8 +138,19 @@ useEffect(() => {
   })();
 }, []); 
 
-  const handleSave = async () => {
+ const handleSave = async () => {
     setSaving(true); setMsg(null);
+
+    // Logo upload (multipart) only if a new file was picked
+    if (form.logoFile) {
+      const logoRes = await settingsAPI.uploadBusinessLogo(form.logoFile);
+      if (!logoRes.success) {
+        setSaving(false);
+        setMsg(`❌ ${logoRes.message || "Logo upload failed"}`);
+        return;
+      }
+    }
+
     const res = await settingsAPI.updateBusinessSettings({
       business_name: form.name,
       currency: form.currency,
@@ -138,6 +158,7 @@ useEffect(() => {
     });
     setSaving(false);
     setMsg(res.success ? "✅ Settings updated" : `❌ ${res.message}`);
+    if (res.success) refreshBusiness(); // <-- pushes new name/currency/logo to every module instantly
   };
 
   if (loading) return <Card>Loading...</Card>;
@@ -171,10 +192,25 @@ useEffect(() => {
       </FormRow>
 
       <FormRow cols={2}>
-        <FG label="Upload Logo">
+      <FG label="Upload Logo">
           <div style={{ display: "flex", gap: 8 }}>
-            <Input placeholder="No file chosen" style={{ flex: 1 }} />
-            <BtnGreen style={{ whiteSpace: "nowrap", padding: "8px 14px" }}>📁 Browse...</BtnGreen>
+            <Input placeholder={form.logoFile ? form.logoFile.name : "No file chosen"} style={{ flex: 1 }} />
+            <input
+              type="file"
+              accept="image/*"
+              ref={logoInputRef}
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (file) setForm({ ...form, logoFile: file });
+              }}
+            />
+            <BtnGreen
+              style={{ whiteSpace: "nowrap", padding: "8px 14px" }}
+              onClick={() => logoInputRef.current.click()}
+            >
+              📁 Browse...
+            </BtnGreen>
           </div>
           <p style={{ fontSize: 11.5, color: "#999", marginTop: 3 }}>Previous logo (if exists) will be replaced</p>
         </FG>
@@ -406,31 +442,35 @@ function InvoiceSettings() {
   const f = k => e => setForm({ ...form, [k]: e.target.value });
   const t = k => () => setForm({ ...form, [k]: !form[k] });
 
-  useEffect(() => {
-    (async () => {
-      const res = await settingsAPI.getInvoiceSettings();
-      if (res.success && res.data) {
-        setForm(prev => ({
-          ...prev,
-          prefix: res.data.invoice_prefix ?? prev.prefix,
-          startNumber: String(res.data.invoice_start_number ?? prev.startNumber),
-          showTax: res.data.show_tax_id ?? prev.showTax,
-          termsText: res.data.notes_template || "",
-        }));
-      }
-      setLoading(false);
-    })();
-  }, []);
+useEffect(() => {
+  (async () => {
+    const res = await settingsAPI.getInvoiceSettings();
+    if (res.success && res.data) {
+      setForm(prev => ({
+        ...prev,
+        prefix: res.data.invoice_prefix ?? prev.prefix,
+        digits: String(res.data.number_digits ?? prev.digits),
+        separator: res.data.separator ?? prev.separator,
+        startNumber: String(res.data.invoice_start_number ?? prev.startNumber),
+        showTax: res.data.show_tax_id ?? prev.showTax,
+        termsText: res.data.notes_template || "",
+      }));
+    }
+    setLoading(false);
+  })();
+}, []);
 
   const handleSave = async () => {
     setSaving(true); setMsg(null);
-    const res = await settingsAPI.updateInvoiceSettings({
-      invoice_prefix: form.prefix,
-      invoice_start_number: form.startNumber,
-      show_tax_id: form.showTax,
-      show_notes: !!form.termsText,
-      notes_template: form.termsText,
-    });
+   const res = await settingsAPI.updateInvoiceSettings({
+  invoice_prefix: form.prefix,
+  invoice_start_number: form.startNumber,
+  number_digits: form.digits,
+  separator: form.separator,
+  show_tax_id: form.showTax,
+  show_notes: !!form.termsText,
+  notes_template: form.termsText,
+});
     setSaving(false);
     setMsg(res.success ? "✅ Settings updated" : `❌ ${res.message}`);
   };
@@ -566,12 +606,28 @@ function BarcodeSettings() {
 }
 
 // ─── 5. RECEIPT PRINTERS ─────────────────────────────────────────────────────
+// ─── 5. RECEIPT PRINTERS ─────────────────────────────────────────────────────
 function ReceiptPrinters() {
   const [printers, setPrinters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", type: "Thermal", connection: "USB", ip: "", port: "9100", paperWidth: "80mm", charPerLine: "48", location: "" });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ name: "", type: "Thermal", connection: "USB", ip: "", port: "9100", paperWidth: "80mm", charPerLine: "48", location: "" });
+    setShowAdd(true);
+  };
+  const openEdit = (p) => {
+    setEditingId(p.id);
+    setForm({
+      name: p.name, type: p.type, connection: p.connection === "Network" ? "Network / LAN" : "USB",
+      ip: "", port: "9100", paperWidth: p.paperWidth, charPerLine: "48", location: ""
+    });
+    setShowAdd(true);
+  };
 
   const loadPrinters = async () => {
     const res = await settingsAPI.getPrinters();
@@ -586,11 +642,14 @@ function ReceiptPrinters() {
   useEffect(() => { loadPrinters(); }, []);
 
   const handleSave = async () => {
-    const res = await settingsAPI.createPrinter({
+    const payload = {
       printer_name: form.name, ip_address: form.ip || null,
       port: form.port || null, paper_width: parseInt(form.paperWidth) || 80,
-    });
-    if (res.success) { setShowAdd(false); loadPrinters(); }
+    };
+    const res = editingId
+      ? await settingsAPI.updatePrinter(editingId, payload)
+      : await settingsAPI.createPrinter(payload);
+    if (res.success) { setShowAdd(false); loadPrinters(); } else { alert(res.message || 'Failed to save printer'); }
   };
 
   const handleDelete = async (id) => {
@@ -600,13 +659,13 @@ function ReceiptPrinters() {
 
   const thStyle = { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
   const tdStyle = { padding: "10px 12px", fontSize: 13, color: "#444", borderBottom: "1px solid #f4f4f4" };
-if (loading) return <Card>Loading...</Card>;
+  if (loading) return <Card>Loading...</Card>;
 
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <SectionTitle>Receipt Printers</SectionTitle>
-        <BtnBlue onClick={() => setShowAdd(true)}>+ Add Printer</BtnBlue>
+        <BtnBlue onClick={openAdd}>+ Add Printer</BtnBlue>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -622,8 +681,8 @@ if (loading) return <Card>Loading...</Card>;
               <td style={tdStyle}><span style={{ background: "#e8f5ee", color: "#1a6b3c", padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{p.status}</span></td>
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }}>✏️ Edit</BtnGreen>
-              <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(p.id)}>🗑️ Delete</BtnRed>
+                  <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => openEdit(p)}>✏️ Edit</BtnGreen>
+                  <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(p.id)}>🗑️ Delete</BtnRed>
                 </div>
               </td>
             </tr>
@@ -631,7 +690,7 @@ if (loading) return <Card>Loading...</Card>;
         </tbody>
       </table>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Receipt Printer"
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={editingId ? "Edit Receipt Printer" : "Add Receipt Printer"}
         footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={2}>
           <FG label="Printer Name" required><Input value={form.name} onChange={f("name")} placeholder="e.g. Main Counter Printer" /></FG>
@@ -666,12 +725,12 @@ if (loading) return <Card>Loading...</Card>;
     </Card>
   );
 }
-
 // ─── 6. TAX RATES ─────────────────────────────────────────────────────────────
 function TaxRates() {
   const [taxes, setTaxes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", type: "Percentage", rate: "", isDefault: false });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
 
@@ -687,9 +746,24 @@ function TaxRates() {
   };
   useEffect(() => { loadTaxes(); }, []);
 
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ name: "", type: "Percentage", rate: "", isDefault: false });
+    setShowAdd(true);
+  };
+
+  const openEdit = (tax) => {
+    setEditingId(tax.id);
+    setForm({ name: tax.name, type: tax.type, rate: String(tax.rate), isDefault: tax.isDefault });
+    setShowAdd(true);
+  };
+
   const handleSave = async () => {
-    const res = await settingsAPI.createTaxRate({ tax_name: form.name, rate: form.rate, is_default: form.isDefault });
-    if (res.success) { setShowAdd(false); loadTaxes(); }
+    const payload = { tax_name: form.name, rate: form.rate, is_default: form.isDefault };
+    const res = editingId
+      ? await settingsAPI.updateTaxRate(editingId, payload)
+      : await settingsAPI.createTaxRate(payload);
+    if (res.success) { setShowAdd(false); loadTaxes(); } else { alert(res.message || 'Failed to save tax rate'); }
   };
 
   const handleDelete = async (id) => {
@@ -705,7 +779,7 @@ if (loading) return <Card>Loading...</Card>;
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
         <SectionTitle>Tax Rates</SectionTitle>
-        <BtnBlue onClick={() => setShowAdd(true)}>+ Add Tax Rate</BtnBlue>
+      <BtnBlue onClick={openAdd}>+ Add Tax Rate</BtnBlue>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -724,7 +798,7 @@ if (loading) return <Card>Loading...</Card>;
               </td>
               <td style={tdStyle}>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }}>✏️ Edit</BtnGreen>
+                <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => { console.log('Edit clicked', tax); openEdit(tax); }}>✏️ Edit</BtnGreen>
                  <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(tax.id)}>🗑️ Delete</BtnRed>
                 </div>
               </td>
@@ -734,7 +808,7 @@ if (loading) return <Card>Loading...</Card>;
       </table>
       <p style={{ fontSize: 12, color: "#aaa", marginTop: 10 }}>Showing {taxes.length} tax rates</p>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Tax Rate"
+  <Modal open={showAdd} onClose={() => setShowAdd(false)} title={editingId ? "Edit Tax Rate" : "Add Tax Rate"}
         footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={1}><FG label="Tax Name" required><Input value={form.name} onChange={f("name")} placeholder="e.g. GST 18%" /></FG></FormRow>
         <FormRow cols={2}>

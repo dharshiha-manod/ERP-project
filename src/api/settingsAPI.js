@@ -5,7 +5,9 @@
  * ════════════════════════════════════════════════════════════
  */
 
-const API_BASE = 'http://localhost:5000/api/settings';
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api/settings`
+  : 'http://localhost:5000/api/settings';
 
 const getToken = () => localStorage.getItem('manod_token');
 
@@ -169,6 +171,24 @@ export const createPrinter = async (data) => {
   }
 };
 
+export const updatePrinter = async (id, data) => {
+  try {
+    const res = await fetch(`${API_BASE}/printers/${id}`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`
+      },
+      body: JSON.stringify(data)
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error('❌ Error updating printer:', error);
+    return { success: false, message: error.message };
+  }
+};
+
 export const deletePrinter = async (id) => {
   try {
     const res = await fetch(`${API_BASE}/printers/${id}`, {
@@ -211,6 +231,56 @@ export const updateBusinessSettings = async (data) => {
     return json;
   } catch (error) {
     console.error('❌ Error updating business settings:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// ─── BUSINESS LOGO ─────────────────────────────────────────
+export const uploadBusinessLogo = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('logo', file);
+    const res = await fetch(`${API_BASE}/business/logo`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` }, // NOTE: no Content-Type, browser sets multipart boundary
+      body: formData
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error('❌ Error uploading logo:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// ─── BARCODE SETTINGS ──────────────────────────────────────
+export const getBarcodeSettings = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/barcode`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error('❌ Error fetching barcode settings:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+export const updateBarcodeSettings = async (data) => {
+  try {
+    const res = await fetch(`${API_BASE}/barcode`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`
+      },
+      body: JSON.stringify(data)
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error('❌ Error updating barcode settings:', error);
     return { success: false, message: error.message };
   }
 };

@@ -10,6 +10,7 @@ import {
   fetchProductsForTransfer,
   fetchStockTransferStats,
 } from "../api/stockTransfersAPI";
+import * as settingsAPI from "../api/settingsAPI";
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -156,9 +157,7 @@ const ALL_COLUMNS = [
   { key: "notes",           label: "Additional Notes" },
 ];
 
-// Locations are not yet backed by a dedicated table in the database,
-// so this is a static list. Update here if/when locations become dynamic.
-const LOCATIONS = ["Main Warehouse", "Branch A", "Branch B", "Branch C"];
+// Locations now load live from Settings → Business Locations (settingsAPI.getLocations).
 
 function formatDate(d) {
   if (!d) return "-";
@@ -733,6 +732,7 @@ function StockTransferForm({ mode }) {
   ]);
 
   const [productOptions, setProductOptions] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading]   = useState(isEdit);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
@@ -743,6 +743,15 @@ function StockTransferForm({ mode }) {
       .then((list) => setProductOptions(list || []))
       .catch((err) => setError(err.message || "Failed to load products"));
   }, []);
+
+  // Load Business Locations from Settings — replaces hardcoded LOCATIONS
+  useEffect(() => {
+    settingsAPI.getLocations().then((res) => {
+      if (res.success && Array.isArray(res.data)) setLocations(res.data);
+    }).catch(() => {});
+  }, []);
+
+  const locationNames = locations.map((l) => l.location_name).filter(Boolean);
 
   // Load existing transfer when editing
   useEffect(() => {
@@ -918,21 +927,25 @@ const updateProductRow = (idx, field, val) => {
             </div>
           </div>
 
-          <div style={S.formGrid}>
+        <div style={S.formGrid}>
             <div style={S.formGroup}>
               <label style={S.label}>Location (From) <span style={S.req}>*</span></label>
-              <select style={S.input} value={form.location_from} onChange={(e) => set("location_from", e.target.value)} required>
-                <option value="">-- Select location --</option>
-                {LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+           <select style={S.input} value={form.location_from} onChange={(e) => set("location_from", e.target.value)} required>
+                <option value="">{locationNames.length === 0 ? "Loading…" : "-- Select location --"}</option>
+                {locationNames.filter((l) => l !== form.location_to).map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
-            <div style={S.formGroup}>
-              <label style={S.label}>Location (To) <span style={S.req}>*</span></label>
-              <select style={S.input} value={form.location_to} onChange={(e) => set("location_to", e.target.value)} required>
-                <option value="">-- Select location --</option>
-                {LOCATIONS.filter((l) => l !== form.location_from).map((l) => <option key={l} value={l}>{l}</option>)}
-              </select>
-            </div>
+           <div style={S.formGroup}>
+  <label style={S.label}>Location (To) <span style={S.req}>*</span></label>
+  <input
+    type="text"
+    style={S.input}
+    value={form.location_to}
+    onChange={(e) => set("location_to", e.target.value)}
+    placeholder="Enter destination location"
+    required
+  />
+</div>
           </div>
 
           <div style={S.sectionTitle}>Products</div>

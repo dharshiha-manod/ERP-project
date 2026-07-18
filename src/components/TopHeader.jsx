@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../pages/ThemeContext";       // ← NEW
 import ThemeSwitcher from "./ThemeSwitcher";            // ← NEW
+import { useBusiness } from "../context/BusinessContext"; // ← NEW
 
 /* ─── outside click hook ─────────────────────────────────────────────────── */
 function useOutsideClick(ref, cb) {
@@ -422,10 +423,11 @@ function IBtn({ children, onClick, active, title, badge = 0 }) {
 /* ══════════════════════════════════════════════════════════════════════════
    TOP HEADER  (main export)
 ══════════════════════════════════════════════════════════════════════════ */
-export default function TopHeader({ businessName = "Manodtechnologies" }) {
+export default function TopHeader() {
   const navigate    = useNavigate();
   const { theme }   = useTheme();      // ← live theme colours
-
+  const { business } = useBusiness();  // ← live business settings
+  const businessName = business?.business_name || "Manodtechnologies";
   const [profitOpen,  setProfitOpen]  = useState(false);
   const [calcOpen,    setCalcOpen]    = useState(false);
   const [quickOpen,   setQuickOpen]   = useState(false);
@@ -487,8 +489,15 @@ export default function TopHeader({ businessName = "Manodtechnologies" }) {
         transition: "background 0.3s ease",
       }}>
 
-        {/* Business name + online dot */}
+    {/* Business name + online dot */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+          {business?.logo_url && (
+            <img
+              src={`${import.meta.env.VITE_API_URL || "http://localhost:5000"}${business.logo_url}`}
+              alt="Logo"
+              style={{ width: 26, height: 26, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
+            />
+          )}
           <span style={{ fontWeight: 700, fontSize: "15px", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {businessName}
           </span>

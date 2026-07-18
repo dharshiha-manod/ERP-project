@@ -49,6 +49,13 @@ export const getAllContacts = async (params = {}) => {
   return apiFetch(`${ENDPOINT}?${query}`);
 };
 
+// ── GET CUSTOMERS ONLY — used by Sell.jsx's customer dropdown so
+// suppliers never leak into the list ──
+export const getCustomersOnly = async () => {
+  const data = await apiFetch(`${ENDPOINT}?contactType=Customers&limit=1000`);
+  return data?.data || data?.contacts || [];
+};
+
 // ── GET SINGLE CONTACT ──
 export const getContactById = async (id) => {
   const data = await apiFetch(`${ENDPOINT}/${id}`);
@@ -91,12 +98,40 @@ export const createGroup = async (payload) => {
   return apiFetch(`${ENDPOINT}/groups`, { method: 'POST', body: JSON.stringify(payload) });
 };
 
+export const updateGroup = async (id, payload) => {
+  return apiFetch(`${ENDPOINT}/groups/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+};
+
 export const deleteGroup = async (id) => {
   return apiFetch(`${ENDPOINT}/groups/${id}`, { method: 'DELETE' });
 };
 
 // ── CSV PARSING HELPER (for Import page) ──
 // Minimal CSV parser sufficient for the contacts template columns.
+// Proper CSV line parser — respects quoted fields, escaped quotes ("") and commas inside quotes
+const parseCSVLine = (line) => {
+  const cells = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { cells.push(cur.trim()); cur = ""; }
+      else { cur += ch; }
+    }
+  }
+  cells.push(cur.trim());
+  return cells;
+};
+
 export const parseCSVFile = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -104,9 +139,8 @@ export const parseCSVFile = (file) => {
       try {
         const text = e.target.result;
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
-        const headers = lines[0].split(',').map((h) => h.trim());
         const rows = lines.slice(1).map((line) => {
-          const cells = line.split(',').map((c) => c.trim());
+          const cells = parseCSVLine(line);
           return {
             contactType: cells[0],
             prefix: cells[1],

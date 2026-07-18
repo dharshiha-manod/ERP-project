@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
+import { fetchAllUsers } from "../api/userAPI";
 import {
-  getAllContacts, createContact as apiCreateContact, updateContact as apiUpdateContact,
+  getAllContacts, getContactById as apiGetContactById, createContact as apiCreateContact, updateContact as apiUpdateContact,
   deleteContact as apiDeleteContact, getContactStats, getAllGroups, createGroup as apiCreateGroup,
-  deleteGroup as apiDeleteGroup, importContacts as apiImportContacts, parseCSVFile,
+  updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup, importContacts as apiImportContacts, parseCSVFile,
 } from "../api/contactsAPI";
 import { usePermissions } from "../context/PermissionsContext";
 
@@ -55,7 +56,7 @@ const mapContact = (c) => ({
   state: c.state || "",
   country: c.country || "",
   zip: c.zip || "",
-  mobile: c.mobile || "—",
+mobile: c.phone || "—",
   altPhone: c.alt_phone || "",
   landline: c.landline || "",
   assignedTo: c.assigned_to || "",
@@ -99,8 +100,8 @@ const pageTitle = { margin: 0, fontSize: 24, fontWeight: 700, color: "#1a202c" }
 const pageSubtitle = { fontSize: 13, color: "#718096" };
 const card = { background: "#fff", borderRadius: 10, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", marginBottom: 20 };
 const tbl = { width: "100%", borderCollapse: "collapse", fontSize: 13 };
-const th = { padding: "11px 12px", textAlign: "left", fontWeight: 600, color: "#374151", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap" };
-const td = { padding: "11px 12px", whiteSpace: "nowrap", borderBottom: "1px solid #f3f4f6", color: "#374151" };
+const th = { padding: "11px 12px", textAlign: "left", fontWeight: 600, color: "#374151", borderBottom: "2px solid #e5e7eb" };
+const td = { padding: "11px 12px", borderBottom: "1px solid #f3f4f6", color: "#374151", wordBreak: "break-word" };  
 const emptyCell = { textAlign: "center", padding: 40, color: "#9ca3af", fontSize: 14 };
 const pgBtn = { border: "1px solid #d1d5db", background: "#fff", borderRadius: 4, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: "#4a5568" };
 const tableFooter = { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, fontSize: 13, color: "#6b7280", flexWrap: "wrap", gap: 10 };
@@ -142,14 +143,14 @@ function ExportBar({ onCSV, onExcel, onPrint, onPDF, columns, colVisible, setCol
         <span style={{ ...xIcon, background: "#16a34a" }}>CSV</span> Export CSV
       </button>
       <button onClick={onExcel} style={xBtn}>
-        <span style={{ ...xIcon, background: "#15803d", fontSize: 10 }}>XLS</span> Export Excel
+        <span style={{ ...xIcon, background: "#15803d" }}>XLS</span> Export Excel
       </button>
       <button onClick={onPrint} style={xBtn}>
-        <span style={{ ...xIcon, background: "#4b5563", fontSize: 13 }}>🖨</span> Print
+        <span style={{ ...xIcon, background: "#4b5563" }}>PRT</span> Print
       </button>
       <div style={{ position: "relative" }} ref={ref}>
         <button onClick={() => setShowColMenu((v) => !v)} style={xBtn}>
-          <span style={{ ...xIcon, background: "#7c3aed", fontSize: 13 }}>⊞</span> Column visibility
+          <span style={{ ...xIcon, background: "#7c3aed" }}>COL</span> Column visibility
         </button>
         {showColMenu && (
           <div style={colMenuStyle}>
@@ -164,7 +165,7 @@ function ExportBar({ onCSV, onExcel, onPrint, onPDF, columns, colVisible, setCol
         )}
       </div>
       <button onClick={onPDF} style={xBtn}>
-        <span style={{ ...xIcon, background: "#dc2626", fontSize: 10 }}>PDF</span> Export PDF
+        <span style={{ ...xIcon, background: "#dc2626" }}>PDF</span> Export PDF
       </button>
     </div>
   );
@@ -192,23 +193,29 @@ function TableControls({ showEntries, setShowEntries, search, setSearch }) {
 }
 
 // ─── Dashboard Cards ──────────────────────────────────────────────────────────
-function DashboardCards({ stats }) {
+function DashboardCards({ stats, onCardClick, activeCard }) {
   if (!stats) return null;
   const cards = [
-    { label: "Total Suppliers", value: stats.totalSuppliers, color: "#16a34a", icon: "🏭" },
-    { label: "Total Customers", value: stats.totalCustomers, color: "#2563eb", icon: "🧑‍🤝‍🧑" },
-    { label: "Total Purchase Due", value: `₹${Number(stats.totalPurchaseDue || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, color: "#dc2626", icon: "💰" },
-    { label: "Customer Groups", value: stats.totalCustomerGroups, color: "#7c3aed", icon: "📂" },
+    { key: "suppliers", label: "TOTAL SUPPLIERS", value: stats.totalSuppliers, color: "#16a34a" },
+    { key: "customers", label: "TOTAL CUSTOMERS", value: stats.totalCustomers, color: "#2563eb" },
+    { key: "due", label: "TOTAL PURCHASE DUE", value: `₹${Number(stats.totalPurchaseDue || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, color: "#dc2626" },
+    { key: "groups", label: "CUSTOMER GROUPS", value: stats.totalCustomerGroups, color: "#7c3aed" },
   ];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 18 }}>
       {cards.map((c) => (
-        <div key={c.label} style={{ background: "#fff", borderRadius: 10, padding: 18, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ fontSize: 26, background: `${c.color}1a`, color: c.color, borderRadius: 10, padding: "10px 14px" }}>{c.icon}</div>
-          <div>
-            <div style={{ fontSize: 13, color: "#718096" }}>{c.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#1a202c" }}>{c.value}</div>
-          </div>
+        <div
+          key={c.key}
+          onClick={onCardClick ? () => onCardClick(c.key) : undefined}
+          style={{
+            background: "#fff", borderRadius: 10, padding: "18px 20px",
+            boxShadow: activeCard === c.key ? `0 0 0 2px ${c.color}` : "0 1px 4px rgba(0,0,0,0.08)",
+            cursor: onCardClick ? "pointer" : "default",
+            borderLeft: `4px solid ${c.color}`,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.04em" }}>{c.label}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#1a202c", marginTop: 4 }}>{c.value}</div>
         </div>
       ))}
     </div>
@@ -266,6 +273,13 @@ function AddContactModal({ defaultType, onSave, onClose, editContact, groups }) 
   const [activeTab, setActiveTab] = useState("basic");
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    fetchAllUsers()
+      .then((data) => setUsers(data || []))
+      .catch(() => setUsers([]));
+  }, []);
 
   const handleSave = async () => {
     setErrorMsg("");
@@ -418,10 +432,17 @@ function AddContactModal({ defaultType, onSave, onClose, editContact, groups }) 
                     </select>
                   </FieldBox>
                 )}
-                <FieldBox label="Assigned To">
+             <FieldBox label="Assigned To">
                   <div style={{ display: "flex" }}>
                     <span style={iconBox}>👤</span>
-                    <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Sales person name" style={iconInp} />
+                    <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={iconInp}>
+                      <option value="">Select sales person</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.full_name || u.name}>
+                          {u.full_name || u.name} ({u.role})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </FieldBox>
               </div>
@@ -530,70 +551,31 @@ function AddContactModal({ defaultType, onSave, onClose, editContact, groups }) 
 // ─── ADVANCED FILTER PANEL ────────────────────────────────────────────────────
 const fLbl = { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 };
 const fInp = { border: "1px solid #d1d5db", borderRadius: 6, padding: "7px 10px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none" };
-
 function AdvancedFilter({ onFilter, type, groups }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [city, setCity] = useState("");
   const [payTerm, setPayTerm] = useState("");
   const [customerGroupId, setCustomerGroupId] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
 
-  const applyFilters = () => onFilter({ name, mobile, city, payTerm, customerGroupId, dateFrom, dateTo });
-  const resetFilters = () => {
-    setName(""); setMobile(""); setCity(""); setPayTerm("");
-    setCustomerGroupId(""); setDateFrom(""); setDateTo("");
-    onFilter({});
-  };
-  const activeCount = [name, mobile, city, payTerm, dateFrom, dateTo, customerGroupId].filter(Boolean).length;
+  const apply = (next) => onFilter(next);
 
   return (
-    <div style={{ background: "#fff", borderRadius: 8, marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", cursor: "pointer" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>{open ? "▲" : "▼"} Filters</span>
-          {activeCount > 0 && <span style={{ background: "#16a34a", color: "#fff", fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 10 }}>{activeCount} active</span>}
-        </div>
-        {activeCount > 0 && (
-          <button onClick={(e) => { e.stopPropagation(); resetFilters(); }} style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>✕ Clear all</button>
-        )}
-      </div>
-      {open && (
-        <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginTop: 14 }}>
-            <div><label style={fLbl}>Name / Business</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Search name..." style={fInp} /></div>
-            <div><label style={fLbl}>Mobile</label><input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="Mobile number" style={fInp} /></div>
-            <div><label style={fLbl}>City / Address</label><input value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Chennai" style={fInp} /></div>
-            <div>
-              <label style={fLbl}>Pay Term</label>
-              <select value={payTerm} onChange={(e) => setPayTerm(e.target.value)} style={fInp}>
-                <option value="">All Pay Terms</option>
-                <option>7 days</option><option>15 days</option><option>30 days</option><option>45 days</option><option>60 days</option>
-              </select>
-            </div>
-            {type === "customer" && (
-              <div>
-                <label style={fLbl}>Customer Group</label>
-                <select value={customerGroupId} onChange={(e) => setCustomerGroupId(e.target.value)} style={fInp}>
-                  <option value="">All Groups</option>
-                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </div>
-            )}
-            <div><label style={fLbl}>Added From</label><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={fInp} /></div>
-            <div><label style={fLbl}>Added To</label><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={fInp} /></div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button onClick={applyFilters} style={{ background: GREEN, color: "#fff", border: "none", borderRadius: 6, padding: "8px 22px", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: GREEN_SHADOW }}>
-              🔍 Apply Filters
-            </button>
-            <button onClick={resetFilters} style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-              Reset
-            </button>
-          </div>
-        </div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+      <select
+        value={payTerm}
+        onChange={(e) => { setPayTerm(e.target.value); apply({ payTerm: e.target.value, customerGroupId }); }}
+        style={{ ...selectStyle, minWidth: 140 }}
+      >
+        <option value="">All Pay Terms</option>
+        <option>7 days</option><option>15 days</option><option>30 days</option><option>45 days</option><option>60 days</option>
+      </select>
+      {type === "customer" && (
+        <select
+          value={customerGroupId}
+          onChange={(e) => { setCustomerGroupId(e.target.value); apply({ payTerm, customerGroupId: e.target.value }); }}
+          style={{ ...selectStyle, minWidth: 160 }}
+        >
+          <option value="">All Groups</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
       )}
     </div>
   );
@@ -678,6 +660,85 @@ function PaginationRow({ page, setPage, showEntries, total }) {
 }
 
 // ─── SUPPLIERS PAGE ───────────────────────────────────────────────────────────
+// ─── Shared Contact Detail Modal ──────────────────────────────────────────────
+function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
+  return (
+    <div style={overlayStyle}>
+      <div style={{ background: "#fff", borderRadius: 14, width: "min(680px, 96vw)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
+        <div style={{ background: GREEN, padding: "28px 28px 20px", borderRadius: "14px 14px 0 0", position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", right: 16, top: 16, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, color: "#fff" }}>
+              {(c.name || "?").charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{c.name}</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>{c.contactId} · {c.contactType}</div>
+              {c.customerGroup && c.customerGroup !== "—" && (
+                <span style={{ background: "rgba(255,255,255,0.25)", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 10, marginTop: 4, display: "inline-block" }}>{c.customerGroup}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 28 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+            {[
+              { label: "Opening Balance", value: c.openingBalance, color: "#16a34a" },
+              { label: "Credit Limit",    value: c.creditLimit,    color: "#2563eb" },
+              { label: "Advance Balance", value: c.advanceBalance, color: "#7c3aed" },
+            ].map((item) => (
+              <div key={item.label} style={{ background: "#f9fafb", borderRadius: 8, padding: "14px 16px", textAlign: "center", border: "1px solid #f3f4f6" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{item.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: item.color }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+            {[
+              { label: "Mobile",       value: c.mobile },
+              { label: "Email",         value: c.email },
+              { label: "Landline",      value: c.landline || "—" },
+              { label: "Alt Phone",     value: c.altPhone || "—" },
+              { label: "Tax Number",    value: c.taxNumber },
+              { label: "Pay Term",      value: c.payTerm },
+              { label: "Address",       value: [c.address, c.city, c.state].filter(v => v && v !== "—").join(", ") || "—" },
+              { label: "Added On",      value: c.addedOn },
+              { label: "Assigned To",   value: c.assignedTo || "—" },
+              { label: "Country / ZIP", value: [c.country, c.zip].filter(Boolean).join(" - ") || "—" },
+              { label: "Total Purchase Due", value: c.totalPurchaseDue },
+              { label: "Total Purchase Return Due", value: c.totalPurchaseReturnDue },
+            ].map((row) => (
+              <div key={row.label} style={{ padding: "12px 0", borderBottom: "1px solid #f3f4f6", display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>{row.label}</span>
+                <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{row.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {c.persons?.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Contact Persons</div>
+              {c.persons.map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: 16, padding: "10px 14px", background: "#f9fafb", borderRadius: 8, marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ color: "#6b7280" }}>{p.mobile}</span>
+                  <span style={{ color: "#6b7280" }}>{p.email}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20, paddingTop: 16, borderTop: "1px solid #f3f4f6" }}>
+            {canEdit && <button style={greenBtn} onClick={onEdit}>Edit</button>}
+            <button onClick={onClose} style={darkBtn}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 export function SuppliersPage() {
   const { hasPermission, isAdmin } = usePermissions();
   const canAdd    = isAdmin || hasPermission("Supplier", "Add supplier");
@@ -688,6 +749,7 @@ export function SuppliersPage() {
   const { contacts, groups, stats, loading, errorMsg, total, page, setPage, showEntries, setShowEntries, search, setSearch, setFilterParams, reload } = useContactsData("Suppliers");
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
+  const [viewContact, setViewContact] = useState(null);
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Address", "Mobile", "Total Purchase Due", "Total Purchase Return Due"];
   const [colVisible, setColVisible] = useState({});
@@ -710,7 +772,7 @@ export function SuppliersPage() {
 
   return (
     <div style={pageStyle}>
-      <PageHeader title="Suppliers" subtitle="Manage your Suppliers" onAdd={canAdd ? () => { setEditContact(null); setShowModal(true); } : null} />
+     <PageHeader title="Suppliers" subtitle="Manage your Suppliers" onAdd={canAdd ? () => { setEditContact(null); setShowModal(true); } : null} />
       <DashboardCards stats={stats} />
       <AdvancedFilter onFilter={setFilterParams} type="supplier" groups={groups} />
 
@@ -725,13 +787,12 @@ export function SuppliersPage() {
           columns={colList} colVisible={colVisible} setColVisible={setColVisible} />
 
         <TableControls showEntries={showEntries} setShowEntries={setShowEntries} search={search} setSearch={setSearch} />
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={tbl}>
+<div>
+          <table style={{ ...tbl, tableLayout: "fixed" }}>
             <thead>
               <tr style={{ background: "#f7fafc" }}>
-                <th style={th}>Action</th>
                 {colList.map((h) => colVisible[h] !== true && <th key={h} style={th}>{h}</th>)}
+                <th style={{ ...th, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -741,12 +802,6 @@ export function SuppliersPage() {
                   ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
                   : contacts.map((c) => (
                     <tr key={c.id} className="tr-hover">
-                      <td style={td}>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {canEdit && <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>}
-                          {canDelete && <button style={delBtnStyle} onClick={() => handleDelete(c.id)}>🗑</button>}
-                        </div>
-                      </td>
                       {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
                       {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
                       {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}
@@ -760,14 +815,87 @@ export function SuppliersPage() {
                       {colVisible["Mobile"] !== true && <td style={td}>{c.mobile}</td>}
                       {colVisible["Total Purchase Due"] !== true && <td style={{ ...td, color: "#dc2626", fontWeight: 600 }}>{c.totalPurchaseDue}</td>}
                       {colVisible["Total Purchase Return Due"] !== true && <td style={{ ...td, color: "#d97706" }}>{c.totalPurchaseReturnDue}</td>}
+                  <td style={{ ...td, textAlign: "right" }}>
+                        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                         <button
+  title="View"
+  onClick={async () => {
+    try {
+      const full = await apiGetContactById(c.id);
+      setViewContact(mapContact(full));
+    } catch {
+      setViewContact(c);
+    }
+  }}
+  style={{ background: "none", border: "none", cursor: "pointer", color: "#3b82f6", padding: 4, display: "inline-flex" }}
+>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+</button>
+{canEdit && (
+  <button
+    title="Edit"
+    onClick={async () => {
+      try {
+        const full = await apiGetContactById(c.id);
+        setEditContact(mapContact(full));
+      } catch {
+        setEditContact(c);
+      }
+      setShowModal(true);
+    }}
+    style={{ background: "none", border: "none", cursor: "pointer", color: "#d97706", padding: 4, display: "inline-flex" }}
+  >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+    </svg>
+  </button>
+)}
+{canDelete && (
+  <button
+    title="Delete"
+    onClick={() => handleDelete(c.id)}
+    style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", padding: 4, display: "inline-flex" }}
+  >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  </button>
+)}
+                        </div>
+                      </td>
                     </tr>
                   ))}
             </tbody>
           </table>
         </div>
         <PaginationRow page={page} setPage={setPage} showEntries={showEntries} total={total} />
-      </div>
+      </div>  
 
+   {viewContact && (
+        <ContactDetailModal
+          c={viewContact}
+          canEdit={canEdit}
+          onClose={() => setViewContact(null)}
+          onEdit={async () => {
+            setViewContact(null);
+            try {
+              const full = await apiGetContactById(viewContact.id);
+              setEditContact(mapContact(full));
+            } catch {
+              setEditContact(viewContact);
+            }
+            setShowModal(true);
+          }}
+        />
+      )}
       {showModal && (
         <AddContactModal defaultType="Suppliers" editContact={editContact} groups={groups}
           onSave={handleSave} onClose={() => { setShowModal(false); setEditContact(null); }} />
@@ -809,90 +937,17 @@ export function CustomersPage() {
     catch (err) { alert(err.message || "Failed to delete."); }
   };
 
-  // ── Customer Detail Modal ──
-  const DetailModal = ({ c, onClose }) => (
-    <div style={overlayStyle}>
-      <div style={{ background: "#fff", borderRadius: 14, width: "min(680px, 96vw)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
-        {/* Header */}
-        <div style={{ background: GREEN, padding: "28px 28px 20px", borderRadius: "14px 14px 0 0", position: "relative" }}>
-          <button onClick={onClose} style={{ position: "absolute", right: 16, top: 16, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 8, width: 32, height: 32, fontSize: 18, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, color: "#fff" }}>
-              {(c.name || "?").charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{c.name}</div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>{c.contactId} · {c.contactType}</div>
-              {c.customerGroup && c.customerGroup !== "—" && (
-                <span style={{ background: "rgba(255,255,255,0.25)", color: "#fff", fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 10, marginTop: 4, display: "inline-block" }}>{c.customerGroup}</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: 28 }}>
-          {/* Balance cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-            {[
-              { label: "Opening Balance", value: c.openingBalance, color: "#16a34a" },
-              { label: "Credit Limit",    value: c.creditLimit,    color: "#2563eb" },
-              { label: "Advance Balance", value: c.advanceBalance, color: "#7c3aed" },
-            ].map((item) => (
-              <div key={item.label} style={{ background: "#f9fafb", borderRadius: 8, padding: "14px 16px", textAlign: "center", border: "1px solid #f3f4f6" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{item.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: item.color }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Detail rows */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
-            {[
-              { label: "📱 Mobile",       value: c.mobile },
-              { label: "✉️ Email",         value: c.email },
-              { label: "☎️ Landline",      value: c.landline || "—" },
-              { label: "📞 Alt Phone",     value: c.altPhone || "—" },
-              { label: "🧾 Tax Number",    value: c.taxNumber },
-              { label: "📅 Pay Term",      value: c.payTerm },
-              { label: "📌 Address",       value: [c.address, c.city, c.state].filter(v => v && v !== "—").join(", ") || "—" },
-              { label: "🗓 Added On",      value: c.addedOn },
-              { label: "👤 Assigned To",   value: c.assignedTo || "—" },
-              { label: "🏘 Country / ZIP", value: [c.country, c.zip].filter(Boolean).join(" - ") || "—" },
-            ].map((row) => (
-              <div key={row.label} style={{ padding: "12px 0", borderBottom: "1px solid #f3f4f6", display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>{row.label}</span>
-                <span style={{ fontSize: 13, color: "#374151", fontWeight: 500 }}>{row.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Contact persons */}
-          {c.persons?.length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Contact Persons</div>
-              {c.persons.map((p, i) => (
-                <div key={i} style={{ display: "flex", gap: 16, padding: "10px 14px", background: "#f9fafb", borderRadius: 8, marginBottom: 8, fontSize: 13 }}>
-                  <span style={{ fontWeight: 600 }}>{p.name}</span>
-                  <span style={{ color: "#6b7280" }}>{p.mobile}</span>
-                  <span style={{ color: "#6b7280" }}>{p.email}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20, paddingTop: 16, borderTop: "1px solid #f3f4f6" }}>
-            {canEdit && <button style={greenBtn} onClick={() => { setViewContact(null); setEditContact(c); setShowModal(true); }}>✎ Edit</button>}
-            <button onClick={onClose} style={darkBtn}>Close</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
+return (
     <div style={pageStyle}>
       <PageHeader title="Customers" subtitle="Manage your Customers" onAdd={canAdd ? () => { setEditContact(null); setShowModal(true); } : null} />
-      <DashboardCards stats={stats} />
+<DashboardCards
+        stats={{
+          totalSuppliers: stats?.totalSuppliers ?? 0,
+          totalPurchaseDue: stats?.totalPurchaseDue ?? 0,
+          totalCustomers: stats?.totalCustomers ?? 0,
+          totalCustomerGroups: stats?.totalCustomerGroups ?? 0,
+        }}
+      />
       <AdvancedFilter onFilter={setFilterParams} type="customer" groups={groups} />
 
       <div style={card}>
@@ -906,13 +961,12 @@ export function CustomersPage() {
           columns={colList} colVisible={colVisible} setColVisible={setColVisible} />
 
         <TableControls showEntries={showEntries} setShowEntries={setShowEntries} search={search} setSearch={setSearch} />
-
-        <div style={{ overflowX: "auto" }}>
-          <table style={tbl}>
+<div>
+          <table style={{ ...tbl, tableLayout: "fixed" }}>
             <thead>
-              <tr style={{ background: "#f7fafc" }}>
-                <th style={th}>Action</th>
+             <tr style={{ background: "#f7fafc" }}>
                 {colList.map((h) => colVisible[h] !== true && <th key={h} style={th}>{h}</th>)}
+                <th style={{ ...th, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -921,14 +975,7 @@ export function CustomersPage() {
                 : contacts.length === 0
                   ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
                   : contacts.map((c) => (
-                    <tr key={c.id} className="tr-hover" style={{ cursor: "pointer" }}>
-                      <td style={td}>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button style={{ ...editBtnStyle, color: "#2563eb", borderColor: "#93c5fd" }} onClick={() => setViewContact(c)}>👁 View</button>
-                          {canEdit && <button style={editBtnStyle} onClick={() => { setEditContact(c); setShowModal(true); }}>✎ Edit</button>}
-                          {canDelete && <button style={delBtnStyle} onClick={() => handleDelete(c.id)}>🗑</button>}
-                        </div>
-                      </td>
+                    <tr key={c.id} className="tr-hover">
                       {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
                       {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
                       {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}
@@ -946,6 +993,44 @@ export function CustomersPage() {
                       </td>}
                       {colVisible["Address"] !== true && <td style={{ ...td, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis" }}>{c.address}</td>}
                       {colVisible["Mobile"] !== true && <td style={td}>{c.mobile}</td>}
+                      <td style={{ ...td, textAlign: "right" }}>
+                        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                          <button
+                            title="View"
+                            onClick={async () => {
+                              try {
+                                const full = await apiGetContactById(c.id);
+                                setViewContact(mapContact(full));
+                              } catch {
+                                setViewContact(c);
+                              }
+                            }}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#2563eb", fontSize: 16, padding: 2 }}
+                          >👁</button>
+                          {canEdit && (
+                            <button
+                              title="Edit"
+                              onClick={async () => {
+                                try {
+                                  const full = await apiGetContactById(c.id);
+                                  setEditContact(mapContact(full));
+                                } catch {
+                                  setEditContact(c);
+                                }
+                                setShowModal(true);
+                              }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#d97706", fontSize: 16, padding: 2 }}
+                            >✎</button>
+                          )}
+                          {canDelete && (
+                            <button
+                              title="Delete"
+                              onClick={() => handleDelete(c.id)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 16, padding: 2 }}
+                            >🗑</button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
             </tbody>
@@ -954,7 +1039,23 @@ export function CustomersPage() {
         <PaginationRow page={page} setPage={setPage} showEntries={showEntries} total={total} />
       </div>
 
-      {viewContact && <DetailModal c={viewContact} onClose={() => setViewContact(null)} />}
+      {viewContact && (
+        <ContactDetailModal
+          c={viewContact}
+          canEdit={canEdit}
+          onClose={() => setViewContact(null)}
+          onEdit={async () => {
+            setViewContact(null);
+            try {
+              const full = await apiGetContactById(viewContact.id);
+              setEditContact(mapContact(full));
+            } catch {
+              setEditContact(viewContact);
+            }
+            setShowModal(true);
+          }}
+        />
+      )}
       {showModal && (
         <AddContactModal defaultType="Customers" editContact={editContact} groups={groups}
           onSave={handleSave} onClose={() => { setShowModal(false); setEditContact(null); }} />
@@ -964,7 +1065,7 @@ export function CustomersPage() {
   );
 }
 
-// ─── CUSTOMER GROUPS PAGE ─────────────────────────────────────────────────────
+
 export function CustomerGroupsPage() {
   const { hasPermission, isAdmin } = usePermissions();
   const canAdd    = isAdmin || hasPermission("Customer", "Add customer");
@@ -974,14 +1075,30 @@ export function CustomerGroupsPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [editGroup, setEditGroup] = useState(null);
+  const [viewGroup, setViewGroup] = useState(null);
   const [groupName, setGroupName] = useState("");
-  const [priceCalcType, setPriceCalcType] = useState("Percentage");
-  const [calcPercent, setCalcPercent] = useState("");
-  const [sellingPriceGroup, setSellingPriceGroup] = useState("");
+  const [sellingPriceGroupId, setSellingPriceGroupId] = useState("");
+  const [description, setDescription] = useState("");
   const [search, setSearch] = useState("");
   const [showEntries, setShowEntries] = useState(25);
   const [colVisible, setColVisible] = useState({});
   const [saving, setSaving] = useState(false);
+
+  // NEW — real Selling Price Groups, for the "Linked Selling Price Group" dropdown
+  const [sellingPriceGroups, setSellingPriceGroups] = useState([]);
+  const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  const gpAuthHeaders = () => {
+    const token = localStorage.getItem("manod_token");
+    return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  };
+  const loadSellingPriceGroups = useCallback(async () => {
+    try {
+      const res = await fetch(`${gpBase}/selling-price-groups?limit=100`, { headers: gpAuthHeaders() });
+      const data = await res.json();
+      setSellingPriceGroups(data.groups || []);
+    } catch (e) { console.error("Failed to load selling price groups:", e.message); }
+  }, []);
 
   const lbl = { display: "block", fontWeight: 600, marginBottom: 6, fontSize: 13, color: "#374151" };
   const inp = { border: "1px solid #d1d5db", borderRadius: 4, padding: "8px 10px", fontSize: 13, width: "100%", boxSizing: "border-box", outline: "none" };
@@ -993,19 +1110,34 @@ export function CustomerGroupsPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadSellingPriceGroups(); }, [load, loadSellingPriceGroups]);
 
   const filtered = groups.filter((g) => g.name.toLowerCase().includes(search.toLowerCase()));
-  const colList = ["Customer Group Name", "Price Calc Type", "Calculation Percentage (%)", "Selling Price Group"];
+  const colList = ["Customer Group Name", "Selling Price Group", "Description"];
 
-  const handleSave = async () => {
+  const resetForm = () => {
+    setGroupName(""); setSellingPriceGroupId(""); setDescription(""); setEditGroup(null);
+  };
+
+  const openAdd = () => { resetForm(); setShowModal(true); };
+
+const handleSave = async () => {
     if (!groupName.trim()) return alert("Customer Group Name is required.");
     setSaving(true);
     try {
-      await apiCreateGroup({ name: groupName, priceCalcType, calcPercent, sellingPriceGroup });
-      setShowModal(false); setGroupName(""); setPriceCalcType("Percentage"); setCalcPercent(""); setSellingPriceGroup("");
+      const payload = {
+        name: groupName,
+        sellingPriceGroupId: sellingPriceGroupId || null,
+        description,
+      };
+      if (editGroup) await apiUpdateGroup(editGroup.id, payload);
+      else await apiCreateGroup(payload);
+      setShowModal(false); resetForm();
       load();
-    } catch (err) { alert(err.message || "Failed to create group."); }
+    } catch (err) {
+      const msg = err.message || "Failed to save group.";
+      alert(msg.includes("already exists") ? `⚠ ${msg}. Please choose a different name.` : msg);
+    }
     finally { setSaving(false); }
   };
 
@@ -1015,12 +1147,12 @@ export function CustomerGroupsPage() {
     catch (err) { alert(err.message || "Failed to delete."); }
   };
 
-  const csvKeys = ["name", "price_calc_type", "calc_percent", "selling_price_group"];
-  const buildTableHTML = () => `<table border="1" cellpadding="8"><tr><th>Group Name</th><th>Type</th><th>Calc %</th><th>Price Group</th></tr>${filtered.map((g) => `<tr><td>${g.name}</td><td>${g.price_calc_type}</td><td>${g.calc_percent}%</td><td>${g.selling_price_group || "—"}</td></tr>`).join("")}</table>`;
+  const csvKeys = ["name", "selling_price_group_name", "description"];
+  const buildTableHTML = () => `<table border="1" cellpadding="8"><tr><th>Group Name</th><th>Selling Price Group</th><th>Description</th></tr>${filtered.map((g) => `<tr><td>${g.name}</td><td>${g.selling_price_group_name || "—"}</td><td>${g.description || ""}</td></tr>`).join("")}</table>`;
 
   return (
     <div style={pageStyle}>
-      <PageHeader title="Customer Groups" subtitle="Manage customer groups & pricing" onAdd={canAdd ? () => setShowModal(true) : null} />
+      <PageHeader title="Customer Groups" subtitle="Manage customer groups & their linked Selling Price Group" onAdd={canAdd ? openAdd : null} />
 
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All Customer Groups</h3>
@@ -1043,16 +1175,57 @@ export function CustomerGroupsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} style={emptyCell}>Loading...</td></tr>
+            {loading ? <tr><td colSpan={4} style={emptyCell}>Loading...</td></tr>
               : filtered.slice(0, showEntries).length === 0
-                ? <tr><td colSpan={5} style={emptyCell}>No data available in table</td></tr>
+                ? <tr><td colSpan={4} style={emptyCell}>No data available in table</td></tr>
                 : filtered.slice(0, showEntries).map((g) => (
                   <tr key={g.id} className="tr-hover">
                     {colVisible["Customer Group Name"] !== true && <td style={td}><strong>{g.name}</strong></td>}
-                    {colVisible["Price Calc Type"] !== true && <td style={td}>{g.price_calc_type}</td>}
-                    {colVisible["Calculation Percentage (%)"] !== true && <td style={td}>{g.calc_percent}%</td>}
-                    {colVisible["Selling Price Group"] !== true && <td style={td}>{g.selling_price_group || "—"}</td>}
-                    <td style={td}>{canDelete && <button style={delBtnStyle} onClick={() => handleDelete(g.id)}>🗑 Delete</button>}</td>
+                    {colVisible["Selling Price Group"] !== true && (
+                      <td style={td}>
+                        {g.selling_price_group_name
+                          ? <span style={{ background: "#f0fdf4", color: "#16a34a", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 600 }}>{g.selling_price_group_name}</span>
+                          : <span style={{ color: "#9ca3af" }}>— Not linked —</span>}
+                      </td>
+                    )}
+                    {colVisible["Description"] !== true && <td style={{ ...td, color: "#6b7280", maxWidth: 280 }}>{g.description || "—"}</td>}
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button title="View" onClick={() => setViewGroup(g)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#3b82f6", padding: 4, display: "inline-flex" }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                        {canAdd && (
+                          <button title="Edit" onClick={() => {
+                            setEditGroup(g);
+                            setGroupName(g.name);
+                            setSellingPriceGroupId(g.selling_price_group_id ? String(g.selling_price_group_id) : "");
+                            setDescription(g.description || "");
+                            setShowModal(true);
+                          }} style={{ background: "none", border: "none", cursor: "pointer", color: "#d97706", padding: 4, display: "inline-flex" }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+                            </svg>
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button title="Delete" onClick={() => handleDelete(g.id)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", padding: 4, display: "inline-flex" }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
           </tbody>
@@ -1066,27 +1239,66 @@ export function CustomerGroupsPage() {
       {showModal && (
         <div style={overlayStyle}>
           <div style={{ background: "#fff", borderRadius: 12, padding: 32, width: "min(500px, 94vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", position: "relative" }}>
-            <button onClick={() => setShowModal(false)} style={{ position: "absolute", right: 18, top: 14, background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#6b7280" }}>×</button>
-            <h3 style={{ marginTop: 0, marginBottom: 24, fontSize: 18, fontWeight: 700 }}>Add Customer Group</h3>
+            <button onClick={() => { setShowModal(false); resetForm(); }} style={{ position: "absolute", right: 18, top: 14, background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#6b7280" }}>×</button>
+            <h3 style={{ marginTop: 0, marginBottom: 24, fontSize: 18, fontWeight: 700 }}>{editGroup ? "Edit Customer Group" : "Add Customer Group"}</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div><label style={lbl}>Customer Group Name: <span style={{ color: "#e53e3e" }}>*</span></label>
-                <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. VIP, Wholesale" style={inp} /></div>
-              <div><label style={lbl}>Price calculation type:</label>
-                <select value={priceCalcType} onChange={(e) => setPriceCalcType(e.target.value)} style={inp}>
-                  <option>Percentage</option><option>Fixed</option><option>Markup</option>
-                </select></div>
-              <div><label style={lbl}>Calculation Percentage (%):</label>
-                <input value={calcPercent} onChange={(e) => setCalcPercent(e.target.value)} placeholder="e.g. 10" type="number" min="0" style={inp} /></div>
-              <div><label style={lbl}>Selling Price Group:</label>
-                <input value={sellingPriceGroup} onChange={(e) => setSellingPriceGroup(e.target.value)} placeholder="e.g. Wholesale Price" style={inp} /></div>
+              <div>
+                <label style={lbl}>Customer Group Name: <span style={{ color: "#e53e3e" }}>*</span></label>
+                <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. VIP, Wholesale" style={inp} />
+              </div>
+              <div>
+                <label style={lbl}>Linked Selling Price Group:</label>
+                <select value={sellingPriceGroupId} onChange={(e) => setSellingPriceGroupId(e.target.value)} style={inp}>
+                  <option value="">— No Selling Price Group linked (use default price) —</option>
+                  {sellingPriceGroups.map((spg) => (
+                    <option key={spg.id} value={spg.id}>
+                      {spg.name} ({spg.type} {spg.percentage}%){spg.is_default ? " ★ Default" : ""}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                  Customers in this group automatically get product prices from this Selling Price Group during Sales, Quotations, Invoices and POS.
+                </div>
+              </div>
+              <div>
+                <label style={lbl}>Description:</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional notes about this group" rows={3}
+                  style={{ ...inp, resize: "vertical" }} />
+              </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
               <button onClick={handleSave} disabled={saving} style={{ ...greenBtn, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving..." : "💾 Save"}</button>
-              <button onClick={() => setShowModal(false)} style={darkBtn}>Close</button>
+              <button onClick={() => { setShowModal(false); resetForm(); }} style={darkBtn}>Close</button>
             </div>
           </div>
         </div>
       )}
+
+      {viewGroup && (
+        <div style={overlayStyle}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 32, width: "min(460px, 94vw)", boxShadow: "0 20px 60px rgba(0,0,0,0.18)", position: "relative" }}>
+            <button onClick={() => setViewGroup(null)} style={{ position: "absolute", right: 18, top: 14, background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#6b7280" }}>×</button>
+            <h3 style={{ marginTop: 0, marginBottom: 20, fontSize: 18, fontWeight: 700 }}>{viewGroup.name}</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
+              <div><span style={{ color: "#9ca3af", fontWeight: 600 }}>Selling Price Group: </span>{viewGroup.selling_price_group_name || "— Not linked —"}</div>
+              <div><span style={{ color: "#9ca3af", fontWeight: 600 }}>Description: </span>{viewGroup.description || "—"}</div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
+              {canAdd && <button style={greenBtn} onClick={() => {
+                const g = viewGroup;
+                setViewGroup(null);
+                setEditGroup(g);
+                setGroupName(g.name);
+                setSellingPriceGroupId(g.selling_price_group_id ? String(g.selling_price_group_id) : "");
+                setDescription(g.description || "");
+                setShowModal(true);
+              }}>Edit</button>}
+              <button onClick={() => setViewGroup(null)} style={darkBtn}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{hoverCss}</style>
     </div>
   );

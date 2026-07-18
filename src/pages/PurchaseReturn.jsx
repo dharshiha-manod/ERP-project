@@ -5,6 +5,7 @@
  * - Edit loads all fields including amount_paid, reason
  */
 import { useState, useEffect, useCallback } from "react";
+import * as settingsAPI from "../api/settingsAPI";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const authHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}` });
@@ -42,9 +43,9 @@ function Badge({label}){const c=PYSC[label]||{bg:"#f3f4f6",color:"#374151",borde
 const Spinner=()=>(<div style={{display:"flex",justifyContent:"center",padding:60}}><div style={{width:36,height:36,border:"3px solid #e5e7eb",borderTopColor:"#16a34a",borderRadius:"50%",animation:"spin .7s linear infinite"}}/><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>);
 function ConfirmModal({message,onConfirm,onCancel}){return(<div style={OVR} onClick={onCancel}><div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:360,width:"90%",textAlign:"center",boxShadow:"0 20px 60px #0002"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:44,marginBottom:8}}>🗑️</div><h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:700}}>Confirm Delete</h3><p style={{fontSize:14,color:"#6b7280",margin:"0 0 20px"}}>{message}</p><div style={{display:"flex",gap:10,justifyContent:"center"}}><button onClick={onCancel} style={BG}>Cancel</button><button onClick={onConfirm} style={{...BG,background:"#dc2626",color:"#fff",borderColor:"#dc2626"}}>Delete</button></div></div></div>);}
 
-const LOCS=["Manodtechnologies (BL0001)","Warehouse 2","Warehouse 3"];
 const PMTS=["Cash","Card","Bank Transfer","Cheque","UPI"];
-const TXRT={"None":0,"GST 5%":0.05,"GST 12%":0.12,"GST 18%":0.18};
+// Locations and Tax Rates are no longer hardcoded here — ReturnForm
+// fetches them live from settingsAPI (Business Locations / Tax Rates).
 
 const IconEye=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconEdit=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
@@ -66,6 +67,8 @@ function ReturnForm({onSubmit,onCancel,editData=null}){
   const [showProdDrop,setShowProdDrop]=useState(false);
   const [searchingProd,setSearchingProd]=useState(false);
   const [products,setProducts]=useState([]);
+  const [locations,setLocations]=useState([]);
+  const [taxRates,setTaxRates]=useState([]);
   const [form,setForm]=useState({location:"",parentPurchase:"",refNo:"",reason:"",purchaseTax:"None",payMethod:"Cash",payAmt:"0",payNote:""});
   const [docFile,setDocFile]=useState(null);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -74,6 +77,19 @@ function ReturnForm({onSubmit,onCancel,editData=null}){
     fetch(`${BASE_URL}/contacts?contactType=Suppliers&limit=500`,{headers:authHeaders()})
       .then(r=>r.json()).then(d=>setSuppliers((d.contacts||[]).map(c=>({id:c.id,name:(c.name||c.business_name||c.first_name||"").trim()||`#${c.id}`,mobile:c.mobile||""})).filter(s=>s.name))).catch(()=>{});
   },[]);
+
+  // Load Business Locations + Tax Rates from Settings — replaces hardcoded LOCS/TXRT
+  useEffect(()=>{
+    settingsAPI.getLocations().then(res=>{
+      if(res.success&&Array.isArray(res.data))setLocations(res.data);
+    }).catch(()=>{});
+    settingsAPI.getTaxRates().then(res=>{
+      if(res.success&&Array.isArray(res.data))setTaxRates(res.data);
+    }).catch(()=>{});
+  },[]);
+
+  const locationNames=locations.map(l=>l.location_name).filter(Boolean);
+  const taxMap=taxRates.reduce((m,t)=>{m[t.tax_name]=Number(t.rate)/100;return m;},{"None":0});
 
   useEffect(()=>{
     if(!editData)return;
@@ -111,9 +127,8 @@ const selProd=(p)=>{
   const addManual=()=>{if(!prodSearch.trim())return;setProducts(prev=>[...prev,{name:prodSearch,sku:"",qty:1,unitPrice:0,subtotal:0}]);setProdSearch("");setShowProdDrop(false);};
   const updProd=(i,field,val)=>{setProducts(prev=>{const arr=[...prev];arr[i]={...arr[i],[field]:parseFloat(val)||0};const q=field==="qty"?parseFloat(val)||0:arr[i].qty;const p=field==="unitPrice"?parseFloat(val)||0:arr[i].unitPrice;arr[i].subtotal=+(q*p).toFixed(2);return arr;});};
 
-  const taxRates={"GST 5%":0.05,"GST 12%":0.12,"GST 18%":0.18};
   const sub=products.reduce((s,p)=>s+Number(p.subtotal),0);
-  const tax=sub*(taxRates[form.purchaseTax]||0);
+  const tax=sub*(taxMap[form.purchaseTax]||0);
   const total=sub+tax;
   const paid=parseFloat(form.payAmt)||0;
 
@@ -164,7 +179,7 @@ const selProd=(p)=>{
               {showSupDrop&&<div style={DD}>{suppliers.filter(s=>!supSearch||s.name.toLowerCase().includes(supSearch.toLowerCase())).slice(0,10).map(s=><div key={s.id} onMouseDown={()=>{setSelSup(s);setSupSearch(s.name);setShowSupDrop(false);}} style={DI} onMouseEnter={e=>e.currentTarget.style.background="#f0fdf4"} onMouseLeave={e=>e.currentTarget.style.background="#fff"}><div style={{fontWeight:600,fontSize:13}}>{s.name}</div>{s.mobile&&<div style={{fontSize:11,color:"#9ca3af"}}>{s.mobile}</div>}</div>)}{!suppliers.filter(s=>!supSearch||s.name.toLowerCase().includes(supSearch.toLowerCase())).length&&<div style={{padding:"12px",color:"#9ca3af",fontSize:13,textAlign:"center"}}>No suppliers found</div>}</div>}
             </div>
           </div>
-          <div><label style={LB}>Business Location *</label><select value={form.location} onChange={e=>set("location",e.target.value)} style={INP}><option value="">Please Select</option>{LOCS.map(l=><option key={l}>{l}</option>)}</select></div>
+          <div><label style={LB}>Business Location *</label><select value={form.location} onChange={e=>set("location",e.target.value)} style={INP}><option value="">{locationNames.length===0?"Loading…":"Please Select"}</option>{locationNames.map(l=><option key={l}>{l}</option>)}</select></div>
           <div><label style={LB}>Parent Purchase</label><input value={form.parentPurchase} onChange={e=>set("parentPurchase",e.target.value)} style={INP} placeholder="e.g. PO-0001"/></div>
           <div><label style={LB}>Reference No</label><input value={form.refNo} onChange={e=>set("refNo",e.target.value)} style={INP} placeholder="Auto-generated"/></div>
         </div>
@@ -200,7 +215,7 @@ const selProd=(p)=>{
           </table>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginTop:16,flexWrap:"wrap",gap:16}}>
-          <div><label style={LB}>Purchase Tax</label><select value={form.purchaseTax} onChange={e=>set("purchaseTax",e.target.value)} style={{...INP,width:180}}>{Object.keys(TXRT).map(t=><option key={t}>{t}</option>)}</select></div>
+          <div><label style={LB}>Purchase Tax</label><select value={form.purchaseTax} onChange={e=>set("purchaseTax",e.target.value)} style={{...INP,width:180}}>{Object.keys(taxMap).map(t=><option key={t}>{t}</option>)}</select></div>
           <div style={{background:"#f0fdf4",borderRadius:10,padding:"14px 20px",textAlign:"right",border:"1px solid #bbf7d0"}}>
             <div style={{fontSize:13,color:"#6b7280"}}>Sub Total: <b>{fmtINR(sub)}</b></div>
             {tax>0&&<div style={{fontSize:13,color:"#6b7280"}}>Tax: <b>{fmtINR(tax)}</b></div>}
@@ -229,7 +244,6 @@ const selProd=(p)=>{
     </div>
   );
 }
-
 // ══════════════════════════════════════════════════════════════════════════
 // PURCHASE RETURN LIST
 // ══════════════════════════════════════════════════════════════════════════

@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import * as settingsAPI from "../api/settingsAPI";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const authHeaders = () => ({
@@ -47,11 +48,10 @@ const Spinner=()=>(<div style={{display:"flex",justifyContent:"center",padding:6
 
 function ConfirmModal({message,onConfirm,onCancel}){return(<div style={OVR} onClick={onCancel}><div style={{background:"#fff",borderRadius:12,padding:28,maxWidth:360,width:"90%",textAlign:"center",boxShadow:"0 20px 60px #0002"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:44,marginBottom:8}}>🗑️</div><h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:700}}>Confirm Delete</h3><p style={{fontSize:14,color:"#6b7280",margin:"0 0 20px"}}>{message}</p><div style={{display:"flex",gap:10,justifyContent:"center"}}><button onClick={onCancel} style={BG}>Cancel</button><button onClick={onConfirm} style={{...BG,background:"#dc2626",color:"#fff",borderColor:"#dc2626"}}>Delete</button></div></div></div>);}
 
-const LOCS=["Manodtechnologies (BL0001)","Warehouse 2","Warehouse 3"];
 const PMTS=["Cash","Card","Bank Transfer","Cheque","UPI"];
 const PSTS=["Ordered","Received","Pending","Cancelled"];
-const TXRT={"None":0,"GST 5%":0.05,"GST 12%":0.12,"GST 18%":0.18};
-
+// Locations and Tax Rates are no longer hardcoded here — PurchaseForm
+// fetches them live from settingsAPI (Business Locations / Tax Rates).
 // ── ICON SVGs ──────────────────────────────────────────────────────────────
 const IconEye=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IconEdit=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
@@ -73,7 +73,9 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
   const [showProdDrop,setShowProdDrop]=useState(false);
   const [searchingProd,setSearchingProd]=useState(false);
   const [items,setItems]=useState([]);
-  const [form,setForm]=useState({refNo:"",invoiceNo:"",location:LOCS[0],purchStatus:"Ordered",payTerm:"",taxLabel:"None",discType:"None",discAmt:"0",shipping:"0",payMethod:"Cash",payAmt:"0",payNote:"",notes:""});
+  const [locations,setLocations]=useState([]);
+  const [taxRates,setTaxRates]=useState([]);
+  const [form,setForm]=useState({refNo:"",invoiceNo:"",location:"",purchStatus:"Ordered",payTerm:"",taxLabel:"None",discType:"None",discAmt:"0",shipping:"0",payMethod:"Cash",payAmt:"0",payNote:"",notes:""});
   const [docFile,setDocFile]=useState(null);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -82,9 +84,29 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
       .then(r=>r.json()).then(d=>setSuppliers((d.contacts||[]).map(c=>({id:c.id,name:(c.name||c.business_name||c.first_name||"").trim()||`#${c.id}`,mobile:c.mobile||""})).filter(s=>s.name))).catch(()=>{});
   },[]);
 
+  // Load Business Locations + Tax Rates from Settings — replaces hardcoded LOCS/TXRT
+  useEffect(()=>{
+    settingsAPI.getLocations().then(res=>{
+      if(res.success&&Array.isArray(res.data))setLocations(res.data);
+    }).catch(()=>{});
+    settingsAPI.getTaxRates().then(res=>{
+      if(res.success&&Array.isArray(res.data))setTaxRates(res.data);
+    }).catch(()=>{});
+  },[]);
+
+  const locationNames=locations.map(l=>l.location_name).filter(Boolean);
+  const taxMap=taxRates.reduce((m,t)=>{m[t.tax_name]=Number(t.rate)/100;return m;},{"None":0});
+
+  // Default the location once Settings data arrives (new purchase only — edit keeps saved value)
+  useEffect(()=>{
+    if(!isEdit&&!form.location&&locationNames.length>0){
+      set("location",locationNames[0]);
+    }
+  },[locations]);
+
   useEffect(()=>{
     if(!editData)return;
-    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||LOCS[0],purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:"Fixed",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.notes||editData.payment_note||"",notes:editData.notes||""});
+    setForm({refNo:editData.reference_no||"",invoiceNo:editData.invoice_no||"",location:editData.location||"",purchStatus:editData.purchase_status||"Ordered",payTerm:editData.pay_term||"",taxLabel:editData.tax_label||"None",discType:"Fixed",discAmt:String(editData.discount_amount||0),shipping:String(editData.shipping_charges||0),payMethod:editData.payment_method||"Cash",payAmt:String(editData.amount_paid||0),payNote:editData.notes||editData.payment_note||"",notes:editData.notes||""});
     if(editData.supplier_name){setSupSearch(editData.supplier_name);setSelSup({id:editData.supplier_id,name:editData.supplier_name});}
     if(Array.isArray(editData.items)){setItems(editData.items.map(i=>({id:i.product_id||null,name:i.product_name||i.name||"",sku:i.product_sku||i.sku||"",qty:parseFloat(i.quantity)||1,unitCost:parseFloat(i.unit_cost)||0,discPct:parseFloat(i.discount_pct)||0,marginPct:parseFloat(i.margin_pct)||0,lineTotal:parseFloat(i.line_total)||0,sellingPrice:parseFloat(i.selling_price)||0})));}
   },[editData]);
@@ -108,17 +130,18 @@ const selProd=(p)=>{
 
   const sub=items.reduce((s,i)=>s+i.lineTotal,0);
   const discVal=+(form.discType==="Percentage"?sub*(parseFloat(form.discAmt)||0)/100:parseFloat(form.discAmt)||0).toFixed(2);
-  const tax=+((sub-discVal)*(TXRT[form.taxLabel]||0)).toFixed(2);
+  const tax=+((sub-discVal)*(taxMap[form.taxLabel]||0)).toFixed(2);
   const ship=parseFloat(form.shipping)||0;
   const grand=+((sub-discVal+tax+ship).toFixed(2));
 
   const submit=async()=>{
     if(!selSup){showToast("Please select a supplier","error");return;}
+    if(!form.location){showToast("Please select a business location","error");return;}
     if(items.length===0){showToast("Please add at least one product","error");return;}
     setSaving(true);
     try{
       const paid=parseFloat(form.payAmt)||0;
-      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_amount:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),notes:form.payNote||null,shipping_details:null,notes:form.payNote||null,shipping_details:null,payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
+      const body={supplier_id:selSup.id,supplier_name:selSup.name,location:form.location,reference_no:form.refNo||null,invoice_no:form.invoiceNo||null,purchase_status:form.purchStatus,pay_term:form.payTerm||null,tax_label:form.taxLabel,discount_type:form.discType,discount_amount:discVal,shipping_charges:ship,subtotal:sub,tax_amount:tax,grand_total:grand,amount_paid:paid,payment_amount:paid,payment_due:Math.max(0,grand-paid),payment_status:paid>=grand&&grand>0?"Paid":paid>0?"Partial":"Due",items:items.map(i=>({product_id:i.id,product_name:i.name,product_sku:i.sku||null,quantity:i.qty,unit_cost:i.unitCost,discount_pct:i.discPct,line_total:i.lineTotal,margin_pct:i.marginPct,selling_price:i.sellingPrice})),notes:form.payNote||null,shipping_details:null,payment:paid>0?{amount:paid,payment_method:form.payMethod,note:form.payNote||null}:null};
       if(isEdit){await apiFetch("PUT",`/purchases/${editData.id}`,body);showToast("Purchase updated!","success");}
       else{await apiFetch("POST","/purchases",body);showToast("Purchase created!","success");}
       setTimeout(()=>onSubmit(),1200);
@@ -156,7 +179,7 @@ const selProd=(p)=>{
           <div><label style={LB}>Purchase Status *</label><select value={form.purchStatus} onChange={e=>set("purchStatus",e.target.value)} style={INP}>{PSTS.map(s=><option key={s}>{s}</option>)}</select></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginTop:14}}>
-          <div><label style={LB}>Business Location *</label><select value={form.location} onChange={e=>set("location",e.target.value)} style={INP}>{LOCS.map(l=><option key={l}>{l}</option>)}</select></div>
+          <div><label style={LB}>Business Location *</label><select value={form.location} onChange={e=>set("location",e.target.value)} style={INP}><option value="">{locationNames.length===0?"Loading…":"Please Select"}</option>{locationNames.map(l=><option key={l}>{l}</option>)}</select></div>
           <div><label style={LB}>Pay Term</label><input value={form.payTerm} onChange={e=>set("payTerm",e.target.value)} style={INP} placeholder="e.g. 30 Days"/></div>
           <div><label style={LB}>Purchase Date</label><input readOnly value={new Date().toLocaleString()} style={{...INP,background:"#f9fafb",color:"#6b7280"}}/></div>
           <div><label style={LB}>Attach Document</label><div style={{display:"flex",gap:8}}><input readOnly value={docFile?.name||""} style={{...INP,flex:1}} placeholder="No file chosen"/><label style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:"9px 14px",fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>Browse<input type="file" hidden onChange={e=>setDocFile(e.target.files[0])}/></label></div></div>
@@ -188,7 +211,7 @@ const selProd=(p)=>{
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,minWidth:320}}>
             <div><label style={LB}>Discount Type</label><select value={form.discType} onChange={e=>set("discType",e.target.value)} style={INP}>{["None","Percentage","Fixed"].map(t=><option key={t}>{t}</option>)}</select></div>
             <div><label style={LB}>Discount Amount</label><input type="number" min={0} value={form.discAmt} onChange={e=>set("discAmt",e.target.value)} style={INP}/></div>
-            <div><label style={LB}>Purchase Tax</label><select value={form.taxLabel} onChange={e=>set("taxLabel",e.target.value)} style={INP}>{Object.keys(TXRT).map(t=><option key={t}>{t}</option>)}</select></div>
+            <div><label style={LB}>Purchase Tax</label><select value={form.taxLabel} onChange={e=>set("taxLabel",e.target.value)} style={INP}>{Object.keys(taxMap).map(t=><option key={t}>{t}</option>)}</select></div>
             <div><label style={LB}>Shipping Charges</label><input type="number" min={0} value={form.shipping} onChange={e=>set("shipping",e.target.value)} style={INP}/></div>
           </div>
           <div style={{background:"#f0fdf4",borderRadius:10,padding:"16px 24px",minWidth:220,textAlign:"right",border:"1px solid #bbf7d0"}}>

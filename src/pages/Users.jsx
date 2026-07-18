@@ -108,7 +108,7 @@ export default function Users() {
       lastName: nameParts.slice(2).join(" "),
       email: user.email,
       username: user.email,
-      role: user.role || "employee",
+    role: user.role || "",
       department: user.department || "",
       mobile: user.phone || "",
     });
@@ -159,13 +159,13 @@ export default function Users() {
       setApiError("");
       const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
 
-      if (modalMode === "add") {
+     if (modalMode === "add") {
         await createUser({
           email: form.email,
           password: form.password,
           full_name: fullName,
           phone: form.mobile || null,
-          role: form.role.toLowerCase(),
+          role: form.role,
           department: form.department || null,
         });
       } else {
@@ -173,7 +173,7 @@ export default function Users() {
           email: form.email,
           full_name: fullName,
           phone: form.mobile || null,
-          role: form.role.toLowerCase(),
+          role: form.role,
           department: form.department || null,
         });
       }
@@ -678,11 +678,11 @@ export default function Users() {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Role <span style={{ color: "#dc2626" }}>*</span></label>
-                    <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
+                 <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
                       style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
                       <option value="">Select Role</option>
                       {roles.map((r) => (
-                        <option key={r.id} value={r.name.toLowerCase()}>{r.name}</option>
+                        <option key={r.id} value={r.name}>{r.name}</option>
                       ))}
                     </select>
                     {errors.role && <span style={errTxt}>{errors.role}</span>}

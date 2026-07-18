@@ -877,6 +877,33 @@ const handleDelete = async (id) => {
       await load();
     } catch (e) { alert(e.message || "Failed to deactivate selected products"); }
   };
+
+  // ── Request Reorder — sends a PO-style email to the last supplier ──
+  const handleRequestReorder = async (product) => {
+    const qty = window.prompt(`How many units of "${product.name}" do you want to reorder?`);
+    if (!qty || Number(qty) <= 0) return;
+
+    const token = localStorage.getItem("manod_token");
+    try {
+      const res = await fetch(`http://localhost:5000/api/products/${product.id}/request-reorder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ quantity: Number(qty) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Reorder request for ${qty} units sent to the supplier.`);
+      } else {
+        alert(`Could not send reorder request: ${data.error}`);
+      }
+    } catch (e) {
+      alert(`Failed to send reorder request: ${e.message}`);
+    }
+  };
+
 const stockColor = (qty, alertQty) => {
     const threshold = Number(alertQty) > 0 ? Number(alertQty) : 10;
     if (qty <= 0) return { bg:"#fee2e2", color:"#991b1b", label:"Out of Stock" };
@@ -1053,6 +1080,13 @@ const stockColor = (qty, alertQty) => {
           <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
         </svg>
       </button>
+      {(prod.current_stock ?? 0) <= (Number(prod.alert_qty) > 0 ? Number(prod.alert_qty) : 10) && (
+        <button onClick={()=>handleRequestReorder(prod)} style={p.iconBtnReorder} title="Request Reorder from Supplier">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+          </svg>
+        </button>
+      )}
     </div>
   </td>
 )}
@@ -1214,6 +1248,7 @@ const p = {
   iconBtnView:{ background:"none", border:"none", padding:0, cursor:"pointer", color:"#3b82f6", display:"flex", alignItems:"center" },
 iconBtnEdit:{ background:"none", border:"none", padding:0, cursor:"pointer", color:"#f59e0b", display:"flex", alignItems:"center" },
 iconBtnDel: { background:"none", border:"none", padding:0, cursor:"pointer", color:"#ef4444", display:"flex", alignItems:"center" },
+  iconBtnReorder: { background:"none", border:"none", padding:0, cursor:"pointer", color:"#0d9488", display:"flex", alignItems:"center" },
   bulkDel:    { background:"#fff", border:"1px solid #ef4444", color:"#ef4444", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },
   bulkOutline:{ background:"#fff", border:"1px solid #d1d5db", color:"#374151", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13 },
   bulkWarn:   { background:"#fff", border:"1px solid #f59e0b", color:"#d97706", borderRadius:5, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:500 },

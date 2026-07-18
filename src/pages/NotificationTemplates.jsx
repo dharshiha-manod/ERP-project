@@ -20,6 +20,10 @@ const TEMPLATE_TYPE_MAP = {
     "Items Pending": "supplier_items_pending",
     "Purchase Order": "supplier_purchase_order",
   },
+
+"Inventory Notifications:": {
+    "Low Stock Alert": "low_stock",
+  },
 };
 
 const EMPTY_FORM = {
@@ -289,16 +293,13 @@ function NotifSection({ title, tabs, tagsGroups, tabTypeMap, activeTab, onTabCha
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function NotificationTemplates() {
   const sections = [
-    {
+{
       title: "Notifications:",
       tabs: ["Send Ledger"],
       tagsGroups: [
-        ["{business_name}", "{business_logo}"],
-        ["{balance_due}"],
-        ["{contact_name}", "{contact_custom_field_1}", "{contact_custom_field_2}",
-          "{contact_custom_field_3}", "{contact_custom_field_4}", "{contact_custom_field_5}",
-          "{contact_custom_field_6}", "{contact_custom_field_7}", "{contact_custom_field_8}",
-          "{contact_custom_field_9}", "{contact_custom_field_10}"],
+        ["{contact_name}", "{contact_type}"],
+        ["{total_business}", "{total_settled}", "{total_due}"],
+        ["{transactions_table}"],
       ],
     },
     {
@@ -313,7 +314,7 @@ export default function NotificationTemplates() {
         ["{shipping_custom_field_1}", "{shipping_custom_field_2}", "{shipping_custom_field_3}", "{shipping_custom_field_4}", "{shipping_custom_field_5}"],
       ],
     },
-    {
+  {
       title: "Supplier Notifications:",
       tabs: ["New Order", "Payment Paid", "Items Received", "Items Pending", "Purchase Order"],
       tagsGroups: [
@@ -325,8 +326,15 @@ export default function NotificationTemplates() {
         ["{shipping_custom_field_1}", "{shipping_custom_field_2}", "{shipping_custom_field_3}", "{shipping_custom_field_4}", "{shipping_custom_field_5}"],
       ],
     },
+    {
+      title: "Inventory Notifications:",
+      tabs: ["Low Stock Alert"],
+      tagsGroups: [
+        ["{product_name}", "{sku}", "{current_stock}", "{alert_qty}"],
+        ["{supplier_name}", "{supplier_email}", "{last_purchase_date}", "{last_purchase_price}"],
+      ],
+    },
   ];
-
   // templateType -> form data
   const [formCache, setFormCache] = useState({});
   // templateType -> bool

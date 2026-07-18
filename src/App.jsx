@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ThemeProvider } from "./pages/ThemeContext";
 import { PermissionsProvider, usePermissions } from "./context/PermissionsContext";
+import { BusinessProvider } from "./context/BusinessContext";
 import { FEATURE_PERM_MAP } from "./featurePermissionMap";
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
@@ -40,7 +41,7 @@ import {
   ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport,
   CustomerGroupsReport, StockReport, StockAdjustmentReport, TrendingProductsReport,
   ItemsReport, ProductPurchaseReport, ProductSellReport, PurchasePaymentReport,
-  SellPaymentReport, ExpenseReport, RegisterReport, SalesRepresentativeReport,
+  SalesPaymentReport, ExpenseReport, RegisterReport, SalesRepresentativeReport,
   ActivityLogReport,
 } from "./pages/Reports";
 import MyProfile      from "./pages/MyProfile";
@@ -113,8 +114,8 @@ function FeatureRoute({ feature, children }) {
 function AppLayout() {
   return (
     <div style={{ display: "flex" }}>
-      <Sidebar />
-      <TopHeader businessName="Manodtechnologies" />
+<Sidebar />
+      <TopHeader />
      <main style={{
         marginLeft: "260px",
         marginTop: "60px",
@@ -248,7 +249,7 @@ function AppLayout() {
           <Route path="/reports/product-purchase"     element={<FeatureRoute feature={FEATURES.REPORTS}><ProductPurchaseReport /></FeatureRoute>} />
           <Route path="/reports/product-sell"         element={<FeatureRoute feature={FEATURES.REPORTS}><ProductSellReport /></FeatureRoute>} />
           <Route path="/reports/purchase-payment"     element={<FeatureRoute feature={FEATURES.REPORTS}><PurchasePaymentReport /></FeatureRoute>} />
-          <Route path="/reports/sell-payment"         element={<FeatureRoute feature={FEATURES.REPORTS}><SellPaymentReport /></FeatureRoute>} />
+         <Route path="/reports/sell-payment"         element={<FeatureRoute feature={FEATURES.REPORTS}><SalesPaymentReport /></FeatureRoute>} />
           <Route path="/reports/expense"              element={<FeatureRoute feature={FEATURES.REPORTS}><ExpenseReport /></FeatureRoute>} />
           <Route path="/reports/register"             element={<FeatureRoute feature={FEATURES.REPORTS}><RegisterReport /></FeatureRoute>} />
           <Route path="/reports/sales-representative" element={<FeatureRoute feature={FEATURES.REPORTS}><SalesRepresentativeReport /></FeatureRoute>} />
@@ -263,6 +264,7 @@ function AppLayout() {
 function App() {
   return (
     <PermissionsProvider>
+      <BusinessProvider>
       <ThemeProvider>
         <BrowserRouter>
           <Routes>
@@ -270,8 +272,9 @@ function App() {
             <Route path="/subscribe" element={<SubscriptionGate><Subscription /></SubscriptionGate>} />
             <Route path="/*"         element={<PrivateRoute><AppLayout /></PrivateRoute>} />
           </Routes>
-        </BrowserRouter>
+   </BrowserRouter>
       </ThemeProvider>
+      </BusinessProvider>
     </PermissionsProvider>
   );
 }

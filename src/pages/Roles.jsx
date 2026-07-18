@@ -68,10 +68,11 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
   const [selectedRole, setSelectedRole] = useState(
     isEdit ? { value: editRole.name, label: editRole.name } : null
   );
-  const [perms,   setPerms]   = useState({});
-  const [loading, setLoading] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [error,   setError]   = useState("");
+const [perms,      setPerms]      = useState({});
+  const [loading,    setLoading]    = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState("");
+  const [permSearch, setPermSearch] = useState("");
 
   const roleOptions = allRoles.map((r) => ({ value: r.name, label: r.name }));
 
@@ -123,7 +124,38 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
     finally { setSaving(false); }
   };
 
-  if (loading) return <div style={styles.loading}>⏳ Loading permissions...</div>;
+ if (loading) return <div style={styles.loading}>⏳ Loading permissions...</div>;
+
+  const HRM_ITEMS = new Set([
+    "Add/Edit/View/Delete leave type","Add/Edit/View/Delete all leave","Add/View own leave","Approve Leave",
+    "Add/Edit/View/Delete all attendance","View own attendance",
+    "Allow users to enter their own attendance from web","Allow users to enter their own attendance from api",
+    "View Pay Component","Add Pay Component",
+    "Add/Edit/View/Delete department","Add/Edit/View/Delete designation",
+    "View all Payroll","Add Payroll","Edit Payroll","Delete Payroll","Access Sales Targets",
+  ]);
+
+  const displayGroups = permissionGroups.flatMap(({ group, items }) => {
+    if (group === "Essentials") {
+      const hrmItems  = items.filter((i) => HRM_ITEMS.has(i));
+      const restItems = items.filter((i) => !HRM_ITEMS.has(i));
+      const out = [];
+      if (hrmItems.length)  out.push({ group: "HRM", items: hrmItems });
+      if (restItems.length) out.push({ group: "Essentials", items: restItems });
+      return out;
+    }
+    return [{ group, items }];
+  });
+
+  const q = permSearch.trim().toLowerCase();
+  const filteredGroups = q
+    ? displayGroups
+        .map(({ group, items }) => ({
+          group,
+          items: group.toLowerCase().includes(q) ? items : items.filter((i) => i.toLowerCase().includes(q)),
+        }))
+        .filter(({ items }) => items.length > 0)
+    : displayGroups;
 
   return (
     <div style={styles.page}>
@@ -152,28 +184,57 @@ function RoleFormPage({ onBack, onSave, editRole, allRoles, permissionGroups }) 
         </div>
 
         {error && <div style={styles.errorBox}>{error}</div>}
-
-        <div style={{ marginTop:24 }}>
-          <label style={styles.label}>Permissions:</label>
-          <div style={styles.permGrid}>
-            {permissionGroups.map(({ group, items }) => (
-              <div key={group} style={styles.permGroup}>
-                <div style={styles.permGroupHeader}>
-                  <strong style={styles.permGroupTitle}>{group}</strong>
-                  <label style={styles.checkLabel}>
-                    <input type="checkbox" checked={!!isGroupAll(group)} onChange={() => toggleGroup(group)} style={styles.checkbox} />
-                    Select all
-                  </label>
-                </div>
-                {items.map((item) => (
-                  <label key={item} style={styles.checkLabel}>
-                    <input type="checkbox" checked={isChecked(group,item)} onChange={() => toggleItem(group,item)} style={styles.checkbox} />
-                    {item}
-                  </label>
-                ))}
-              </div>
-            ))}
+<div style={{ marginTop:24 }}>
+          <div style={styles.permHeaderRow}>
+            <label style={styles.label}>Permissions:</label>
+            <div style={styles.permSearchWrap}>
+              <span style={styles.permSearchIcon}>🔍</span>
+              <input
+                value={permSearch}
+                onChange={(e) => setPermSearch(e.target.value)}
+                placeholder="Search permissions..."
+                style={styles.permSearchInput}
+              />
+              {permSearch && (
+                <button onClick={() => setPermSearch("")} style={styles.permSearchClear} title="Clear">✕</button>
+              )}
+            </div>
           </div>
+
+          {filteredGroups.length === 0 ? (
+            <div style={styles.noPermMatch}>No permissions match "{permSearch}"</div>
+          ) : (
+            <div style={styles.permGrid}>
+              {filteredGroups.map(({ group, items }) => {
+                const groupAll = permissionGroups.find((g) => g.group === group)
+                  ? isGroupAll(group)
+                  : items.every((i) => isChecked(group === "HRM" ? "Essentials" : group, i));
+                const realGroup = group === "HRM" ? "Essentials" : group;
+                return (
+                  <div key={group} style={styles.permGroup}>
+                    <div style={styles.permGroupHeader}>
+                      <strong style={styles.permGroupTitle}>
+                        {group === "HRM" && <span style={styles.hrmBadge}>HRM</span>}
+                        {group}
+                      </strong>
+                      <label style={styles.checkLabelSmall}>
+                        <input type="checkbox" checked={!!groupAll} onChange={() => toggleGroup(realGroup)} style={styles.checkbox} />
+                        Select all
+                      </label>
+                    </div>
+                    <div style={styles.permItemList}>
+                      {items.map((item) => (
+                        <label key={item} style={styles.checkLabel}>
+                          <input type="checkbox" checked={isChecked(realGroup, item)} onChange={() => toggleItem(realGroup, item)} style={styles.checkbox} />
+                          {item}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div style={styles.formActions}>
@@ -481,14 +542,23 @@ const styles = {
   pageBtnActive:  { background:"#4f46e5",color:"#fff",border:"1px solid #4f46e5" },
   editBtn:        { background:"#fff",border:"1px solid #a0aec0",borderRadius:5,padding:"5px 12px",fontSize:12,cursor:"pointer",color:"#4a5568",fontWeight:500 },
   deleteBtn:      { background:"#fff",border:"1px solid #fc8181",borderRadius:5,padding:"5px 12px",fontSize:12,cursor:"pointer",color:"#e53e3e",fontWeight:500 },
-  fieldRow:       { display:"flex",flexDirection:"column",gap:6 },
+ fieldRow:       { display:"flex",flexDirection:"column",gap:6 },
   label:          { fontSize:13,fontWeight:600,color:"#2d3748" },
-  permGrid:       { display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:20,marginTop:12 },
-  permGroup:      { background:"#f7fafc",border:"1px solid #e2e8f0",borderRadius:8,padding:"14px 16px",display:"flex",flexDirection:"column",gap:8 },
-  permGroupHeader:{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,paddingBottom:8,borderBottom:"1px solid #e2e8f0" },
-  permGroupTitle: { fontSize:13,color:"#2d3748" },
-  checkLabel:     { display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:"#4a5568",cursor:"pointer",lineHeight:1.4 },
-  checkbox:       { marginTop:2,accentColor:"#4f46e5",flexShrink:0 },
+  permHeaderRow:  { display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:6 },
+  permSearchWrap: { position:"relative",display:"flex",alignItems:"center" },
+  permSearchIcon: { position:"absolute",left:10,fontSize:13,opacity:0.5,pointerEvents:"none" },
+  permSearchInput:{ border:"1px solid #cbd5e0",borderRadius:8,padding:"8px 30px 8px 32px",fontSize:13,width:240,outline:"none" },
+  permSearchClear:{ position:"absolute",right:8,border:"none",background:"none",cursor:"pointer",color:"#a0aec0",fontSize:12 },
+  noPermMatch:    { padding:"28px",textAlign:"center",color:"#a0aec0",fontSize:13,background:"#f7fafc",border:"1px dashed #e2e8f0",borderRadius:8,marginTop:12 },
+  permGrid:       { display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:18,marginTop:14 },
+  permGroup:      { background:"#fff",border:"1px solid #e2e8f0",borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:9,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",transition:"box-shadow .15s,border-color .15s" },
+  permGroupHeader:{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2,paddingBottom:10,borderBottom:"2px solid #edf2f7" },
+  permGroupTitle: { fontSize:13.5,color:"#1a202c",fontWeight:700,display:"flex",alignItems:"center",gap:6,letterSpacing:0.2 },
+  hrmBadge:       { fontSize:9,fontWeight:800,color:"#fff",background:"linear-gradient(135deg,#4f46e5,#6366f1)",borderRadius:4,padding:"2px 6px",letterSpacing:0.5 },
+  permItemList:   { display:"flex",flexDirection:"column",gap:7,maxHeight:260,overflowY:"auto",paddingRight:4 },
+  checkLabel:     { display:"flex",alignItems:"flex-start",gap:8,fontSize:12.5,color:"#4a5568",cursor:"pointer",lineHeight:1.45 },
+  checkLabelSmall:{ display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"#4f46e5",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap" },
+  checkbox:       { marginTop:2,accentColor:"#4f46e5",flexShrink:0,cursor:"pointer" },
   formActions:    { display:"flex",gap:12,marginTop:32,paddingTop:20,borderTop:"1px solid #e2e8f0" },
   saveBtn:        { background:"linear-gradient(135deg,#22c55e 0%,#16a34a 100%)",color:"#fff",border:"none",borderRadius:6,padding:"10px 28px",fontSize:14,fontWeight:600,cursor:"pointer" },
   cancelBtn:      { background:"#fff",color:"#4a5568",border:"1px solid #cbd5e0",borderRadius:6,padding:"10px 24px",fontSize:14,cursor:"pointer" },
@@ -501,4 +571,4 @@ const styles = {
 const css = `
   .table-row:hover td { background: #f7fafc; }
   input:focus { border-color: #4f46e5 !important; box-shadow: 0 0 0 2px rgba(79,70,229,0.1); }
-`;
+`;  

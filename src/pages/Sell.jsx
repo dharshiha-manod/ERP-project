@@ -12,7 +12,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-
+import registerAPI from "../api/registerAPI";
+import { useBusiness } from "../context/BusinessContext";
+import * as settingsAPI from "../api/settingsAPI";
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const F          = "'Inter','Segoe UI',sans-serif";
 const GREEN      = "#1a6b3f";
@@ -99,7 +101,7 @@ function useProducts() {
   return { products, loading };
 }
 function useCustomers() {
-  const { data, loading } = useAPI("/contacts?type=customer");
+  const { data, loading } = useAPI("/contacts?contactType=Customers");
   const customers = data?.data || data?.contacts || [];
   return { customers, loading };
 }
@@ -122,6 +124,36 @@ function useSellingPriceGroups() {
   const { data, loading } = useAPI("/selling-price-groups");
   const groups = data?.groups || data?.data || [];
   return { groups, loading };
+}
+function useLocations() {
+  const { data, loading } = useAPI("/settings/locations");
+  const locations = data?.data || [];
+  return { locations, loading };
+}
+function useTaxRates() {
+  const { data, loading } = useAPI("/settings/tax-rates");
+  const taxRates = data?.data || [];
+  return { taxRates, loading };
+}
+function useInvoiceSettings() {
+  const [settings, setSettings] = useState(null);
+  useEffect(() => {
+    settingsAPI.getInvoiceSettings().then(res => {
+      if (res?.success && res.data) setSettings(res.data);
+    });
+  }, []);
+  return settings;
+}
+// Builds e.g. "IN-00001" from saved prefix/digits/separator/start number.
+// Falls back to the old random genNo() pattern if settings haven't loaded yet.
+function buildInvoiceNo(settings, fallbackPrefix = "INV") {
+  if (!settings) return genNo(fallbackPrefix);
+  const prefix = settings.invoice_prefix || fallbackPrefix;
+  const digits = Number(settings.number_digits) || 5;
+  const sep = settings.separator ?? "-";
+  const start = Number(settings.invoice_start_number) || 1;
+  const padded = String(start).padStart(digits, "0");
+  return sep ? `${prefix}${sep}${padded}` : `${prefix}${padded}`;
 }
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt   = n  => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -974,30 +1006,50 @@ const [perPage, setPerPage] = useState(25);
 export function AddSale() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { products, loading: prodLoading } = useProducts();
+const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
-  const { groups: priceGroups } = useSellingPriceGroups();
+ const { groups: priceGroups } = useSellingPriceGroups();
+const { locations } = useLocations();
+  const invoiceSettings = useInvoiceSettings();
+  const { taxRates } = useTaxRates();
   const [priceGroupId, setPriceGroupId] = useState("");
 
-  const getPriceForGroup = async (product) => {
+ const getPriceForGroup = (product) => {
     if (!priceGroupId) return product.selling_price;
-    const res = await apiFetch(`/product-selling-prices/${product.id}`);
-    const match = (res?.prices || []).find(pr => String(pr.selling_price_group_id) === String(priceGroupId));
-    return match ? Number(match.selling_price) : product.selling_price;
+    const group = priceGroups.find(g => String(g.id) === String(priceGroupId));
+    if (!group) return product.selling_price;
+    const pct = Number(group.percentage) || 0;
+    const base = Number(product.selling_price) || 0;
+    if (group.type === "Markup") return base + (base * pct / 100);
+    if (group.type === "Discount") return base - (base * pct / 100);
+    return base;
   };
 
  const [invoiceNo,   setInvoiceNo]   = useState(()=>genNo("INV"));
   const [invoiceNoTouched, setInvoiceNoTouched] = useState(false);
+  // Once Invoice Settings load, replace the placeholder random number with
+  // the real prefix/digits/separator-based number — but only if the user
+  // hasn't already typed their own invoice number.
+  useEffect(() => {
+    if (invoiceSettings && !invoiceNoTouched) {
+      setInvoiceNo(buildInvoiceNo(invoiceSettings));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceSettings]);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0,10));
-  const [warehouse,   setWarehouse]   = useState("Manod HQ");
+const [warehouse,   setWarehouse]   = useState("");
+// ── NEW CODE ──
   const [customer,    setCustomer]    = useState("Walk-In Customer");
+  const [customerId,  setCustomerId]  = useState(null);
+  const [customerAdvance, setCustomerAdvance] = useState(0);
+  const [useAdvanceAmount, setUseAdvanceAmount] = useState(0);
   const [customerType,setCustomerType]= useState("Walk-In");
   const [salesperson, setSalesperson] = useState("");
   const [payTerm,     setPayTerm]     = useState("Immediate");
   const [payMethod,   setPayMethod]   = useState("Cash");
   const [paymentStatus, setPaymentStatus] = useState("Unpaid");
   const [paidAmount,  setPaidAmount]  = useState(0);
-const [taxRate,     setTaxRate]     = useState(0); // GST selector default — 0% until user picks 5/12/18/28
+const [taxRate,     setTaxRate]     = useState(0); // GST selector default — set to saved default tax rate once loaded
   const [globalDisc,  setGlobalDisc]  = useState(0);
   const [shipping,    setShipping]    = useState(0);
   const [notes,       setNotes]       = useState("");
@@ -1011,7 +1063,18 @@ const [items,       setItems]       = useState([]);
   // Convert-to-Invoice: when the Drafts/Quotations "Convert" button sends us
   // here as /sells/create?from=draft&id=123 or ?from=quotation&id=123,
   // fetch that record and pre-fill the form + line items.
- useEffect(() => {
+useEffect(() => {
+    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
+
+  useEffect(() => {
+    const def = taxRates.find(t => t.is_default);
+    if (def && taxRate === 0) setTaxRate(Number(def.rate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxRates]);
+
+  useEffect(() => {
     const from = searchParams.get("from");
     const id   = searchParams.get("id");
     console.log("Convert-to-invoice params:", { from, id }); // TEMP debug — remove once confirmed working
@@ -1063,13 +1126,27 @@ const endpoint = from === "quotation" ? `/quotations/${id}`
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  const onCust = (name, obj) => {
+// ── NEW CODE ──
+const onCust = async (name, obj) => {
     setCustomer(name);
+    setCustomerId(obj?.id || null);
+    setCustomerAdvance(Number(obj?.advance_balance || 0));
+    setUseAdvanceAmount(0); // reset — don't carry over a previous customer's applied amount
     // Auto-fill customer type from the contact record when one is picked,
     // but the field below stays a normal dropdown so it can be corrected.
     if (obj?.customer_type || obj?.type) setCustomerType(obj.customer_type || obj.type);
     else if (name === "Walk-In Customer") setCustomerType("Walk-In");
+
+    // NEW: auto-detect this customer's Customer Group pricing rule and
+    // apply it as the active Price Group — recalculates all existing
+    // line-item prices too, via the priceGroupId effect below.
+    if (obj?.id) {
+      const info = await apiFetch(`/contacts/${obj.id}/pricing-info`);
+      const groupId = info?.pricing?.selling_price_group_id;
+      setPriceGroupId(groupId ? String(groupId) : "");
+    } else {
+      setPriceGroupId("");
+    }
   };
 const addProduct = async p => {
     if (items.some(i=>i.id===p.id)) return;
@@ -1079,6 +1156,22 @@ const addProduct = async p => {
       qty:1, unit:"Pcs", unitPrice, discount:0, tax:0,
     }]);
   };
+  // NEW: re-price every line item already in the invoice whenever the
+  // active price group changes (e.g. customer switched, auto-detected
+  // group changed) — recalculates totals live like POS does.
+  useEffect(() => {
+    if (items.length === 0) return;
+    (async () => {
+      const repriced = await Promise.all(items.map(async (r) => {
+        const prod = products.find(p => p.id === r.productId);
+        if (!prod) return r;
+        const unitPrice = await getPriceForGroup(prod);
+        return { ...r, unitPrice };
+      }));
+      setItems(repriced);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceGroupId]);
  const upd = (id,k,v) => {
     if (k === "qty") {
       const row = items.find(i=>i.id===id);
@@ -1153,14 +1246,16 @@ const handleSave = async () => {
       else alert("Save failed — check server");
       return;
     }
-let invNoToUse = invoiceNo || genNo("INV");
+// ── NEW CODE ──
+    let invNoToUse = invoiceNo || genNo("INV");
     let res = await apiFetch("/sales-invoice",{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-        invoiceNo: invNoToUse, invoiceDate, customer, customerType, warehouse,
+        invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
         salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
         paymentStatus, paidAmount:Number(paidAmount)||0,
+        useAdvanceAmount:Number(useAdvanceAmount)||0,
         dueDate:dueDateISO(), shippingAmt:Number(shipping),
         globalDiscount:globalDisc, taxAmt:taxAmt.toFixed(2),
         grandTotal:grandTotal.toFixed(2), notes, items,
@@ -1229,9 +1324,11 @@ let invNoToUse = invoiceNo || genNo("INV");
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
               <div><FL>Invoice Number</FL><Inp value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)}/></div>
               <div><FL>Invoice Date</FL><Inp type="date" value={invoiceDate} onChange={e=>setInvoiceDate(e.target.value)}/></div>
-              <div><FL>Warehouse</FL>
+          <div><FL>Warehouse</FL>
                 <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
-                  <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+                  {locations.length===0
+                    ? <option>Manod HQ</option>
+                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -1276,6 +1373,7 @@ let invNoToUse = invoiceNo || genNo("INV");
                   {["Cash","UPI","Card","Bank Transfer","Cheque"].map(o=><option key={o}>{o}</option>)}
                 </Sel>
               </div>
+    
               <div><FL>Payment Status</FL>
                 <Sel value={paymentStatus} onChange={e=>setPaymentStatus(e.target.value)}>
                   {["Unpaid","Paid","Partial"].map(o=><option key={o}>{o}</option>)}
@@ -1286,10 +1384,22 @@ let invNoToUse = invoiceNo || genNo("INV");
                   <Inp type="number" value={paidAmount} onChange={e=>setPaidAmount(e.target.value)} min="0" max={grandTotal}/>
                 </div>
               )}
+              {customerId && customerAdvance > 0 && (
+                <div style={{gridColumn:"span 2"}}>
+                  <FL>Use Advance Balance (Rs. {fmt(customerAdvance)} available)</FL>
+                  <Inp type="number" value={useAdvanceAmount}
+                    onChange={e=>setUseAdvanceAmount(Math.max(0, Math.min(Number(e.target.value)||0, customerAdvance, grandTotal)))}
+                    min="0" max={Math.min(customerAdvance, grandTotal)}/>
+                  <div style={{fontSize:11,color:TEXT_MUTED,marginTop:4}}>
+                    Applies this customer's existing credit toward this invoice.
+                  </div>
+                </div>
+              )}
               <div><FL>Due Date</FL><Inp value={dueDate()} readOnly/></div>
-              <div><FL>Tax Rate (GST %)</FL>
+           <div><FL>Tax Rate (GST %)</FL>
                 <Sel value={taxRate} onChange={e=>{const v=Number(e.target.value);setTaxRate(v);setItems(p=>p.map(i=>({...i,tax:v})));} }>
-                  {[0,5,12,18,28].map(v=><option key={v} value={v}>{v}%</option>)}
+                  <option value={0}>0%</option>
+                  {taxRates.map(t=><option key={t.id} value={Number(t.rate)}>{t.tax_name} ({t.rate}%)</option>)}
                 </Sel>
               </div>
               <div><FL>Global Discount (%)</FL><Inp type="number" value={globalDisc} onChange={e=>setGlobalDisc(Number(e.target.value))} min="0" max="100"/></div>
@@ -1420,7 +1530,123 @@ let invNoToUse = invoiceNo || genNo("INV");
     </div>
   );
 }
+// ── Register Control — Open/Close cash register, shown in ListPOS header ─────
+function RegisterControl() {
+  const [reg, setReg] = useState(null);       // current open register session, or null
+  const [loading, setLoading] = useState(true);
+  const [showOpen, setShowOpen] = useState(false);
+  const [showClose, setShowClose] = useState(false);
+  const [openingCash, setOpeningCash] = useState(0);
+  const [closingCash, setClosingCash] = useState(0);
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
 
+  const load = () => {
+    setLoading(true);
+    registerAPI.getCurrent()
+      .then(res => setReg(res?.data || res || null))
+      .catch(() => setReg(null))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleOpen = async () => {
+    setSaving(true);
+    try {
+      await registerAPI.openRegister({
+        openingCash: Number(openingCash) || 0,
+        warehouse: "Manod HQ",
+        notes,
+      });
+      setShowOpen(false);
+      setOpeningCash(0);
+      setNotes("");
+      load();
+    } catch (e) {
+      alert(`Failed to open register: ${e.message}`);
+    }
+    setSaving(false);
+  };
+
+  const handleClose = async () => {
+    setSaving(true);
+    try {
+      await registerAPI.closeRegister(reg.id, {
+        closingCash: Number(closingCash) || 0,
+        notes,
+      });
+      setShowClose(false);
+      setClosingCash(0);
+      setNotes("");
+      load();
+    } catch (e) {
+      alert(`Failed to close register: ${e.message}`);
+    }
+    setSaving(false);
+  };
+
+  if (loading) {
+    return <span style={{fontSize:12,color:TEXT_MUTED,display:"flex",alignItems:"center",gap:6}}><Spinner/> Register...</span>;
+  }
+
+  return (
+    <>
+      {reg ? (
+        <>
+          <span style={{fontSize:12,color:"#16a34a",background:"#f0fdf4",border:"1px solid #a7f3d0",
+            padding:"6px 12px",borderRadius:8,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+            ● Register Open — Opened Rs. {fmt(reg.openingCash)}
+          </span>
+          <GhostBtn label="Close Register" onClick={()=>setShowClose(true)}/>
+        </>
+      ) : (
+        <PrimaryBtn label="Open Register" icon={IC.plus} onClick={()=>setShowOpen(true)}/>
+      )}
+
+      {showOpen && (
+        <div onClick={()=>!saving && setShowOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",
+          zIndex:600,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,width:380,
+            boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,fontWeight:700,fontSize:15}}>Open Register</div>
+            <div style={{padding:18,display:"flex",flexDirection:"column",gap:12}}>
+              <div><FL required>Opening Cash (Rs.)</FL>
+                <Inp type="number" value={openingCash} onChange={e=>setOpeningCash(e.target.value)} min="0"/>
+              </div>
+              <div><FL>Notes</FL><TextArea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional..."/></div>
+            </div>
+            <div style={{padding:"14px 20px",borderTop:`1px solid ${BORDER}`,display:"flex",gap:8}}>
+              <GhostBtn label="Cancel" onClick={()=>setShowOpen(false)}/>
+              <PrimaryBtn label={saving?"Opening...":"Open Register"} icon={IC.save} onClick={handleOpen} disabled={saving}/>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClose && reg && (
+        <div onClick={()=>!saving && setShowClose(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",
+          zIndex:600,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:12,width:380,
+            boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+            <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,fontWeight:700,fontSize:15}}>Close Register</div>
+            <div style={{padding:18,display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{fontSize:12,color:TEXT_MUTED}}>Opened with Rs. {fmt(reg.openingCash)}</div>
+              <div><FL required>Closing Cash Count (Rs.)</FL>
+                <Inp type="number" value={closingCash} onChange={e=>setClosingCash(e.target.value)} min="0"/>
+              </div>
+              <div><FL>Notes</FL><TextArea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional..."/></div>
+            </div>
+            <div style={{padding:"14px 20px",borderTop:`1px solid ${BORDER}`,display:"flex",gap:8}}>
+              <GhostBtn label="Cancel" onClick={()=>setShowClose(false)}/>
+              <PrimaryBtn label={saving?"Closing...":"Close Register"} icon={IC.save} onClick={handleClose} disabled={saving}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 // ═══════════════════════════════════════════════════════════════
 // 3. LIST POS — click row for advanced detail panel
 // ═══════════════════════════════════════════════════════════════
@@ -1492,8 +1718,11 @@ export function ListPOS() {
 
   return (
     <div style={PAGE}>
-      <PageHeader title="POS Sales" breadcrumb="Home / Sell / POS Sales"
-        actions={<PrimaryBtn label="Open POS" icon={IC.plus} onClick={()=>navigate("/pos/create")}/>}/>
+   <PageHeader title="POS Sales" breadcrumb="Home / Sell / POS Sales"
+        actions={<>
+          <RegisterControl/>
+          <PrimaryBtn label="Open POS" icon={IC.plus} onClick={()=>navigate("/pos/create")}/>
+        </>}/>
       <div style={{padding:"16px 24px 0",display:"flex",gap:14,flexShrink:0}}>
        <StatCard label="Total Transactions" value={records.length} sub="All time" accent={GREEN}
           active={!todayOnly && !search}
@@ -1603,11 +1832,14 @@ export function ListPOS() {
 // ═══════════════════════════════════════════════════════════════
 export function POSCreate() {
   const navigate = useNavigate();
+  const { business } = useBusiness();
   const { products, loading: prodLoading } = useProducts();
-  const { customers } = useCustomers();
+const { customers } = useCustomers();
+  const { locations } = useLocations();
   const { groups: priceGroups } = useSellingPriceGroups();
-  const [cart,     setCart]     = useState([]);
+const [cart,     setCart]     = useState([]);
   const [customer, setCustomer] = useState("Walk-In Customer");
+  const [customerId, setCustomerId] = useState(null);
   const [priceGroupId, setPriceGroupId] = useState(""); // "" = default selling price
   const [payMethod,setPayMethod]= useState("Cash");
   const [discount, setDiscount] = useState(0);
@@ -1620,11 +1852,15 @@ export function POSCreate() {
   // Looks up this product's price for the currently selected price group.
   // Falls back to the product's normal selling price if no group price is set.
   const getPriceForGroup = async (product) => {
-    if (!priceGroupId) return product.selling_price;
-    const res = await apiFetch(`/product-selling-prices/${product.id}`);
-    const match = (res?.prices || []).find(pr => String(pr.selling_price_group_id) === String(priceGroupId));
-    return match ? Number(match.selling_price) : product.selling_price;
-  };
+  if (!priceGroupId) return product.selling_price;
+  const group = priceGroups.find(g => String(g.id) === String(priceGroupId));
+  if (!group) return product.selling_price;
+  const pct = Number(group.percentage) || 0;
+  const base = Number(product.selling_price) || 0;
+  if (group.type === "Markup") return base + (base * pct / 100);
+  if (group.type === "Discount") return base - (base * pct / 100);
+  return base;
+};
 
   const addToCart = async p => {
     const stock = Number(p.stock) || 0;
@@ -1684,13 +1920,13 @@ const handleCompleteSale = async () => {
       const stock = prod ? Number(prod.stock) || 0 : 0;
       if (c.qty > stock) { alert(`Insufficient stock for "${c.name}": only ${stock} available`); return; }
     }
-    setSaving(true);
+   setSaving(true);
     const refNo = genNo("POS");
     const res = await apiFetch("/pos-sales",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         refNo, date:new Date().toISOString().slice(0,10),
-        customer, paymentMethod:payMethod, paymentStatus:"Paid",
+        customer, customerId, paymentMethod:payMethod, paymentStatus:"Paid",
         discount, taxAmt:taxAmt.toFixed(2), grandTotal:grandTotal.toFixed(2),
         affectsStock:true, notes, items:cart,
       }),
@@ -1712,8 +1948,12 @@ const handleCompleteSale = async () => {
           </>}/>
         <div style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center",padding:"30px 20px"}}>
           <div style={{width:400,background:"#fff",border:`1px solid ${BORDER}`,borderRadius:10,padding:"28px 24px"}}>
-            <div style={{textAlign:"center",marginBottom:20}}>
-              <div style={{fontSize:22,fontWeight:800,color:GREEN}}>Manod ERP</div>
+ <div style={{textAlign:"center",marginBottom:20}}>
+              {business?.logo_url && (
+                <img src={`${import.meta.env.VITE_API_URL || "http://localhost:5000"}${business.logo_url}`}
+                  alt="Logo" style={{width:44,height:44,borderRadius:8,objectFit:"cover",marginBottom:8}}/>
+              )}
+              <div style={{fontSize:22,fontWeight:800,color:GREEN}}>{business?.business_name || "Manod ERP"}</div>
               <div style={{fontSize:13,color:TEXT_MUTED}}>POS Receipt</div>
               <div style={{marginTop:10,padding:"6px 0",borderTop:`1px dashed ${BORDER}`,borderBottom:`1px dashed ${BORDER}`}}>
                 <div style={{fontSize:11,color:TEXT_MUTED}}>Ref: {receipt.refNo}</div>
@@ -1754,8 +1994,24 @@ const handleCompleteSale = async () => {
         {/* LEFT product grid */}
         <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",borderRight:`1px solid ${BORDER}`,overflow:"hidden"}}>
          <div style={{padding:"10px 16px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:10,flexShrink:0}}>
-            <div style={{flex:1}}>
-              <CustomerCombobox value={customer} onChange={name=>setCustomer(name)} customers={customers} placeholder="Walk-In Customer..."/>
+        <div style={{flex:1}}>
+            <CustomerCombobox
+                value={customer}
+                onChange={async (name, obj) => {
+                  setCustomer(name);
+                  setCustomerId(obj?.id || null);
+                  // NEW: auto-detect Customer Group pricing for POS too
+                  if (obj?.id) {
+                    const info = await apiFetch(`/contacts/${obj.id}/pricing-info`);
+                    const groupId = info?.pricing?.selling_price_group_id;
+                    setPriceGroupId(groupId ? String(groupId) : "");
+                  } else {
+                    setPriceGroupId("");
+                  }
+                }}
+                customers={customers}
+                placeholder="Walk-In Customer..."
+              />  
             </div>
             <div style={{width:170}}>
               <Sel value={priceGroupId} onChange={e=>setPriceGroupId(e.target.value)}>
@@ -1890,6 +2146,7 @@ const handleCompleteSale = async () => {
   );
 }
 
+
 // ═══════════════════════════════════════════════════════════════
 // 5. ADD DRAFT
 // Drafts live in the SAME `sales_invoices` table as Add Sale, just
@@ -1901,15 +2158,21 @@ export function AddDraft() {
   const navigate = useNavigate();
   const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
+  const { locations } = useLocations();
   const [draftNo,  setDraftNo]  = useState(()=>genNo("DRF"));
   const [draftDate,setDraftDate]= useState(new Date().toISOString().slice(0,10));
   const [customer, setCustomer] = useState("");
   const [customerType, setCustomerType] = useState("Walk-In");
-  const [warehouse,setWarehouse]= useState("Manod HQ");
+ const [warehouse,setWarehouse]= useState("");
   const [notes,    setNotes]    = useState("");
   const [items,    setItems]    = useState([]);
   const [saving,   setSaving]   = useState(false);
   const [errMsg,   setErrMsg]   = useState("");
+
+useEffect(() => {
+    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
 
   const onCust = (name, obj) => {
     setCustomer(name);
@@ -1965,8 +2228,10 @@ export function AddDraft() {
               <div><FL>Draft Number</FL><Inp value={draftNo} onChange={e=>setDraftNo(e.target.value)}/></div>
               <div><FL>Draft Date</FL><Inp type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)}/></div>
               <div><FL>Warehouse</FL>
-                <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
-                  <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+               <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+                  {locations.length===0
+                    ? <option>Manod HQ</option>
+                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -2128,6 +2393,7 @@ export function AddQuotation() {
   const navigate = useNavigate();
   const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
+  const { locations } = useLocations();
   const [quotNo,      setQuotNo]      = useState(()=>genNo("QOT"));
   const [quotDate,    setQuotDate]    = useState(new Date().toISOString().slice(0,10));
   const [validUntil,  setValidUntil]  = useState(()=>{const d=new Date();d.setDate(d.getDate()+30);return d.toISOString().slice(0,10);});
@@ -2137,7 +2403,7 @@ export function AddQuotation() {
   const [email,       setEmail]       = useState("");
   const [phone,       setPhone]       = useState("");
   const [salesperson, setSalesperson] = useState("");
-  const [warehouse,   setWarehouse]   = useState("Manod HQ");
+const [warehouse,   setWarehouse]   = useState("");
   const [items,       setItems]       = useState([]);
   const [globalDisc,  setGlobalDisc]  = useState(0);
   const [taxRate,     setTaxRate]     = useState(0);
@@ -2146,6 +2412,11 @@ export function AddQuotation() {
   const [terms,       setTerms]       = useState("");
   const [docStatus,   setDocStatus]   = useState("Draft");
   const [saving,      setSaving]      = useState(false);
+
+  useEffect(() => {
+    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
 
   const handleCustChange = (name, obj) => {
     setCustomer(name);
@@ -2217,9 +2488,11 @@ const handleSave = async () => {
                   <option value="">— None —</option><option>Admin</option><option>Sales Rep</option><option>Cashier</option>
                 </Sel>
               </div>
-              <div><FL>Warehouse</FL>
+             <div><FL>Warehouse</FL>
                 <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
-                  <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+                  {locations.length===0
+                    ? <option>Manod HQ</option>
+                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -2410,6 +2683,7 @@ export function SellReturn() {
   const navigate = useNavigate();
   const { customers } = useCustomers();
   const { invoices }  = useInvoices();
+  const { locations } = useLocations();
   const [view, setView] = useState("list");
   const { data, loading, refresh } = useAPI("/sales-returns");
   const returns = data?.data || [];
@@ -2422,7 +2696,7 @@ export function SellReturn() {
   const [customer,  setCustomer]  = useState("");
   const [invoiceRef,setInvoiceRef]= useState("");
   const [items,     setItems]     = useState([]);
-  const [warehouse, setWarehouse] = useState("Manod HQ");
+const [warehouse, setWarehouse] = useState("");
   const [reason,    setReason]    = useState("Damaged Product");
   const [notes,     setNotes]     = useState("");
   const [docStatus, setDocStatus] = useState("Draft");
@@ -2431,6 +2705,11 @@ export function SellReturn() {
   const [refundMethod, setRefundMethod] = useState("Cash");
   const [refundAmount, setRefundAmount] = useState(0);
   const [saving,    setSaving]    = useState(false);
+
+  useEffect(() => {
+    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
 
   const onInvoicePick = (invNo, inv) => {
     setInvoiceRef(invNo);
@@ -2623,9 +2902,11 @@ if (view==="list") {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
               <div><FL>Return Number</FL><Inp value={returnNo} onChange={e=>setReturnNo(e.target.value)}/></div>
               <div><FL>Return Date</FL><Inp type="date" value={returnDate} onChange={e=>setReturnDate(e.target.value)}/></div>
-              <div><FL>Warehouse</FL>
+             <div><FL>Warehouse</FL>
                 <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
-                  <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+                  {locations.length===0
+                    ? <option>Manod HQ</option>
+                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -2742,6 +3023,7 @@ export function Shipments() {
   const navigate = useNavigate();
   const { customers } = useCustomers();
   const { invoices }  = useInvoices();
+  const { locations } = useLocations();
   const [view, setView] = useState("list");
   const { data, loading, refresh } = useAPI("/shipments");
   const shipments = data?.data || [];
@@ -2756,7 +3038,7 @@ export function Shipments() {
   const [invoiceTotal,setInvoiceTotal]= useState(null); // NEW — invoice details preview
   const [carrier,     setCarrier]     = useState("FedEx");
   const [trackingNo,  setTrackingNo]  = useState("");
-  const [warehouse,   setWarehouse]   = useState("Manod HQ");
+const [warehouse,   setWarehouse]   = useState("");
   const [deliveryAddr,setDeliveryAddr]= useState("");
   const [estimatedDel,setEstimatedDel]= useState("");
   const [weight,      setWeight]      = useState("");
@@ -2769,6 +3051,11 @@ export function Shipments() {
 
   // NEW — when an invoice is picked, auto-fill customer, delivery address,
   // invoice total, and populate the Product Details table with its items.
+useEffect(() => {
+    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
+
   const onInvoicePick = (invNo, inv) => {
     setInvoiceRef(invNo);
     if (!inv) return;
@@ -2857,9 +3144,11 @@ export function Shipments() {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
                 <div><FL>Shipment Number</FL><Inp value={shipNo} onChange={e=>setShipNo(e.target.value)}/></div>
                 <div><FL>Ship Date</FL><Inp type="date" value={shipDate} onChange={e=>setShipDate(e.target.value)}/></div>
-                <div><FL>Warehouse / Origin</FL>
+               <div><FL>Warehouse / Origin</FL>
                   <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
-                    <option>Manod HQ</option><option>Branch - Chennai</option><option>Branch - Coimbatore</option>
+                    {locations.length===0
+                      ? <option>Manod HQ</option>
+                      : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
                   </Sel>
                 </div>
                 <div><FL>Estimated Delivery</FL><Inp type="date" value={estimatedDel} onChange={e=>setEstimatedDel(e.target.value)}/></div>
