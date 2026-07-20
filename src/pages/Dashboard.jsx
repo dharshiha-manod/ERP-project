@@ -1,5 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "./ThemeContext";
+
+const BASES = ["http://localhost:5000/api","http://localhost:3000/api","http://127.0.0.1:5000/api"];
+async function apiFetch(path) {
+  const token = localStorage.getItem("manod_token");
+  for (const base of BASES) {
+    try {
+      const r = await fetch(`${base}${path}`, { headers: token ? { Authorization:`Bearer ${token}` } : {} });
+      if (r.ok) return await r.json();
+    } catch (e) { /* try next base */ }
+  }
+  return null;
+}
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -30,44 +42,7 @@ function useC() {
 }
 
 /* ─── Mock Data ──────────────────────────────────────────────────────────── */
-const salesData = [
-  { day:"May 1",  sales:12400, purchases:8200,  profit:4200 },
-  { day:"May 5",  sales:18900, purchases:11000, profit:7900 },
-  { day:"May 10", sales:15300, purchases:9800,  profit:5500 },
-  { day:"May 15", sales:22800, purchases:14200, profit:8600 },
-  { day:"May 20", sales:19600, purchases:12500, profit:7100 },
-  { day:"May 25", sales:31200, purchases:18900, profit:12300 },
-  { day:"Jun 1",  sales:27500, purchases:16400, profit:11100 },
-];
-const weeklyData = [
-  { day:"Mon", sales:4200,  returns:320 },
-  { day:"Tue", sales:6800,  returns:180 },
-  { day:"Wed", sales:5100,  returns:420 },
-  { day:"Thu", sales:7900,  returns:260 },
-  { day:"Fri", sales:9200,  returns:310 },
-  { day:"Sat", sales:11400, returns:480 },
-  { day:"Sun", sales:3800,  returns:140 },
-];
-const recentSales = [
-  { id:"INV-2026-0091", customer:"Arvind Systems", amount:48200, status:"Paid",    date:"Jun 01", avatar:"AS" },
-  { id:"INV-2026-0090", customer:"TechVision Ltd",  amount:32750, status:"Partial", date:"May 31", avatar:"TV" },
-  { id:"INV-2026-0089", customer:"GlobalMart Co",   amount:19400, status:"Due",     date:"May 30", avatar:"GM" },
-  { id:"INV-2026-0088", customer:"Nexus Hardware",  amount:71300, status:"Paid",    date:"May 29", avatar:"NH" },
-  { id:"INV-2026-0087", customer:"BrightCore Inc",  amount:25600, status:"Paid",    date:"May 28", avatar:"BC" },
-];
-const topProducts = [
-  { name:'ASUS ROG Monitor 27"', sku:"EL-MON-027", sold:143, revenue:214500, trend:"+18%", up:true },
-  { name:"Logitech MX Master 3S", sku:"AC-MOU-003", sold:218, revenue:87200,  trend:"+31%", up:true },
-  { name:"Samsung SSD 1TB",        sku:"CP-SSD-010", sold:97,  revenue:97000,  trend:"-4%",  up:false },
-  { name:"Corsair RAM 16GB DDR5",  sku:"CP-RAM-016", sold:182, revenue:127400, trend:"+22%", up:true },
-  { name:"TP-Link WiFi 6 Router",  sku:"NT-RTR-006", sold:64,  revenue:64000,  trend:"+9%",  up:true },
-];
-const alerts = [
-  { type:"warning", msg:"12 products below minimum stock level", time:"2h ago" },
-  { type:"error",   msg:"3 invoices overdue by more than 30 days", time:"5h ago" },
-  { type:"info",    msg:"Purchase order PO-2026-044 received", time:"Yesterday" },
-];
-
+// live data now loaded inside Dashboard() via apiFetch — see useEffect below
 /* ─── Icons ──────────────────────────────────────────────────────────────── */
 const icon = (d) => (sz=18,col="currentColor") => <svg width={sz} height={sz} fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d={d}/></svg>;
 function ShoppingCartIcon({size=18,color="currentColor"}) { return <svg width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>; }
@@ -105,10 +80,37 @@ function AnimCounter({ target, prefix="₹ ", suffix="", decimals=2, duration=12
 function ChartTip({ active, payload, label }) {
   const C = useC();
   if (!active || !payload?.length) return null;
+
+  // Merge payload so both Sales & Purchases always show, even if one series has 0 or is missing from payload
+  const dataPoint = payload[0]?.payload || {};
+  const series = [
+    { name: "Sales", value: dataPoint.sales ?? 0, color: C.brandMid },
+    { name: "Purchases", value: dataPoint.purchases ?? 0, color: C.blue },
+  ];
+
   return (
-    <div style={{ background: C.brand, color:"#fff", borderRadius:10, padding:"10px 14px", fontSize:12, boxShadow:"0 4px 20px rgba(0,0,0,0.25)" }}>
-      <div style={{ fontWeight:700, marginBottom:4 }}>{label}</div>
-      {payload.map((p, i) => <div key={i} style={{ color: p.color || C.accentLt }}>{p.name}: ₹ {Number(p.value).toLocaleString("en-IN")}</div>)}
+    <div style={{
+      background: "#ffffff",
+      color: C.text,
+      borderRadius: 12,
+      padding: "12px 16px",
+      fontSize: 12,
+      minWidth: 160,
+      boxShadow: "0 8px 28px rgba(15,31,22,0.18)",
+      border: `1px solid ${C.border}`,
+    }}>
+      <div style={{ fontWeight: 800, marginBottom: 8, fontSize: 12.5, color: C.muted, letterSpacing: "0.2px" }}>
+        {label}
+      </div>
+      {series.map((s, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "3px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />
+            <span style={{ color: C.muted, fontWeight: 600 }}>{s.name}</span>
+          </div>
+          <span style={{ fontWeight: 800, color: C.text }}>₹ {s.value.toLocaleString("en-IN")}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -181,17 +183,150 @@ export default function Dashboard() {
   const [period, setPeriod] = useState("This Month");
   const [mounted, setMounted] = useState(false);
 
+  // Turn the selected period into a concrete date range
+  function getPeriodRange(p) {
+    const now = new Date();
+    const start = new Date(now);
+    const end = new Date(now);
+
+    if (p === "Today") {
+      // start = end = today
+    } else if (p === "This Week") {
+      const day = now.getDay(); // 0=Sun
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      start.setDate(now.getDate() - diffToMonday);
+    } else if (p === "This Month") {
+      start.setDate(1);
+    } else if (p === "This Year") {
+      start.setMonth(0, 1);
+    }
+
+    const fmt = (d) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+    return { from: fmt(start), to: fmt(end) };
+  }
+  const [stats, setStats] = useState({
+    totalSales:0, netProfit:0, invoiceDue:0, totalSellReturn:0,
+    totalPurchase:0, purchaseDue:0, totalOrders:0, totalExpense:0,
+  });
+  const [salesData, setSalesData] = useState([]);
+  const [recentSales, setRecentSales] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [categoryData, setCategoryData] = useState([]);
+  const [stockCounts, setStockCounts] = useState({ low:0, out:0, total:0 });
+  const [loadingData, setLoadingData] = useState(true);
+
   useEffect(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
+useEffect(() => {
+    (async () => {
+      setLoadingData(true);
+
+      const { from, to } = getPeriodRange(period);
+      // report endpoints use snake_case date params
+      const rq = `date_from=${from}&date_to=${to}`;
+      // /sales-invoice uses camelCase date params
+      const invQ = `dateFrom=${from}&dateTo=${to}`;
+
+      const [sellPay, netProfit, purPay, prodSell, stock, posSales, invoices, returns, expenses, categorySales] = await Promise.all([
+        apiFetch(`/reports/sell-payment?limit=1000&${rq}`),
+        apiFetch(`/reports/net-profit?${rq}`),
+        apiFetch(`/reports/purchase-payment?limit=1000&${rq}`),
+        apiFetch(`/reports/product-sell?limit=1000&${rq}`),
+        apiFetch("/reports/stock?limit=1000"), // stock has no date dimension — always current
+        apiFetch("/pos-sales?limit=1000"),      // backend ignores date filter — filter client-side below
+        apiFetch(`/sales-invoice?limit=1000&${invQ}`),
+        apiFetch("/sales-returns?limit=1000"),  // backend ignores date filter — filter client-side below
+        apiFetch(`/reports/expense?limit=1000&${rq}`),
+        apiFetch(`/reports/sales-by-category?${rq}`),
+      ]);
+
+      // POS sales: backend doesn't filter by date, so filter here using each row's `date`
+      const posInRange = (posSales?.data || []).filter(p => {
+        if (!p.date) return false;
+        const d = new Date(p.date).toISOString().slice(0, 10);
+        return d >= from && d <= to;
+      });
+
+      // Sales returns: same situation — filter by createdAt
+      const returnsInRange = (returns?.data || []).filter(r => {
+        const raw = r.createdAt || r.date;
+        if (!raw) return false;
+        const d = new Date(raw).toISOString().slice(0, 10);
+        return d >= from && d <= to;
+      });
+
+      const sellSummary = sellPay?.summary || {};
+      const purSummary  = purPay?.summary  || {};
+      const npData      = netProfit?.data || {};
+      const stockSummary = stock?.summary || {};
+      const totalSellReturn = returnsInRange.reduce((s,r)=>s+Number(r.grandTotal||0),0);
+
+      setStats({
+        totalSales:     Number(sellSummary.total_billed || 0),
+        netProfit:      Number(npData.netProfit || 0),
+        invoiceDue:     Number(sellSummary.outstanding || 0),
+        totalSellReturn,
+        totalPurchase:  Number(purSummary.total_billed || 0),
+        purchaseDue:    Number(purSummary.outstanding || 0),
+        totalOrders:    (invoices?.data?.length || 0) + posInRange.length,
+        totalExpense:   Number(expenses?.summary?.total_amount || 0),
+      });
+setStockCounts({
+        low:   Number(stockSummary.low_or_out_count || 0),
+        out:   (stock?.data || []).filter(r=>r.status==="Out of Stock").length,
+        total: Number(stockSummary.total_skus || 0),
+      });
+
+      // Group invoices by day for the trend chart (last 30 entries)
+      const byDay = {};
+      (invoices?.data || []).forEach(inv => {
+        const d = inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("en-IN",{month:"short",day:"numeric"}) : "—";
+        byDay[d] = byDay[d] || { day:d, sales:0, purchases:0 };
+        byDay[d].sales += Number(inv.grandTotal||0);
+      });
+      (purPay?.data || []).forEach(p => {
+        const d = p.date ? new Date(p.date).toLocaleDateString("en-IN",{month:"short",day:"numeric"}) : "—";
+        byDay[d] = byDay[d] || { day:d, sales:0, purchases:0 };
+        byDay[d].purchases += Number(p.amount||0);
+      });
+  const rawDays = Object.values(byDay);
+const paddedDays = [];
+const todayDate = new Date();
+for (let i = 6; i >= 0; i--) {
+  const d = new Date(todayDate);
+  d.setDate(d.getDate() - i);
+  const label = d.toLocaleDateString("en-IN", { month:"short", day:"numeric" });
+  const existing = rawDays.find(r => r.day === label);
+  paddedDays.push(existing || { day: label, sales: 0, purchases: 0 });
+}
+setSalesData(paddedDays);
+      const invRows = (invoices?.data || []).slice(0,5).map(inv => ({
+        id: inv.invoiceNo, customer: inv.customer, amount: Number(inv.grandTotal||0),
+        status: inv.paymentStatus === "Unpaid" ? "Due" : inv.paymentStatus,
+        date: inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("en-IN",{month:"short",day:"numeric"}) : "",
+        avatar: (inv.customer||"NA").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+      }));
+      setRecentSales(invRows);
+
+      const prodMap = {};
+      (prodSell?.data || []).forEach(r => {
+        const key = r.product;
+        if (!prodMap[key]) prodMap[key] = { name:r.product, sku:r.sku, sold:0, revenue:0 };
+        prodMap[key].sold += Number(r.qty||0);
+        prodMap[key].revenue += Number(r.amount||0);
+      });
+      const topList = Object.values(prodMap).sort((a,b)=>b.sold-a.sold).slice(0,5)
+        .map(p => ({ ...p, trend:"", up:true }));
+   setTopProducts(topList);
+      setCategoryData(categorySales?.data || []);
+
+      setLoadingData(false);
+    })();
+  }, [period]);
 
   const today = new Date().toLocaleDateString("en-IN", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
   const go = (path) => { window.location.href = path; };
 
-  const categoryData = [
-    { name:"Electronics", value:38, color:C.brandMid },
-    { name:"Accessories", value:24, color:C.accent },
-    { name:"Components",  value:21, color:C.gold },
-    { name:"Peripherals", value:17, color:C.blue },
-  ];
+
 
   const quickActions = [
     { label:"Add Sale",     icon:ShoppingCartIcon, path:"/sells/create",     bg:"#dcfce7", accent:C.brandMid },
@@ -225,46 +360,99 @@ export default function Dashboard() {
 
       {/* ── Stat Cards Row 1 ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:24 }}>
-        <StatCard label="Total Sales"       value={328450} icon={ShoppingCartIcon} iconBg="#dcfce7" iconColor={C.brandMid} change="+18.4%" changeUp />
-        <StatCard label="Net Profit"        value={124800} icon={ChartBarIcon}     iconBg="#eff6ff" iconColor={C.blue}    change="+12.1%" changeUp />
-        <StatCard label="Invoice Due"       value={47300}  icon={ReceiptIcon}      iconBg="#fffbeb" iconColor={C.gold}    change="+3.2%"  changeUp={false} />
-        <StatCard label="Total Sell Return" value={9200}   icon={PackageIcon}      iconBg="#fef2f2" iconColor={C.red}     change="-8.5%"  changeUp />
+        <StatCard label="Total Sales"       value={stats.totalSales}      icon={ShoppingCartIcon} iconBg="#dcfce7" iconColor={C.brandMid} />
+        <StatCard label="Net Profit"        value={stats.netProfit}       icon={ChartBarIcon}     iconBg="#eff6ff" iconColor={C.blue} />
+        <StatCard label="Invoice Due"       value={stats.invoiceDue}      icon={ReceiptIcon}      iconBg="#fffbeb" iconColor={C.gold} />
+        <StatCard label="Total Sell Return" value={stats.totalSellReturn} icon={PackageIcon}      iconBg="#fef2f2" iconColor={C.red} />
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:28 }}>
-        <StatCard label="Total Purchase" value={203650} icon={PackageIcon}      iconBg="#eef2ff" iconColor={C.purple} change="+9.7%" changeUp />
-        <StatCard label="Purchase Due"   value={31500}  icon={BellIcon}         iconBg="#fff7ed" iconColor="#f97316" change="-2.1%" changeUp />
-        <StatCard label="Total Orders"   value={1284}   icon={ShoppingCartIcon} iconBg="#f0fdf4" iconColor={C.accent} change="+24%" changeUp isCount />
-        <StatCard label="Total Expense"  value={28900}  icon={ReceiptIcon}      iconBg="#faf5ff" iconColor={C.purple} change="+6.3%" changeUp={false} />
+        <StatCard label="Total Purchase" value={stats.totalPurchase} icon={PackageIcon}      iconBg="#eef2ff" iconColor={C.purple} />
+        <StatCard label="Purchase Due"   value={stats.purchaseDue}   icon={BellIcon}         iconBg="#fff7ed" iconColor="#f97316" />
+        <StatCard label="Total Orders"   value={stats.totalOrders}   icon={ShoppingCartIcon} iconBg="#f0fdf4" iconColor={C.accent} isCount />
+        <StatCard label="Total Expense"  value={stats.totalExpense}  icon={ReceiptIcon}      iconBg="#faf5ff" iconColor={C.purple} />
       </div>
-
       {/* ── Charts Row 1 ── */}
       <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:20, marginBottom:20 }}>
-        <Card>
-          <CardHeader title="📈 Sales vs Purchase — Last 30 Days" subtitle="Manodtechnologies (BL0001)"
-            action={<span style={{ fontSize:12, color:C.muted, background:"#f0fdf4", padding:"4px 12px", borderRadius:20, fontWeight:600 }}>May – Jun 2026</span>} />
-          <div style={{ padding:"16px 22px 20px" }}>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={salesData} margin={{ top:5, right:10, left:0, bottom:0 }}>
-                <defs>
-                  <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.brandMid} stopOpacity={0.25}/><stop offset="95%" stopColor={C.brandMid} stopOpacity={0}/></linearGradient>
-                  <linearGradient id="gP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.2}/><stop offset="95%" stopColor={C.blue} stopOpacity={0}/></linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#edf2ef" />
-                <XAxis dataKey="day" tick={{ fontSize:11, fill:C.muted }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize:11, fill:C.muted }} tickLine={false} axisLine={false} tickFormatter={v=>`₹${(v/1000).toFixed(0)}k`} />
-                <Tooltip content={<ChartTip />} />
-                <Area type="monotone" dataKey="sales"     name="Sales"     stroke={C.brandMid} strokeWidth={2.5} fill="url(#gS)" dot={false} />
-                <Area type="monotone" dataKey="purchases" name="Purchases" stroke={C.blue}     strokeWidth={2}   fill="url(#gP)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-            <div style={{ display:"flex", gap:24, marginTop:12 }}>
-              {[{ label:"Total Sales", val:"₹3,28,450", dot:C.brandMid },{ label:"Total Purchase", val:"₹2,03,650", dot:C.blue },{ label:"Net Profit", val:"₹1,24,800", dot:C.accent }].map(m => (
-                <div key={m.label} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <div style={{ width:10, height:10, borderRadius:3, background:m.dot }} />
-                  <div><div style={{ fontSize:11, color:C.muted }}>{m.label}</div><div style={{ fontWeight:800, fontSize:14, color:C.text }}>{m.val}</div></div>
-                </div>
-              ))}
-            </div>
+       <Card>
+          <CardHeader title="📈 Sales vs Purchase — Last 7 Days" subtitle="Manodtechnologies (BL0001)"
+            action={<span style={{ fontSize:12, color:C.muted, background:"#f0fdf4", padding:"4px 12px", borderRadius:20, fontWeight:600 }}>{salesData[0]?.day} – {salesData[salesData.length-1]?.day}</span>} />
+     <div style={{ padding:"16px 22px 20px" }}>
+           <ResponsiveContainer width="100%" height={280}>
+  <AreaChart data={salesData} margin={{ top:20, right:16, left:0, bottom:0 }}>
+    <defs>
+      <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.brandMid} stopOpacity={0.35}/>
+        <stop offset="55%" stopColor={C.brandMid} stopOpacity={0.08}/>
+        <stop offset="100%" stopColor={C.brandMid} stopOpacity={0}/>
+      </linearGradient>
+      <linearGradient id="gP" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={C.blue} stopOpacity={0.28}/>
+        <stop offset="55%" stopColor={C.blue} stopOpacity={0.06}/>
+        <stop offset="100%" stopColor={C.blue} stopOpacity={0}/>
+      </linearGradient>
+    </defs>
+    <CartesianGrid strokeDasharray="4 8" stroke="#e9f0ec" vertical={false} />
+    <XAxis
+      dataKey="day"
+      tick={{ fontSize:11.5, fill:C.muted, fontWeight:600 }}
+      tickLine={false}
+      axisLine={{ stroke: C.border }}
+      padding={{ left:16, right:16 }}
+    />
+    <YAxis
+      tick={{ fontSize:11, fill:C.muted, fontWeight:500 }}
+      tickLine={false}
+      axisLine={false}
+      width={48}
+      tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(1)}k` : `₹${v}`}
+    />
+    <Tooltip
+      content={<ChartTip />}
+      cursor={{ stroke: C.brandMid, strokeWidth: 1, strokeDasharray: "4 4", strokeOpacity: 0.4 }}
+    />
+    <Area
+      type="monotone"
+      dataKey="purchases"
+      name="Purchases"
+      stroke={C.blue}
+      strokeWidth={2.5}
+      fill="url(#gP)"
+      dot={false}
+      activeDot={{ r:6, fill:"#fff", strokeWidth:2.5, stroke:C.blue }}
+      animationDuration={1000}
+      animationEasing="ease-out"
+    />
+    <Area
+      type="monotone"
+      dataKey="sales"
+      name="Sales"
+      stroke={C.brandMid}
+      strokeWidth={3}
+      fill="url(#gS)"
+      dot={false}
+      activeDot={{ r:6.5, fill:"#fff", strokeWidth:3, stroke:C.brandMid }}
+      animationDuration={1200}
+      animationEasing="ease-out"
+    />
+  </AreaChart>
+</ResponsiveContainer>
+  <div style={{ display:"flex", gap:12, marginTop:18 }}>
+  {[
+    { label:"Total Sales", val:stats.totalSales, dot:C.brandMid, bg:"#f7fdf9" },
+    { label:"Total Purchase", val:stats.totalPurchase, dot:C.blue, bg:"#f7faff" },
+    { label:"Net Profit", val:stats.netProfit, dot:C.accent, bg: stats.netProfit>=0 ? "#f7fdf9" : "#fff7f7" },
+  ].map(m => (
+    <div key={m.label} style={{ flex:1, display:"flex", flexDirection:"column", gap:6, padding:"14px 16px", borderRadius:14, background:m.bg, border:`1px solid ${C.border}` }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <div style={{ width:8, height:8, borderRadius:"50%", background:m.dot, boxShadow:`0 0 0 3px ${m.dot}22` }} />
+        <span style={{ fontSize:11, color:C.muted, fontWeight:700, letterSpacing:"0.3px", textTransform:"uppercase" }}>{m.label}</span>
+      </div>
+      <div style={{ fontWeight:900, fontSize:19, color:C.text, letterSpacing:"-0.3px" }}>
+        {m.val < 0 ? "-" : ""}₹{Math.abs(m.val).toLocaleString("en-IN")}
+      </div>
+    </div>
+  ))}
+</div>
           </div>
         </Card>
 
@@ -273,8 +461,8 @@ export default function Dashboard() {
           <div style={{ padding:"16px 22px 20px" }}>
             <ResponsiveContainer width="100%" height={160}>
               <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={72} dataKey="value" paddingAngle={3} strokeWidth={0}>
-                  {categoryData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={45} outerRadius={72} dataKey="pct" nameKey="category" paddingAngle={3} strokeWidth={0}>
+                  {categoryData.map((e, i) => <Cell key={i} fill={[C.brandMid, C.accent, C.gold, C.blue, C.purple, C.red][i % 6]} />)}
                 </Pie>
                 <Tooltip formatter={v=>`${v}%`} />
               </PieChart>
@@ -283,10 +471,10 @@ export default function Dashboard() {
               {categoryData.map((c, i) => (
                 <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <div style={{ width:10, height:10, borderRadius:3, background:c.color }} />
-                    <span style={{ fontSize:12, color:C.muted }}>{c.name}</span>
+                    <div style={{ width:10, height:10, borderRadius:3, background:[C.brandMid, C.accent, C.gold, C.blue, C.purple, C.red][i % 6] }} />
+                    <span style={{ fontSize:12, color:C.muted }}>{c.category}</span>
                   </div>
-                  <span style={{ fontSize:12, fontWeight:700, color:C.text }}>{c.value}%</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.text }}>{c.pct}%</span>
                 </div>
               ))}
             </div>
@@ -296,12 +484,12 @@ export default function Dashboard() {
 
       {/* ── Charts Row 2 ── */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:20 }}>
-        <Card>
+   <Card>
           <CardHeader title="📊 Weekly Revenue" subtitle="This week vs returns" />
           <div style={{ padding:"14px 22px 20px" }}>
             <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={weeklyData} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#edf2ef" vertical={false} />
+              <BarChart data={salesData} barGap={4}>
+            <CartesianGrid stroke="transparent" />
                 <XAxis dataKey="day" tick={{ fontSize:11, fill:C.muted }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize:11, fill:C.muted }} tickLine={false} axisLine={false} tickFormatter={v=>`₹${(v/1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTip />} />
@@ -327,10 +515,16 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            <div style={{ marginTop:16 }}>
+         <div style={{ marginTop:16 }}>
               <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:8 }}>🔔 Alerts</div>
               <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                {alerts.map((a, i) => {
+                {(stockCounts.out > 0 || stockCounts.low > 0
+                  ? [
+                      ...(stockCounts.out > 0 ? [{ type:"error",   msg:`${stockCounts.out} products out of stock`, time:"" }] : []),
+                      ...(stockCounts.low > 0 ? [{ type:"warning", msg:`${stockCounts.low} products below minimum stock level`, time:"" }] : []),
+                    ]
+                  : [{ type:"info", msg:"No stock alerts right now", time:"" }]
+                ).map((a, i) => {
                   const cfg = { warning:{ bg:"#fffbeb", color:"#92400e", dot:"#f59e0b" }, error:{ bg:"#fef2f2", color:"#991b1b", dot:"#ef4444" }, info:{ bg:"#eff6ff", color:"#1e40af", dot:"#3b82f6" } }[a.type];
                   return (
                     <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:8, background:cfg.bg, borderRadius:8, padding:"8px 10px" }}>
@@ -399,7 +593,11 @@ export default function Dashboard() {
               </tbody>
             </table>
             <div style={{ margin:"12px 14px 14px", background:C.bg, borderRadius:12, display:"flex", gap:0, overflow:"hidden", border:`1px solid ${C.border}` }}>
-              {[{ label:"Low Stock", val:"12", color:C.gold },{ label:"Out of Stock", val:"3", color:C.red },{ label:"Total Products", val:"486", color:C.brandMid }].map((m, i) => (
+             {[
+  { label:"Low Stock", val:String(stockCounts.low), color:C.gold },
+  { label:"Out of Stock", val:String(stockCounts.out), color:C.red },
+  { label:"Total Products", val:String(stockCounts.total), color:C.brandMid },
+].map((m, i) => (
                 <div key={i} style={{ flex:1, padding:"12px 14px", textAlign:"center", borderRight:i<2?`1px solid ${C.border}`:"none" }}>
                   <div style={{ fontWeight:900, fontSize:20, color:m.color }}>{m.val}</div>
                   <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{m.label}</div>

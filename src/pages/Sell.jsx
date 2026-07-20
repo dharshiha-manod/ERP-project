@@ -3748,11 +3748,17 @@ const handleImport = async () => {
     const normalizedCSV = buildNormalizedCSV(rawText, headerMap);
     const normalizedFile = new File([normalizedCSV], file.name, { type: "text/csv" });
     const form = new FormData(); form.append("file", normalizedFile);
-    const r = await fetch("http://localhost:5000/api/import/sales", {
-      method:"POST",
-      headers: token ? { Authorization:`Bearer ${token}` } : {},
-      body: form,
-    });
+   let r = null;
+    for (const base of BASES) {
+      try {
+        r = await fetch(`${base}/import/sales`, {
+          method:"POST",
+          headers: token ? { Authorization:`Bearer ${token}` } : {},
+          body: form,
+        });
+        if (r.ok) break;
+      } catch (e) { /* try next base */ }
+    }
     if (r && r.ok) {
       const d = await r.json();
       setStatus(`✓ Import complete — ${d.imported ?? d.data?.imported ?? preview.length} records imported`);
@@ -3812,9 +3818,8 @@ const downloadTemplate = () => {
               </div>
             )}
 
-            <div style={{marginTop:14,display:"flex",gap:10}}>
-             // NEW (fixed):
-<PrimaryBtn label={importing?"Importing...":"Import"} icon={IC.upload} onClick={handleImport} disabled={!file||importing||missingRequired.length>0}/>
+         <div style={{marginTop:14,display:"flex",gap:10}}>
+              <PrimaryBtn label={importing?"Importing...":"Import"} icon={IC.upload} onClick={handleImport} disabled={!file||importing||missingRequired.length>0}/>
               <GhostBtn label="Download Template" icon={IC.csv} onClick={downloadTemplate}/>
             </div>
           </Card>
