@@ -130,7 +130,7 @@ function ColVisMenu({ cols, onChange }) {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
-  const labels = { image:"Product Image", action:"Action", product:"Product", location:"Business Location", purchase:"Unit Purchase Price", selling:"Selling Price", stock:"Current Stock", type:"Product Type", category:"Category", brand:"Brand", tax:"Tax", sku:"SKU", status:"Status" };
+  const labels = { image:"Product Image", action:"Action", product:"Product", location:"Business Location", purchase:"Unit Purchase Price", selling:"Selling Price", stock:"Current Stock", type:"Product Type", category:"Category", brand:"Brand", tax:"Tax", sku:"SKU", status:"Status", supplier:"Default Supplier" };
   return (
     <div ref={ref} style={{ position:"relative" }}>
       <button onClick={() => setOpen(v => !v)} style={tb.btn}>Column visibility</button>
@@ -777,10 +777,11 @@ export default function ListProducts() {
 const [showEdit,    setShowEdit]    = useState(false);
 const [viewProduct, setViewProduct] = useState(null);
 const [showView,    setShowView]    = useState(false);
-  const [cols, setCols] = useState({
-    image:true, action:true, product:true, location:true,
-    purchase:true, selling:true, stock:true, type:true,
-    category:true, brand:true, tax:true, sku:true, status:true
+ const [cols, setCols] = useState({
+    image:false, action:true, product:true, location:false,
+    purchase:true, selling:true, stock:true, type:false,
+    category:false, brand:false, tax:false, sku:true, status:true,
+    supplier:true
   });
   // Filters
   const [filterStatus,   setFilterStatus]   = useState("");
@@ -793,12 +794,12 @@ const [showView,    setShowView]    = useState(false);
  const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const params = {
+    const params = {
         page, limit: perPage,
         search: search || undefined,
         status: filterStatus || undefined,
-        category: filterCategory || undefined,
-        brand: filterBrand || undefined,
+        category_id: filterCategory || undefined,
+        brand_id: filterBrand || undefined,
       };
       const res = await productsAPI.getAll(params);
       setProducts(res.products || []);
@@ -820,8 +821,8 @@ const [showView,    setShowView]    = useState(false);
           categoriesAPI.getAll({ limit:500 }),
           brandsAPI.getAll({ limit:200 }),
         ]);
-        setCategories((c.categories||[]).filter(x=>!x.parent_id).map(x=>({ id:x.name, name:x.name })));
-        setBrands((b.brands||[]).map(x=>({ id:x.name, name:x.name })));
+    setCategories((c.categories||[]).filter(x=>!x.parent_id).map(x=>({ id:x.id, name:x.name })));
+        setBrands((b.brands||[]).map(x=>({ id:x.id, name:x.name })));
       } catch (e) { console.error("Filter dropdown load error:", e.message); }
     })();
   }, []);
@@ -858,10 +859,9 @@ const handleDelete = async (id) => {
       }
     }
   };
-
-  const handleDeleteSelected = async () => {
+const handleDeleteSelected = async () => {
     if (!selected.length) { alert("Select at least one product"); return; }
-    if (!window.confirm(`Delete ${selected.length} product(s)?`)) return;
+    if (!window.confirm(`This will permanently delete ${selected.length} product(s). This cannot be undone. Continue?`)) return;
     try {
       await Promise.all(selected.map(id => productsAPI.delete(id)));
       setSelected([]);
@@ -914,18 +914,41 @@ const stockColor = (qty, alertQty) => {
   const from = products.length === 0 ? 0 : (page-1)*perPage+1;
   const to   = (page-1)*perPage+products.length;
 
+ const activeCount   = products.filter(pr => (pr.status||"Active")==="Active").length;
+  const lowStockCount = products.filter(pr => (pr.current_stock??0) > 0 && (pr.current_stock??0) <= (Number(pr.alert_qty)>0?Number(pr.alert_qty):10)).length;
+  const outOfStockCount = products.filter(pr => (pr.current_stock??0) <= 0).length;
+  const totalStockValue = products.reduce((s,pr)=> s + (Number(pr.exc_tax)||0) * (Number(pr.current_stock)||0), 0);
+
+  const statCards = [
+    { label:"TOTAL PRODUCTS", value: total, sub:`${activeCount} active`, color:"#15803d" },
+    { label:"STOCK VALUE", value:`₹${totalStockValue.toLocaleString("en-IN",{maximumFractionDigits:0})}`, sub:`${products.length} on this page`, color:"#1d4ed8" },
+    { label:"ACTIVE", value: activeCount, sub:"in catalog", color:"#7c3aed" },
+    { label:"LOW STOCK", value: lowStockCount, sub:"needs reorder", color:"#c2410c" },
+    { label:"OUT OF STOCK", value: outOfStockCount, sub:"unavailable", color:"#b91c1c" },
+  ];
+
   return (
     <div style={p.page}>
       {/* Header */}
       <div style={p.titleRow}>
         <div>
-          <h1 style={p.title}>Products</h1>
-          <p style={p.sub}>Manage your products</p>
+          <h1 style={p.title}>All Products</h1>
+          <div style={p.breadcrumb}>Home / Products / List</div>
         </div>
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={() => navigate("/products/create")} style={p.btnAdd}>+ Add</button>
-          <button onClick={() => exportExcel(products)} style={p.btnXls}>Download Excel</button>
+          <button onClick={() => navigate("/products/create")} style={p.btnAdd}>＋ Add Product</button>
         </div>
+      </div>
+
+      {/* Stat cards */}
+      <div style={p.statGrid}>
+        {statCards.map(({label,value,sub,color}) => (
+          <div key={label} style={{...p.statCard, borderLeft:`4px solid ${color}`}}>
+            <div style={p.statLabel}>{label}</div>
+            <div style={p.statValue}>{value}</div>
+            <div style={p.statSub}>{sub}</div>
+          </div>
+        ))}
       </div>
 
       {error && <div style={p.errBanner}>{error} <button onClick={load} style={p.retryBtn}>Retry</button></div>}
@@ -969,9 +992,9 @@ const stockColor = (qty, alertQty) => {
         )}
       </div>
 
-      {/* Tabs */}
+     {/* Tabs */}
       <div style={p.tabRow}>
-        {[{k:"all",l:"All Products"},{k:"stock",l:"Stock Report"}].map(t=>(
+        {[{k:"all",l:"All Products"}].map(t=>(
           <button key={t.k} onClick={()=>setActiveTab(t.k)}
             style={{...p.tab,...(activeTab===t.k?p.tabActive:{})}}>
             {t.l}
@@ -994,7 +1017,9 @@ const stockColor = (qty, alertQty) => {
           <button onClick={()=>exportPDF(products)}   style={tb.btn}>Print</button>
           <ColVisMenu cols={cols} onChange={(k,v) => setCols(c=>({...c,[k]:v}))} />
           <button onClick={()=>exportPDF(products)}   style={{...tb.btn,...tb.pdfBtn}}><span style={tb.pdfIco}>PDF</span>Export PDF</button>
-          <input value={searchInput} onChange={e=>setSearchInput(e.target.value)}
+<input value={searchInput}
+            onChange={e=>setSearchInput(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter"){ setSearch(searchInput); setPage(1); } }}
             placeholder="Search ..." style={tb.search}/>
         </div>
       </div>
@@ -1016,6 +1041,7 @@ const stockColor = (qty, alertQty) => {
   {cols.tax      && <th style={p.th}>Tax</th>}
   {cols.sku      && <th style={p.th}>SKU</th>}
   {cols.status   && <th style={p.th}>Status</th>}
+  {cols.supplier && <th style={p.th}>Default Supplier</th>}
   {cols.action   && <th style={p.th}>Action</th>}
   {cols.image    && <th style={p.th}>Product Image</th>}
 </tr>
@@ -1055,13 +1081,14 @@ const stockColor = (qty, alertQty) => {
                     {cols.brand    && <td style={p.td}>{prod.brand||"—"}</td>}
                     {cols.tax      && <td style={{...p.td,fontSize:12,color:"#6b7280"}}>{prod.tax}</td>}
                     {cols.sku      && <td style={{...p.td,fontFamily:"monospace",fontSize:12,color:"#6b7280"}}>{prod.sku||"—"}</td>}
-                    {cols.status   && (
+                   {cols.status   && (
                       <td style={p.td}>
                         <span style={{background:prod.status==="Active"?"#d1fae5":"#fee2e2",color:prod.status==="Active"?"#065f46":"#991b1b",borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:500}}>
                           {prod.status||"Active"}
                         </span>
                       </td>
                     )}
+                    {cols.supplier && <td style={{...p.td,color:"#6b7280"}}>{prod.default_supplier_name||"—"}</td>}
        {cols.action && (
   <td style={p.td}>
     <div style={{ display:"flex", gap:12, alignItems:"center" }}>
@@ -1105,14 +1132,21 @@ const stockColor = (qty, alertQty) => {
         </table>
       </div>
 
-      {/* Bulk actions */}
-      <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
-        <button onClick={handleDeleteSelected} style={p.bulkDel}>Delete Selected</button>
+   {/* Bulk actions */}
+      <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap", alignItems:"center" }}>
+        {selected.length > 0 && (
+          <span style={{ fontSize:13, fontWeight:600, color:"#2d7a3a", marginRight:4 }}>
+            {selected.length} selected
+          </span>
+        )}
+        <button onClick={handleDeleteSelected} disabled={!selected.length} style={{...p.bulkDel, opacity: selected.length?1:0.5, cursor: selected.length?"pointer":"not-allowed"}}>Delete Selected</button>
         <button style={p.bulkOutline}>Add to location</button>
         <button style={p.bulkOutline}>Remove from location</button>
-        <button onClick={handleDeactivate} style={p.bulkWarn}>Deactivate Selected</button>
+        <button onClick={handleDeactivate} disabled={!selected.length} style={{...p.bulkWarn, opacity: selected.length?1:0.5, cursor: selected.length?"pointer":"not-allowed"}}>Deactivate Selected</button>
+        {selected.length > 0 && (
+          <button onClick={()=>setSelected([])} style={p.bulkOutline}>Clear Selection</button>
+        )}
       </div>
-
       {/* Pagination */}
       <div style={p.footRow}>
         <span style={{ fontSize:13, color:"#6b7280" }}>
@@ -1221,10 +1255,16 @@ const f = {
 const p = {
   page:       { fontFamily:"'Segoe UI',sans-serif", color:"#222", fontSize:14 },
   titleRow:   { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 },
-  title:      { margin:0, fontSize:26, fontWeight:700, color:"#1a1a2e" },
+  title:      { margin:0, fontSize:24, fontWeight:700, color:"#111827" },
   sub:        { margin:"4px 0 0", color:"#9ca3af", fontSize:13 },
-  btnAdd:     { background:"#2d7a3a", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
+  breadcrumb: { fontSize:12, color:"#9ca3af", marginTop:4 },
+  btnAdd:     { background:"linear-gradient(135deg,#16a34a,#15803d)", color:"#fff", border:"none", borderRadius:20, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
   btnXls:     { background:"#217346", color:"#fff", border:"none", borderRadius:6, padding:"10px 22px", fontWeight:600, cursor:"pointer", fontSize:14 },
+  statGrid:   { display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:16, marginBottom:20 },
+  statCard:   { background:"#fff", borderRadius:10, padding:"16px 20px", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
+  statLabel:  { fontSize:11, fontWeight:700, color:"#9ca3af", letterSpacing:1 },
+  statValue:  { fontSize:24, fontWeight:800, color:"#111827", margin:"6px 0 2px" },
+  statSub:    { fontSize:12, color:"#9ca3af" },
   errBanner:  { background:"#fff3cd", border:"1px solid #ffc107", borderRadius:6, padding:"10px 16px", marginBottom:12, color:"#856404", display:"flex", alignItems:"center", gap:12 },
   retryBtn:   { background:"#ffc107", border:"none", borderRadius:4, padding:"4px 12px", cursor:"pointer", fontSize:12, fontWeight:600 },
   filtersCard:{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, marginBottom:14, overflow:"hidden" },

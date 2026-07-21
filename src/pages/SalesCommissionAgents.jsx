@@ -118,12 +118,12 @@ function AgentFormPage({ onBack, onSave, editAgent, loading }) {
 
       {error && (
         <div style={{ ...styles.card, background: '#fee2e2', borderLeft: '4px solid #dc2626', marginBottom: 16 }}>
-          <span style={{ color: '#991b1b' }}>❌ {error}</span>
+        <span style={{ color: '#991b1b' }}>{error}</span>
         </div>
       )}
 
       <div style={styles.card}>
-        <h3 style={fStyles.sectionTitle}>👤 Basic Information</h3>
+       <h3 style={fStyles.sectionTitle}>Basic Information</h3>
         <div style={fStyles.grid}>
           <Field label="Agent Name" required>
             <input style={fStyles.input} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Full name" />
@@ -149,7 +149,7 @@ function AgentFormPage({ onBack, onSave, editAgent, loading }) {
           </Field>
         </div>
 
-        <h3 style={{ ...fStyles.sectionTitle, marginTop: 28 }}>💰 Commission Details</h3>
+        <h3 style={{ ...fStyles.sectionTitle, marginTop: 28 }}> Commission Details</h3>
         <div style={fStyles.grid}>
           <Field label="Commission Type" required>
             <select style={fStyles.input} value={form.commission_type} onChange={(e) => set("commission_type", e.target.value)}>
@@ -166,7 +166,7 @@ function AgentFormPage({ onBack, onSave, editAgent, loading }) {
           </Field>
         </div>
 
-        <h3 style={{ ...fStyles.sectionTitle, marginTop: 28 }}>📝 Notes</h3>
+        <h3 style={{ ...fStyles.sectionTitle, marginTop: 28 }}> Notes</h3>
         <textarea
           style={{ ...fStyles.input, width: "100%", maxWidth: 600, minHeight: 80, resize: "vertical" }}
           value={form.notes}
@@ -176,7 +176,7 @@ function AgentFormPage({ onBack, onSave, editAgent, loading }) {
 
         <div style={styles.formActions}>
           <button onClick={handleSave} disabled={formLoading} style={{ ...styles.saveBtn, opacity: formLoading ? 0.6 : 1 }}>
-            {formLoading ? "Saving..." : (isEdit ? "💾 Update Agent" : "💾 Save Agent")}
+            {formLoading ? "Saving..." : (isEdit ? "Update Agent" : "Save Agent")}
           </button>
           <button onClick={onBack} style={styles.cancelBtn}>Cancel</button>
         </div>
@@ -328,20 +328,19 @@ export default function SalesCommissionAgents() {
 
       {/* Summary Cards */}
       <div style={summaryGrid}>
-        {[
-          { label: "Total Agents", value: stats.totalAgents, color: "#4f46e5", icon: "👥" },
-          { label: "Active Agents", value: stats.activeAgents, color: "#16a34a", icon: "✅" },
-          { label: "Sales This Month", value: `₹${stats.totalSalesThisMonth.toLocaleString("en-IN")}`, color: "#0891b2", icon: "📈" },
-          { label: "Avg Commission", value: `${stats.averageCommissionRate}%`, color: "#d97706", icon: "💰" },
-        ].map((c) => (
-          <div key={c.label} style={{ ...summaryCard, borderLeft: `4px solid ${c.color}` }}>
-            <div style={{ fontSize: 24 }}>{c.icon}</div>
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: c.color }}>{c.value}</div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>{c.label}</div>
-            </div>
-          </div>
-        ))}
+       {[
+  { label: "Total Agents", value: stats.totalAgents, color: "#4f46e5" },
+  { label: "Active Agents", value: stats.activeAgents, color: "#16a34a" },
+  { label: "Sales This Month", value: `₹${stats.totalSalesThisMonth.toLocaleString("en-IN")}`, color: "#0891b2" },
+  { label: "Avg Commission", value: `${stats.averageCommissionRate}%`, color: "#d97706" },
+].map((c) => (
+  <div key={c.label} style={{ ...summaryCard, borderLeft: `4px solid ${c.color}` }}>
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: c.color }}>{c.value}</div>
+      <div style={{ fontSize: 12, color: "#6b7280" }}>{c.label}</div>
+    </div>
+  </div>
+))}
       </div>
 
       <div style={styles.card}>
@@ -414,14 +413,49 @@ export default function SalesCommissionAgents() {
                       {cols.filter((c) => colVisible[c.key]).map((c) => (
                         <td key={c.key} style={styles.td}>{c.render(agent)}</td>
                       ))}
-                      {colVisible.Action && (
-                        <td style={styles.td}>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {canEdit && <button style={styles.editBtn} onClick={() => { setEditAgent(agent); setView("edit"); }}>✎ Edit</button>}
-                            {canDelete && <button style={styles.deleteBtn} onClick={() => handleDelete(agent.id)}>🗑 Delete</button>}
-                          </div>
-                        </td>
-                      )}
+                   {colVisible.Action && (
+  <td style={styles.td}>
+    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <button
+        style={styles.iconBtn}
+        title="View"
+        onClick={() => { setEditAgent(agent); setView("edit"); }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+
+      {canEdit && (
+        <button
+          style={styles.iconBtn}
+          title="Edit"
+          onClick={() => { setEditAgent(agent); setView("edit"); }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+        </button>
+      )}
+
+      {canDelete && (
+        <button
+          style={styles.iconBtn}
+          title="Delete"
+          onClick={() => handleDelete(agent.id)}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" strokeWidth="2">
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          </svg>
+        </button>
+      )}
+    </div>
+  </td>
+)}
                     </tr>
                   ))}
                 </tbody>
@@ -480,7 +514,8 @@ const styles = {
   pageBtn: { border: "1px solid #cbd5e0", background: "#fff", borderRadius: 4, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "#4a5568" },
   pageBtnActive: { background: "#4f46e5", color: "#fff", border: "1px solid #4f46e5" },
   editBtn: { background: "#fff", border: "1px solid #a0aec0", borderRadius: 5, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "#4a5568", fontWeight: 500 },
-  deleteBtn: { background: "#fff", border: "1px solid #fc8181", borderRadius: 5, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "#e53e3e", fontWeight: 500 },
+deleteBtn: { background: "#fff", border: "1px solid #fc8181", borderRadius: 5, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "#e53e3e", fontWeight: 500 },
+iconBtn: { background: "transparent", border: "none", padding: 4, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   formActions: { display: "flex", gap: 12, marginTop: 32, paddingTop: 20, borderTop: "1px solid #e2e8f0" },
   saveBtn: { background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", color: "#fff", border: "none", borderRadius: 6, padding: "10px 28px", fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(34,197,94,0.35)" },
   cancelBtn: { background: "#fff", color: "#4a5568", border: "1px solid #cbd5e0", borderRadius: 6, padding: "10px 24px", fontSize: 14, cursor: "pointer" },

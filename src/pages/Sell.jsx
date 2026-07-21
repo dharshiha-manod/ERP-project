@@ -809,6 +809,8 @@ const [perPage, setPerPage] = useState(25);
   const [dateTo,   setDateTo]   = useState("");
   const [viewRec, setViewRec] = useState(null);
   const [editRec, setEditRec] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const hasActiveFilters = statusF!=="All" || methodF!=="All" || !!search || !!dateFrom || !!dateTo;
 
@@ -847,10 +849,30 @@ const [perPage, setPerPage] = useState(25);
     );
   };
 
-  const handleDelete = async (s) => {
+ const handleDelete = async (s) => {
     if (!window.confirm(`Delete invoice ${s.invoiceNo}? This cannot be undone.`)) return;
     const res = await apiFetch(`/sales-invoice/${s.id}`, { method:"DELETE" });
     if (res) refresh(); else alert("Delete failed — check server");
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    const pageIds = filtered.map(s=>s.id);
+    const allSelected = pageIds.every(id=>selectedIds.includes(id)) && pageIds.length>0;
+    setSelectedIds(allSelected ? selectedIds.filter(id=>!pageIds.includes(id)) : [...new Set([...selectedIds, ...pageIds])]);
+  };
+  const handleBulkDelete = async () => {
+    if (selectedIds.length===0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected invoice(s)? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    const results = await Promise.all(selectedIds.map(id => apiFetch(`/sales-invoice/${id}`, { method:"DELETE" })));
+    const failed = results.filter(r=>!r).length;
+    setBulkDeleting(false);
+    setSelectedIds([]);
+    refresh();
+    if (failed>0) alert(`${failed} invoice(s) failed to delete — check server`);
   };
 
   const handleEditSave = async (form) => {
@@ -859,8 +881,10 @@ const [perPage, setPerPage] = useState(25);
     });
     if (res) { setEditRec(null); refresh(); } else alert("Update failed — check server");
   };
-
-  const cols = [
+const cols = [
+    {label:<input type="checkbox"
+        checked={filtered.length>0 && filtered.every(s=>selectedIds.includes(s.id))}
+        onChange={toggleSelectAll}/>, center:true},
     {label:"Invoice No."},{label:"Date"},{label:"Due Date"},
     {label:"Customer"},{label:"Customer Type"},{label:"Location"},{label:"Payment Status"},
     {label:"Paid / Balance (Rs.)",right:true},
@@ -868,6 +892,9 @@ const [perPage, setPerPage] = useState(25);
   ];
   const rows = filtered.map((s,i) => (
     <>
+      <Td center>
+        <input type="checkbox" checked={selectedIds.includes(s.id)} onChange={()=>toggleSelect(s.id)}/>
+      </Td>
       <Td mono style={{color:GREEN}}>{s.invoiceNo||`INV-${String(i+1).padStart(4,"0")}`}</Td>
       <Td>{fmtDate(s.date||s.invoiceDate)}</Td>
       <Td muted>{s.dueDate?fmtDate(s.dueDate):"—"}</Td>
@@ -899,8 +926,12 @@ const [perPage, setPerPage] = useState(25);
 
   return (
     <div style={PAGE}>
-      <PageHeader title="All Sales" breadcrumb="Home / Sell / All Sales"
+   <PageHeader title="All Sales" breadcrumb="Home / Sell / All Sales"
         actions={<>
+          {selectedIds.length>0 && (
+            <GhostBtn label={bulkDeleting?"Deleting...":`Delete Selected (${selectedIds.length})`}
+              icon={IC.trash} onClick={bulkDeleting?undefined:handleBulkDelete}/>
+          )}
           <GhostBtn label="Export CSV" icon={IC.csv} onClick={handleExport}/>
           <PrimaryBtn label="Add Sale" icon={IC.plus} onClick={()=>navigate("/sells/create")}/>
         </>}/>

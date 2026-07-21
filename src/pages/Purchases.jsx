@@ -123,6 +123,14 @@ function PurchaseForm({onSubmit,onCancel,editData=null}){
 const selProd=(p)=>{
   const cost=parseFloat(p.default_price ?? p.unit_purchase_price ?? p.purchase_price ?? 0)||0;
   setItems(prev=>[...prev,{id:p.id||null,name:p.name,sku:p.sku||"",qty:1,unitCost:cost,discPct:0,marginPct:0,lineTotal:cost,sellingPrice:cost}]);
+  // Auto-select the product's Default Supplier if the purchase doesn't
+  // already have one chosen — the user can still change it afterwards,
+  // since the same product can be bought from different suppliers.
+  if(!selSup && p.default_supplier_id){
+    const match=suppliers.find(s=>s.id===p.default_supplier_id);
+    setSelSup(match||{id:p.default_supplier_id,name:p.default_supplier_name||""});
+    setSupSearch(match?.name||p.default_supplier_name||"");
+  }
   setProdSearch("");setShowProdDrop(false);
 };
   const addManual=()=>{if(!prodSearch.trim())return;setItems(prev=>[...prev,{id:null,name:prodSearch,sku:"",qty:1,unitCost:0,discPct:0,marginPct:0,lineTotal:0,sellingPrice:0}]);setProdSearch("");setShowProdDrop(false);};
@@ -271,8 +279,11 @@ export default function Purchases(){
   const [fSup,setFSup]=useState("");
   const [fPS,setFPS]=useState("");
   const [fPay,setFPay]=useState("");
-  const [fFrom,setFFrom]=useState("");
+ const [fFrom,setFFrom]=useState("");
   const [fTo,setFTo]=useState("");
+  const [selected,setSelected]=useState([]);
+  const [confirmBulk,setConfirmBulk]=useState(false);
+  const [bulkDeleting,setBulkDeleting]=useState(false); 
 
   useEffect(()=>{if(isCreate&&view!=="add")setView("add");if(!isCreate&&view==="add")setView("list");},[location.pathname]);
   useEffect(()=>{fetch(`${BASE_URL}/contacts?contactType=Suppliers&limit=500`,{headers:authHeaders()}).then(r=>r.json()).then(d=>setSuppliers((d.contacts||[]).map(c=>({id:c.id,name:(c.name||c.business_name||"").trim()||`#${c.id}`})))).catch(()=>{});},[]);
@@ -302,11 +313,32 @@ export default function Purchases(){
 
   useEffect(()=>{if(view==="list")load();},[view,load]);
   useEffect(()=>setPage(1),[search,showEntries]);
+  useEffect(()=>{setSelected([]);},[purchases]);
 
-  const delPurchase=async()=>{
+    const delPurchase=async()=>{
     if(!confirmDel)return;
     try{await apiFetch("DELETE",`/purchases/${confirmDel.id}`);showToast("Deleted","success");setConfirmDel(null);load();}
     catch(err){showToast(err.message,"error");setConfirmDel(null);}
+  };
+
+  const toggleSelect=(id)=>{setSelected(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);};
+  const toggleSelectAll=()=>{
+    const pageIds=purchases.map(r=>r.id);
+    const allSelected=pageIds.length>0&&pageIds.every(id=>selected.includes(id));
+    setSelected(allSelected?selected.filter(id=>!pageIds.includes(id)):[...new Set([...selected,...pageIds])]);
+  };
+  const bulkDelete=async()=>{
+    if(selected.length===0)return;
+    setBulkDeleting(true);
+    try{
+      const results=await Promise.allSettled(selected.map(id=>apiFetch("DELETE",`/purchases/${id}`)));
+      const failed=results.filter(r=>r.status==="rejected").length;
+      const okCount=selected.length-failed;
+      if(failed===0)showToast(`${okCount} purchase(s) deleted`,"success");
+      else showToast(`${okCount} deleted, ${failed} failed`,failed===selected.length?"error":"info");
+      setSelected([]);setConfirmBulk(false);load();
+    }catch(err){showToast(err.message||"Bulk delete failed","error");setConfirmBulk(false);}
+    finally{setBulkDeleting(false);}
   };
 
   const openEdit=async(r)=>{
@@ -380,7 +412,8 @@ const statCards=[
   return(
     <div style={{fontFamily:"'Segoe UI',-apple-system,sans-serif"}}>
       {ToastEl}
-      {confirmDel&&<ConfirmModal message={`Delete purchase "${confirmDel.ref}"?`} onConfirm={delPurchase} onCancel={()=>setConfirmDel(null)}/>}
+        {confirmDel&&<ConfirmModal message={`Delete purchase "${confirmDel.ref}"?`} onConfirm={delPurchase} onCancel={()=>setConfirmDel(null)}/>}
+      {confirmBulk&&<ConfirmModal message={`Delete ${selected.length} selected purchase(s)? This cannot be undone.`} onConfirm={bulkDelete} onCancel={()=>setConfirmBulk(false)}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
         <div>
@@ -418,8 +451,17 @@ const statCards=[
         <button onClick={clearF} style={BG}>Clear</button>
       </div>
 
-      {/* Table */}
+ {/* Table */}
       <div style={{background:"#fff",borderRadius:10,boxShadow:"0 1px 4px #0001",overflow:"hidden"}}>
+        {selected.length>0&&(
+          <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 18px",background:"#fef2f2",borderBottom:"1px solid #fecaca"}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#991b1b"}}>{selected.length} selected</span>
+            <button onClick={()=>setConfirmBulk(true)} disabled={bulkDeleting} style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:8,padding:"7px 16px",fontSize:13,fontWeight:600,cursor:"pointer",opacity:bulkDeleting?0.7:1,display:"flex",alignItems:"center",gap:6}}>
+              <IconDel/> {bulkDeleting?"Deleting…":"Delete Selected"}
+            </button>
+            <button onClick={()=>setSelected([])} style={{...BG,padding:"7px 14px",fontSize:12}}>Clear selection</button>
+          </div>
+        )}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"1px solid #f3f4f6",flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:13,color:"#6b7280"}}>Show</span>
@@ -440,17 +482,21 @@ const statCards=[
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
               <thead>
-                <tr style={{background:"#f9fafb",borderBottom:"2px solid #e5e7eb"}}>
+                 <tr style={{background:"#f9fafb",borderBottom:"2px solid #e5e7eb"}}>
+                  <th style={{padding:"11px 12px",width:36}}>
+                    <input type="checkbox" checked={purchases.length>0&&purchases.every(r=>selected.includes(r.id))} onChange={toggleSelectAll} style={{width:15,height:15,cursor:"pointer"}}/>
+                  </th>
                   {["DATE","REFERENCE NO","LOCATION","SUPPLIER","PURCHASE STATUS","PAYMENT STATUS","GRAND TOTAL","PAYMENT DUE","ADDED BY","ACTION"].map(h=>(
                     <th key={h} style={{padding:"11px 12px",textAlign:"left",fontWeight:700,color:"#374151",fontSize:12,letterSpacing:0.5,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {purchases.length===0
-                  ?<tr><td colSpan={10} style={{textAlign:"center",padding:50,color:"#9ca3af",fontSize:14}}>No data available in table</td></tr>
+                    {purchases.length===0
+                  ?<tr><td colSpan={11} style={{textAlign:"center",padding:50,color:"#9ca3af",fontSize:14}}>No data available in table</td></tr>
                   :purchases.map((r,i)=>(
-                    <tr key={r.id||i} style={{borderBottom:"1px solid #f3f4f6"}} onMouseEnter={e=>e.currentTarget.style.background="#fafafa"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <tr key={r.id||i} style={{borderBottom:"1px solid #f3f4f6",background:selected.includes(r.id)?"#fef2f2":undefined}} onMouseEnter={e=>{if(!selected.includes(r.id))e.currentTarget.style.background="#fafafa";}} onMouseLeave={e=>{if(!selected.includes(r.id))e.currentTarget.style.background="transparent";}}>
+                      <td style={TD}><input type="checkbox" checked={selected.includes(r.id)} onChange={()=>toggleSelect(r.id)} style={{width:15,height:15,cursor:"pointer"}}/></td>
                       <td style={TD}>{fmtDate(r.purchase_date)}</td>
                       <td style={TD}><span style={{fontWeight:600,color:"#111827"}}>{r.reference_no||"—"}</span></td>
                       <td style={TD}>{r.location||"—"}</td>

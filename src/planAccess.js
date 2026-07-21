@@ -17,7 +17,8 @@ export const FEATURES = {
   STOCK_ADJUSTMENT:"stock_adjustment",
   EXPENSES:        "expenses",
   PURCHASES:       "purchases",
-  MANUFACTURING:   "manufacturing",   // ← covers Production Planning too now
+  MANUFACTURING:   "manufacturing",
+  ACCOUNTING:      "accounting",
 
   USER_MANAGEMENT: "user_management",
   SETTINGS:        "settings",
@@ -25,9 +26,7 @@ export const FEATURES = {
   CRM:             "crm",
   HRM:             "hrm",
   ESSENTIALS:      "essentials",
-  // PRODUCTION_PLANNING removed — now nested under MANUFACTURING
 };
-
 // What each plan includes
 const PLAN_FEATURES = {
   trial: [
@@ -49,10 +48,10 @@ const PLAN_FEATURES = {
     FEATURES.EXPENSES,
     FEATURES.PURCHASES,
     FEATURES.MANUFACTURING,
+    FEATURES.ACCOUNTING,
   ],
-  pro: Object.values(FEATURES), // everything
+  pro: Object.values(FEATURES),
 };
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function getCurrentPlan() {

@@ -22,20 +22,21 @@ async function request(method, path, body) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data; // { success: true, data: ... }
+  return data;
 }
-
+// Reshape list response  → { [key]: [] }
 // Reshape list response  → { [key]: [] }
 const list = (key) => async (method, path, body) => {
   const res = await request(method, path, body);
-  return { [key]: Array.isArray(res.data) ? res.data : [] };
+  const arr = res[key] || res.data || [];
+  return { [key]: Array.isArray(arr) ? arr : [] };
 };
 
 // Reshape single response → { [key]: {} }
 const one = (key) => async (method, path, body) => {
   const res = await request(method, path, body);
-  const item = Array.isArray(res.data) ? res.data[0] : res.data;
-  return { [key]: item };
+  const item = res[key] || res.data;
+  return { [key]: Array.isArray(item) ? item[0] : item };
 };
 
 // ── Dashboard ─────────────────────────────────────────────────
@@ -58,7 +59,7 @@ export const deleteFollowup  = (id)     => request('DELETE', `/followups/${id}`)
 // ── Campaigns ────────────────────────────────────────────────
 export const fetchCampaigns = (p = {}) => list('campaigns')('GET', `/campaigns?${new URLSearchParams(p)}`);
 export const createCampaign = (body)   => one('campaign')('POST', '/campaigns', body);
-
+export const deleteCampaign = (id)     => request('DELETE', `/campaigns/${id}`);
 // ── Proposals ────────────────────────────────────────────────
 export const fetchProposals  = (p = {}) => list('proposals')('GET', `/proposals?${new URLSearchParams(p)}`);
 export const createProposal  = (body)   => one('proposal')('POST', '/proposals', body);

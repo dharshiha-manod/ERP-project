@@ -51,6 +51,7 @@ import Subscription, { isSubscriptionActive } from "./pages/Subscription";
 import { hasFeature, FEATURES } from "./planAccess";
 import "./App.css";
 import Accounting from "./pages/Accounting";
+import Notifications from "./pages/Notifications"; // adjust path as needed
 
 // ─── Auth helpers ──────────────────────────────────────────────────────────
 function isAuthenticated() {
@@ -105,7 +106,7 @@ function FeatureRoute({ feature, children }) {
   if (!loaded) return null;
   if (isAdmin) return children;
   const checker = FEATURE_PERM_MAP[feature];
-  if (!checker) return <AccessDenied />;
+  if (!checker) return <AccessDenied />; // no checker = deny by default (already correct)
   if (!checker(hasPermission)) return <AccessDenied />;
   return children;
 }
@@ -217,10 +218,9 @@ function AppLayout() {
           <Route path="/expenses/:id/edit"  element={<FeatureRoute feature={FEATURES.EXPENSES}><EditExpense /></FeatureRoute>} />
           <Route path="/import-expenses"    element={<FeatureRoute feature={FEATURES.EXPENSES}><ImportExpenses /></FeatureRoute>} />
           <Route path="/expense-categories" element={<FeatureRoute feature={FEATURES.EXPENSES}><ExpenseCategories /></FeatureRoute>} />
-
-          {/* Notifications */}
+{/* Notifications */}
           <Route path="/notifications" element={<FeatureRoute feature={FEATURES.NOTIFICATIONS}><NotificationTemplates /></FeatureRoute>} />
-
+          <Route path="/notifications/alerts" element={<Notifications />} />
           {/* CRM / HRM / Essentials */}
           <Route path="/crm/*"        element={<FeatureRoute feature={FEATURES.CRM}><CRMRoutes /></FeatureRoute>} />
           <Route path="/hrm/*"        element={<FeatureRoute feature={FEATURES.HRM}><HRMRoutes /></FeatureRoute>} />
@@ -254,7 +254,9 @@ function AppLayout() {
           <Route path="/reports/register"             element={<FeatureRoute feature={FEATURES.REPORTS}><RegisterReport /></FeatureRoute>} />
           <Route path="/reports/sales-representative" element={<FeatureRoute feature={FEATURES.REPORTS}><SalesRepresentativeReport /></FeatureRoute>} />
           <Route path="/reports/activity-log"         element={<FeatureRoute feature={FEATURES.REPORTS}><ActivityLogReport /></FeatureRoute>} />
+         
         </Routes>
+        
       </main>
     </div>
   );

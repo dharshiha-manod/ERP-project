@@ -750,6 +750,18 @@ export function SuppliersPage() {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [viewContact, setViewContact] = useState(null);
+  const [selected, setSelected] = useState([]);
+const toggleSelect = (id) => setSelected(s => s.includes(id) ? s.filter(x=>x!==id) : [...s, id]);
+const toggleAll = () => setSelected(selected.length === contacts.length && contacts.length > 0 ? [] : contacts.map(c => c.id));
+const handleDeleteSelected = async () => {
+  if (!selected.length) { alert("Select at least one contact"); return; }
+  if (!window.confirm(`Delete ${selected.length} supplier(s)? This cannot be undone.`)) return;
+  try {
+    await Promise.all(selected.map(id => apiDeleteContact(id)));
+    setSelected([]);
+    reload();
+  } catch (err) { alert(err.message || "Failed to delete selected suppliers."); }
+};
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Address", "Mobile", "Total Purchase Due", "Total Purchase Return Due"];
   const [colVisible, setColVisible] = useState({});
@@ -779,7 +791,13 @@ export function SuppliersPage() {
       <div style={card}>
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Suppliers</h3>
         {errorMsg && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>⚠ {errorMsg}</div>}
-
+{selected.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"10px 16px" }}>
+            <span style={{ fontSize:13, fontWeight:600, color:"#dc2626" }}>{selected.length} selected</span>
+            <button onClick={handleDeleteSelected} style={{ background:"#dc2626", color:"#fff", border:"none", borderRadius:6, padding:"7px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>Delete Selected</button>
+            <button onClick={()=>setSelected([])} style={xBtn}>Clear Selection</button>
+          </div>
+        )}
         <ExportBar onCSV={() => downloadBlob(toCSV(contacts, csvKeys), "suppliers.csv", "text/csv")}
           onExcel={() => downloadBlob(toCSV(contacts, csvKeys), "suppliers.xls", "application/vnd.ms-excel")}
           onPrint={() => printHTML("Suppliers", buildTableHTML())}
@@ -791,6 +809,7 @@ export function SuppliersPage() {
           <table style={{ ...tbl, tableLayout: "fixed" }}>
             <thead>
               <tr style={{ background: "#f7fafc" }}>
+                <th style={th}><input type="checkbox" checked={selected.length===contacts.length && contacts.length>0} onChange={toggleAll} /></th>
                 {colList.map((h) => colVisible[h] !== true && <th key={h} style={th}>{h}</th>)}
                 <th style={{ ...th, textAlign: "right" }}>Actions</th>
               </tr>
@@ -800,8 +819,9 @@ export function SuppliersPage() {
                 ? <tr><td colSpan={14} style={emptyCell}>Loading...</td></tr>
                 : contacts.length === 0
                   ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
-                  : contacts.map((c) => (
+               : contacts.map((c) => (
                     <tr key={c.id} className="tr-hover">
+                      <td style={td}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggleSelect(c.id)} /></td>
                       {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
                       {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
                       {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}
@@ -917,6 +937,18 @@ export function CustomersPage() {
   const [showModal, setShowModal] = useState(false);
   const [editContact, setEditContact] = useState(null);
   const [viewContact, setViewContact] = useState(null);
+  const [selected, setSelected] = useState([]);
+const toggleSelect = (id) => setSelected(s => s.includes(id) ? s.filter(x=>x!==id) : [...s, id]);
+const toggleAll = () => setSelected(selected.length === contacts.length && contacts.length > 0 ? [] : contacts.map(c => c.id));
+const handleDeleteSelected = async () => {
+  if (!selected.length) { alert("Select at least one contact"); return; }
+  if (!window.confirm(`Delete ${selected.length} customer(s)? This cannot be undone.`)) return;
+  try {
+    await Promise.all(selected.map(id => apiDeleteContact(id)));
+    setSelected([]);
+    reload();
+  } catch (err) { alert(err.message || "Failed to delete selected customers."); }
+};
 
   const colList = ["Contact ID", "Business Name", "Name", "Email", "Tax number", "Credit Limit", "Pay term", "Opening Balance", "Advance Balance", "Added On", "Customer Group", "Address", "Mobile"];
   const [colVisible, setColVisible] = useState({});
@@ -954,6 +986,13 @@ return (
         <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 600, color: "#1a202c" }}>All your Customers</h3>
         {errorMsg && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>⚠ {errorMsg}</div>}
 
+      {selected.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:"10px 16px" }}>
+            <span style={{ fontSize:13, fontWeight:600, color:"#dc2626" }}>{selected.length} selected</span>
+            <button onClick={handleDeleteSelected} style={{ background:"#dc2626", color:"#fff", border:"none", borderRadius:6, padding:"7px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>Delete Selected</button>
+            <button onClick={()=>setSelected([])} style={xBtn}>Clear Selection</button>
+          </div>
+        )}
         <ExportBar onCSV={() => downloadBlob(toCSV(contacts, csvKeys), "customers.csv", "text/csv")}
           onExcel={() => downloadBlob(toCSV(contacts, csvKeys), "customers.xls", "application/vnd.ms-excel")}
           onPrint={() => printHTML("Customers", buildTableHTML())}
@@ -965,6 +1004,7 @@ return (
           <table style={{ ...tbl, tableLayout: "fixed" }}>
             <thead>
              <tr style={{ background: "#f7fafc" }}>
+                <th style={th}><input type="checkbox" checked={selected.length===contacts.length && contacts.length>0} onChange={toggleAll} /></th>
                 {colList.map((h) => colVisible[h] !== true && <th key={h} style={th}>{h}</th>)}
                 <th style={{ ...th, textAlign: "right" }}>Actions</th>
               </tr>
@@ -974,8 +1014,9 @@ return (
                 ? <tr><td colSpan={14} style={emptyCell}>Loading...</td></tr>
                 : contacts.length === 0
                   ? <tr><td colSpan={14} style={emptyCell}>No data available in table</td></tr>
-                  : contacts.map((c) => (
+               : contacts.map((c) => (
                     <tr key={c.id} className="tr-hover">
+                      <td style={td}><input type="checkbox" checked={selected.includes(c.id)} onChange={()=>toggleSelect(c.id)} /></td>
                       {colVisible["Contact ID"] !== true && <td style={td}>{c.contactId}</td>}
                       {colVisible["Business Name"] !== true && <td style={td}>{c.businessName || "—"}</td>}
                       {colVisible["Name"] !== true && <td style={td}><strong>{c.name}</strong></td>}

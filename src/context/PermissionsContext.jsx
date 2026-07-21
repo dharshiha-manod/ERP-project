@@ -105,11 +105,14 @@ export function PermissionsProvider({ children }) {
     return permissions.includes(`${group}::${name}`);
   };
 
-  useEffect(() => {
+ useEffect(() => {
     if (localStorage.getItem("manod_token")) {
       loadPermissions();
+    } else {
+      clearPermissions();
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localStorage.getItem("manod_token")]);
 
   return (
     <PermissionsContext.Provider

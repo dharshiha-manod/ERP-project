@@ -256,13 +256,13 @@ useEffect(() => {
 
       const sellSummary = sellPay?.summary || {};
       const purSummary  = purPay?.summary  || {};
-      const npData      = netProfit?.data || {};
+const npData      = netProfit?.data?.summary || {};
       const stockSummary = stock?.summary || {};
       const totalSellReturn = returnsInRange.reduce((s,r)=>s+Number(r.grandTotal||0),0);
 
       setStats({
         totalSales:     Number(sellSummary.total_billed || 0),
-        netProfit:      Number(npData.netProfit || 0),
+       netProfit:      Number(npData.net_profit || 0), 
         invoiceDue:     Number(sellSummary.outstanding || 0),
         totalSellReturn,
         totalPurchase:  Number(purSummary.total_billed || 0),

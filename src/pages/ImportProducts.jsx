@@ -31,7 +31,9 @@ const COLUMNS = [
   { no:21, field:"Weight",                          required:false, note:"Weight in kg" },
   { no:22, field:"Product Description",             required:false, note:"" },
   { no:23, field:"Not for selling",                 required:false, note:"1 = Yes, 0 = No" },
-  { no:24, field:"Product locations",               required:false, note:"Comma separated business location names." },
+{ no:24, field:"Product locations",               required:false, note:"Comma separated business location names." },
+  { no:25, field:"Supplier Name",                   required:false, note:"Name of the usual supplier for this product. Matched against existing suppliers, or created automatically if not found." },
+  { no:26, field:"Supplier Code",                   required:false, note:"Existing supplier's Contact ID (e.g. SUP0001). Used instead of Supplier Name if provided." },
 ];
 
 const TEMPLATE_ROW = {
@@ -59,9 +61,13 @@ const TEMPLATE_ROW = {
   "Product Description": "",
   "Not for selling": 0,
   "Product locations": "Manodtechnologies (BL0001)",
+  "Supplier Name": "Acme Distributors",
+  "Supplier Code": "",
 };
 
-// Map Excel row → API payload
+// Map Excel row → API payload (sent to the bulk /products/import endpoint,
+// which creates/links the supplier and creates a real Purchase transaction
+// for any opening stock — see productService.bulkImportProducts)
 function rowToPayload(row) {
   return {
     name:                   row["Product name"],
@@ -72,6 +78,7 @@ function rowToPayload(row) {
     category:               row["Category"] || null,
     sub_category:           row["Sub category"] || null,
     business_location:      row["Opening stock location"] || "Manodtechnologies (BL0001)",
+    openingStockLocation:   row["Opening stock location"] || "Manodtechnologies (BL0001)",
     alert_qty:              parseFloat(row["Alert quantity"]) || 0,
     manage_stock:           String(row["Manage Stock?"]) === "1",
     description:            row["Product Description"] || null,
@@ -79,11 +86,13 @@ function rowToPayload(row) {
     tax:                    row["Applicable Tax"] || "None",
     selling_price_tax_type: row["Selling Price Tax Type"] || "Exclusive",
     product_type:           row["Product Type"] || "Single",
-    exc_tax:                parseFloat(row["Purchase Price (Excluding Tax)"]) || 0,
+    purchasePrice:          parseFloat(row["Purchase Price (Excluding Tax)"]) || 0,
     inc_tax:                parseFloat(row["Purchase Price (Including Tax)"]) || 0,
     margin:                 parseFloat(row["Profit Margin %"]) || 0,
-   exc_tax_sell:           parseFloat(row["Selling Price"]) || 0,
-    opening_stock:          parseFloat(row["Opening Stock"]) || 0,
+    sellingPrice:           parseFloat(row["Selling Price"]) || 0,
+    openingStock:           parseFloat(row["Opening Stock"]) || 0,
+    supplierName:           row["Supplier Name"] || null,
+    supplierCode:           row["Supplier Code"] || null,
     status:                 "Active",
   };
 }
@@ -142,29 +151,36 @@ export default function ImportProducts() {
     reader.readAsArrayBuffer(importFile);
   };
 
-  // Actual import to backend
+// Actual import to backend — single bulk call so supplier
+  // creation/linking and opening-stock purchase creation happen
+  // server-side, inside proper per-row transactions.
   const handleImport = async () => {
     if (!importedRows.length) { alert("Please preview a valid file first."); return; }
     setImporting(true);
     setResults([]);
-    const res = [];
-    for (let i = 0; i < importedRows.length; i++) {
-      const row = importedRows[i];
-      const payload = rowToPayload(row);
-      try {
-        const resp = await fetch(`${BASE_URL}/products`, { method:"POST", headers: authHeaders(), body: JSON.stringify(payload) });
-        const data = await resp.json();
-        res.push({ row: i+2, name: payload.name, ok: resp.ok, msg: resp.ok ? "Imported" : (data.error||"Failed") });
-      } catch (err) {
-        res.push({ row: i+2, name: payload.name, ok: false, msg: err.message });
-      }
+    try {
+      const rows = importedRows.map(rowToPayload);
+      const resp = await fetch(`${BASE_URL}/products/import`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ rows }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Import failed");
+
+      const res = importedRows.map((row, i) => {
+        const rowError = (data.errors || []).find(e => e.row === i + 1);
+        return { row: i + 2, name: row["Product name"], ok: !rowError, msg: rowError ? rowError.error : "Imported" };
+      });
+      setResults(res);
+      setImportStatus(data.failed === 0 ? "success" : data.created === 0 ? "error" : "partial");
+      setImportMsg(`Imported ${data.created} of ${importedRows.length} product(s).${data.failed>0?` ${data.failed} failed.`:""}`);
+    } catch (err) {
+      setImportStatus("error");
+      setImportMsg(err.message || "Import failed.");
+    } finally {
+      setImporting(false);
     }
-    setResults(res);
-    const success = res.filter(r=>r.ok).length;
-    const failed  = res.filter(r=>!r.ok).length;
-    setImportStatus(failed === 0 ? "success" : success === 0 ? "error" : "partial");
-    setImportMsg(`Imported ${success} of ${importedRows.length} product(s).${failed>0?` ${failed} failed.`:""}`);
-    setImporting(false);
   };
 
   return (

@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "../pages/ThemeContext";       // ← NEW
 import ThemeSwitcher from "./ThemeSwitcher";            // ← NEW
 import { useBusiness } from "../context/BusinessContext"; // ← NEW
+import { usePermissions } from "../context/PermissionsContext"; // ← NEW
 
 /* ─── outside click hook ─────────────────────────────────────────────────── */
 function useOutsideClick(ref, cb) {
@@ -125,79 +126,43 @@ function Calculator() {
 /* ══════════════════════════════════════════════════════════════════════════
    TODAY'S PROFIT MODAL
 ══════════════════════════════════════════════════════════════════════════ */
-const COST_ROWS = [
-  { label: "Opening Stock",                    sub: "(By purchase price)", key: "openStockPurchase" },
-  { label: "Opening Stock",                    sub: "(By sale price)",     key: "openStockSale" },
-  { label: "Total purchase:",                  sub: "(Exc. tax, Discount)",key: "totalPurchase",       accent: "orange" },
-  { label: "Total Stock Adjustment:",                                       key: "stockAdj" },
-  { label: "Total Expense:",                                                key: "expense" },
-  { label: "Total purchase shipping charge:",                               key: "purchaseShipping" },
-  { label: "Purchase additional expenses:",                                 key: "purchaseAdditional" },
-  { label: "Total transfer shipping charge:",                               key: "transferShipping" },
-  { label: "Total Sell discount:",                                          key: "sellDiscount" },
-  { label: "Total customer reward:",                                        key: "customerReward" },
-  { label: "Total Sell Return:",                                            key: "sellReturn" },
-  { label: "Total Payroll:",                                                key: "payroll" },
-  { label: "Total Production Cost:",                                        key: "productionCost" },
-];
-
-const REVENUE_ROWS = [
-  { label: "Closing stock",                    sub: "(By purchase price)", key: "closeStockPurchase" },
-  { label: "Closing stock",                    sub: "(By sale price)",     key: "closeStockSale" },
-  { label: "Total Sales:",                     sub: "(Exc. tax, Discount)",key: "totalSales",          accent: "green" },
-  { label: "Total sell shipping charge:",                                   key: "sellShipping" },
-  { label: "Sell additional expenses:",                                     key: "sellAdditional" },
-  { label: "Total Stock Recovered:",                                        key: "stockRecovered" },
-  { label: "Total Purchase Return:",                                        key: "purchaseReturn" },
-  { label: "Total Purchase discount:",                                      key: "purchaseDiscount" },
-  { label: "Total sell round off:",                                         key: "sellRoundOff" },
-  { label: "Total sell return discount:",                                   key: "sellReturnDiscount" },
-];
-
-async function fetchProfitData(filter) {
-  await new Promise((r) => setTimeout(r, 500));
-  const base = {
-    openStockPurchase: 0, openStockSale: 0, totalPurchase: 203650,
-    stockAdj: 1200, expense: 28900, purchaseShipping: 1800,
-    purchaseAdditional: 500, transferShipping: 0, sellDiscount: 3200,
-    customerReward: 0, sellReturn: 9200, payroll: 45000, productionCost: 12000,
-    closeStockPurchase: 0, closeStockSale: 0, totalSales: 328450,
-    sellShipping: 4500, sellAdditional: 0, stockRecovered: 0,
-    purchaseReturn: 0, purchaseDiscount: 1500, sellRoundOff: 0, sellReturnDiscount: 0,
-  };
-  const m = { today: 1, week: 7, month: 30, year: 365 }[filter] ?? 1;
-  const out = {};
-  Object.entries(base).forEach(([k, v]) => (out[k] = +(v * m).toFixed(2)));
-  return out;
+const BASES_LOCAL = ["http://localhost:5000/api","http://localhost:3000/api","http://127.0.0.1:5000/api"];
+async function apiFetchLocal(path) {
+  const token = localStorage.getItem("manod_token");
+  for (const base of BASES_LOCAL) {
+    try {
+      const r = await fetch(`${base}${path}`, { headers: token ? { Authorization:`Bearer ${token}` } : {} });
+      if (r.ok) return await r.json();
+    } catch (e) { /* try next base */ }
+  }
+  return null;
 }
 
-function DataColumn({ title, titleColor, titleBg, borderColor, rows, data, totalLabel, total, totalColor }) {
-  return (
-    <div style={{ border: `1px solid ${borderColor}`, borderRadius: "12px", overflow: "hidden" }}>
-      <div style={{ background: titleBg, padding: "11px 16px", display: "flex", alignItems: "center", gap: "8px", borderBottom: `1px solid ${borderColor}` }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: titleColor, display: "inline-block", flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, fontSize: "11.5px", color: titleColor, letterSpacing: "0.06em" }}>{title}</span>
-      </div>
-      {rows.map((r, i) => {
-        const isO = r.accent === "orange", isG = r.accent === "green";
-        return (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "8px 16px", background: isO ? "#fff7ed" : isG ? "#f0fdf4" : i % 2 === 0 ? "#fff" : "#fafafa", borderLeft: `3px solid ${isO ? "#f97316" : isG ? "#16a34a" : "transparent"}` }}>
-            <div style={{ flex: 1, marginRight: "12px" }}>
-              <div style={{ fontSize: "13px", fontWeight: r.accent ? 700 : 500, color: "#111827" }}>{r.label}</div>
-              {r.sub && <div style={{ fontSize: "11px", color: "#6b7280" }}>{r.sub}</div>}
-            </div>
-            <div style={{ fontSize: "13px", fontWeight: r.accent ? 700 : 500, color: isO ? "#ea580c" : isG ? "#15803d" : "#374151", whiteSpace: "nowrap" }}>
-              {INR(data[r.key])}
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ borderTop: `1px solid ${borderColor}`, padding: "11px 16px", background: titleBg, display: "flex", justifyContent: "space-between" }}>
-        <span style={{ fontWeight: 700, fontSize: "13px", color: totalColor }}>{totalLabel}</span>
-        <span style={{ fontWeight: 700, fontSize: "13px", color: totalColor }}>{INR(total)}</span>
-      </div>
-    </div>
-  );
+function getRangeFor(filter) {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+  if (filter === "week") {
+    const day = now.getDay();
+    start.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+  } else if (filter === "month") {
+    start.setDate(1);
+  } else if (filter === "year") {
+    start.setMonth(0, 1);
+  }
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { from: fmt(start), to: fmt(end) };
+}
+
+async function fetchProfitData(filter) {
+  const { from, to } = getRangeFor(filter);
+  const res = await apiFetchLocal(`/reports/net-profit?date_from=${from}&date_to=${to}`);
+  const summary = res?.data?.summary || {};
+  return {
+    totalSales:  Number(summary.total_revenue || 0),
+    totalCosts:  Number(summary.total_expenses || 0),
+    netProfit:   Number(summary.net_profit || 0),
+  };
 }
 
 function ProfitModal({ onClose }) {
@@ -211,9 +176,9 @@ function ProfitModal({ onClose }) {
     fetchProfitData(filter).then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [filter]);
 
-  const totalCost = data ? COST_ROWS.reduce((s, r) => s + (data[r.key] ?? 0), 0) : 0;
-  const totalRev  = data ? REVENUE_ROWS.reduce((s, r) => s + (data[r.key] ?? 0), 0) : 0;
-  const net       = totalRev - totalCost;
+  const totalCost = data?.totalCosts ?? 0;
+  const totalRev  = data?.totalSales ?? 0;
+  const net       = data?.netProfit ?? 0;
   const isProfit  = net >= 0;
 
   return (
@@ -260,8 +225,18 @@ function ProfitModal({ onClose }) {
           {error && <div style={{ padding: "24px", textAlign: "center", color: "#dc2626" }}>⚠ {error}</div>}
           {!loading && !error && data && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <DataColumn title="COSTS AND DEDUCTIONS" titleColor="#dc2626" titleBg="#fef2f2" borderColor="#fecaca" rows={COST_ROWS}    data={data} totalLabel="Total Costs"   total={totalCost} totalColor="#dc2626" />
-              <DataColumn title="REVENUE AND INCOME"   titleColor="#15803d" titleBg="#f0fdf4" borderColor="#bbf7d0" rows={REVENUE_ROWS} data={data} totalLabel="Total Revenue" total={totalRev}  totalColor="#15803d" />
+              <div style={{ border: "1px solid #fecaca", borderRadius: "12px", overflow: "hidden" }}>
+                <div style={{ background: "#fef2f2", padding: "11px 16px", fontWeight: 700, fontSize: "11.5px", color: "#dc2626", letterSpacing: "0.06em" }}>COSTS (PURCHASES + EXPENSES)</div>
+                <div style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                  <span>Total Costs</span><span style={{ color: "#dc2626" }}>{INR(totalCost)}</span>
+                </div>
+              </div>
+              <div style={{ border: "1px solid #bbf7d0", borderRadius: "12px", overflow: "hidden" }}>
+                <div style={{ background: "#f0fdf4", padding: "11px 16px", fontWeight: 700, fontSize: "11.5px", color: "#15803d", letterSpacing: "0.06em" }}>REVENUE (SALES)</div>
+                <div style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                  <span>Total Sales</span><span style={{ color: "#15803d" }}>{INR(totalRev)}</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -304,19 +279,47 @@ function QuickCreateMenu({ onClose }) {
 /* ══════════════════════════════════════════════════════════════════════════
    NOTIFICATIONS
 ══════════════════════════════════════════════════════════════════════════ */
-const INIT_NOTIFS = [
-  { id: 1, icon: "🛒", title: "New Sale #INV-1042",        sub: "₹ 12,500 — Walk-in Customer",  time: "2 min ago",  unread: true  },
-  { id: 2, icon: "⚠️", title: "Low Stock Alert",            sub: "Wireless Mouse — Qty: 3 left", time: "18 min ago", unread: true  },
-  { id: 3, icon: "💳", title: "Payment Received",           sub: "₹ 45,000 — Ravi Enterprises",  time: "1 hr ago",   unread: true  },
-  { id: 4, icon: "📦", title: "Purchase #PO-0091 Pending",  sub: "Supplier: Techmart Pvt Ltd",   time: "3 hr ago",   unread: false },
-  { id: 5, icon: "↩️", title: "Sell Return #SR-012",        sub: "₹ 2,300 — Refund processed",  time: "Yesterday",  unread: false },
-];
+const READ_KEY = "manod_read_notifs";
+const getReadIds = () => {
+  try { return JSON.parse(localStorage.getItem(READ_KEY) || "[]"); } catch { return []; }
+};
+const saveReadIds = (ids) => localStorage.setItem(READ_KEY, JSON.stringify(ids));
 
 function NotificationsPanel({ onClose }) {
-  const [notifs, setNotifs] = useState(INIT_NOTIFS);
+  const navigate = useNavigate();
+  const [notifs, setNotifs] = useState([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(true);
+
+  useEffect(() => {
+    apiFetchLocal(`/reports/stock?limit=1000`).then((res) => {
+      const rows = res?.data || [];
+      const lowStock = rows.filter(r => r.status === "Low Stock" || r.status === "Out of Stock");
+      const readIds = getReadIds();
+      const built = lowStock.slice(0, 10).map((r, i) => {
+        const stableId = `${r.product}-${r.status}`;
+        return {
+          id: stableId,
+          icon: r.status === "Out of Stock" ? "🔴" : "⚠️",
+          title: r.status === "Out of Stock" ? "Out of Stock" : "Low Stock Alert",
+          sub: `${r.product} — Qty: ${r.qty} left`,
+          time: "",
+          unread: !readIds.includes(stableId),
+        };
+      });
+      setNotifs(built);
+      setLoadingNotifs(false);
+    }).catch(() => setLoadingNotifs(false));
+  }, []);
   const unread   = notifs.filter((n) => n.unread).length;
-  const markOne  = (id) => setNotifs((p) => p.map((n) => n.id === id ? { ...n, unread: false } : n));
-  const markAll  = ()   => setNotifs((p) => p.map((n) => ({ ...n, unread: false })));
+  const markOne  = (id) => {
+    setNotifs((p) => p.map((n) => n.id === id ? { ...n, unread: false } : n));
+    const ids = getReadIds();
+    if (!ids.includes(id)) saveReadIds([...ids, id]);
+  };
+  const markAll  = () => {
+    setNotifs((p) => p.map((n) => ({ ...n, unread: false })));
+    saveReadIds(notifs.map((n) => n.id));
+  };
   return (
     <div style={{ position: "absolute", top: "54px", right: 0, background: "#fff", borderRadius: "14px", boxShadow: "0 12px 40px rgba(0,0,0,0.2)", width: "320px", zIndex: 2000, overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", borderBottom: "1px solid #f0f0f0" }}>
@@ -326,7 +329,9 @@ function NotificationsPanel({ onClose }) {
         </div>
         {unread > 0 && <button onClick={markAll} style={{ fontSize: "12px", color: "#15803d", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Mark all read</button>}
       </div>
-      <div style={{ maxHeight: "340px", overflowY: "auto" }}>
+   <div style={{ maxHeight: "340px", overflowY: "auto" }}>
+        {loadingNotifs && <div style={{ padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>Loading…</div>}
+        {!loadingNotifs && notifs.length === 0 && <div style={{ padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>No alerts right now</div>}
         {notifs.map((n) => (
           <div key={n.id} onClick={() => markOne(n.id)}
             style={{ display: "flex", gap: "11px", padding: "11px 16px", background: n.unread ? "#f0fdf4" : "#fff", borderBottom: "1px solid #f5f5f5", cursor: "pointer" }}
@@ -344,8 +349,8 @@ function NotificationsPanel({ onClose }) {
           </div>
         ))}
       </div>
-      <div style={{ padding: "10px", borderTop: "1px solid #f0f0f0", textAlign: "center" }}>
-        <button onClick={onClose} style={{ fontSize: "12px", color: "#15803d", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>View all notifications →</button>
+     <div style={{ padding: "10px", borderTop: "1px solid #f0f0f0", textAlign: "center" }}>
+<button onClick={() => { onClose(); navigate("/notifications/alerts"); }} style={{ fontSize: "12px", color: "#15803d", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>View all notifications →</button>
       </div>
     </div>
   );
@@ -427,6 +432,8 @@ export default function TopHeader() {
   const navigate    = useNavigate();
   const { theme }   = useTheme();      // ← live theme colours
   const { business } = useBusiness();  // ← live business settings
+  const { clearPermissions } = usePermissions(); // ← needed so signOut can actually clear it
+
   const businessName = business?.business_name || "Manodtechnologies";
   const [profitOpen,  setProfitOpen]  = useState(false);
   const [calcOpen,    setCalcOpen]    = useState(false);
@@ -447,15 +454,14 @@ export default function TopHeader() {
   useOutsideClick(quickRef,   () => setQuickOpen(false));
   useOutsideClick(notiRef,    () => setNotiOpen(false));
   useOutsideClick(accountRef, () => setAccountOpen(false));
-
-  const only = (setter) => () => { closeAll(); setter((p) => !p); };
+const only = (setter) => () => { closeAll(); setter((p) => !p); };
 
   const signOut = () => {
     localStorage.removeItem("manod_token");
     localStorage.removeItem("manod_user");
+    clearPermissions();
     navigate("/login");
   };
-
   const today   = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
   const user    = JSON.parse(localStorage.getItem("manod_user") || "{}");
   const name    = user.name || "Dharshiha C";
@@ -564,7 +570,7 @@ export default function TopHeader() {
 
         {/* Notifications */}
         <div ref={notiRef} style={{ position: "relative" }}>
-          <IBtn title="Notifications" badge={INIT_NOTIFS.filter((n) => n.unread).length} active={notiOpen} onClick={only(setNotiOpen)}>
+<IBtn title="Notifications" badge={notiOpen ? 0 : 1} active={notiOpen} onClick={only(setNotiOpen)}>
             <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
             </svg>

@@ -231,13 +231,13 @@ export default function Sidebar() {
   const { hasPermission, loaded, isAdmin, userName, userRole, userAvatar } = usePermissions();
   const planLabel = getPlanLabel();
 
-  const visibleItems = navItems.filter(it => {
+const visibleItems = navItems.filter(it => {
     if (!hasFeature(it.feature)) return false;
-    if (!it.feature || it.feature === FEATURES.DASHBOARD) return true;
+    if (!it.feature) return true; // items with no feature flag (rare/none currently) always show
     if (!loaded) return false;
     if (isAdmin) return true;
     const checker = FEATURE_PERM_MAP[it.feature];
-    if (!checker) return true;
+    if (!checker) return false; // no checker defined = deny by default, not allow
     return checker(hasPermission);
   });
 
