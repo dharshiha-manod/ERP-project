@@ -189,9 +189,12 @@ export default function Users() {
 
   const handleDelete = async (id) => {
     try {
-      await deleteUser(id);
+      const result = await deleteUser(id);
       await loadUsers();
       setShowDelete(null);
+      if (result?.softDeleted) {
+        alert(`ℹ️ ${result.message}`);
+      }
     } catch (err) {
       setApiError(err.message);
       setShowDelete(null);
@@ -222,12 +225,15 @@ export default function Users() {
     }
   };
 
-  const filtered = users.filter(u =>
-    (u.full_name || "").toLowerCase().includes(search.toLowerCase()) ||
-    (u.email || "").toLowerCase().includes(search.toLowerCase()) ||
-    (u.role || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const [showInactive, setShowInactive] = useState(false);
 
+  const filtered = users
+    .filter(u => showInactive || u.status !== "inactive")
+    .filter(u =>
+      (u.full_name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (u.email || "").toLowerCase().includes(search.toLowerCase()) ||
+      (u.role || "").toLowerCase().includes(search.toLowerCase())
+    );
   // ────────── EXPORT CSV ──────────
   const exportCSV = () => {
     const headers = ["Full Name", "Email", "Role", "Department", "Status"];
@@ -421,8 +427,12 @@ export default function Users() {
               style={{ padding: "6px 12px", borderRadius: "7px", border: "1px solid #d1fae5", background: "#f0fdf4", color: "#2d6a4f", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
               📄 Export PDF
             </button>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
               style={{ padding: "7px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "13px", outline: "none", width: "180px" }} />
+            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "#6b7280", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
           </div>
         </div>
 

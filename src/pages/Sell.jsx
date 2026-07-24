@@ -550,6 +550,16 @@ function CustomerCombobox({ value, onChange, customers, placeholder="Search cust
 
   const pick = c => { setQ(c.name); onChange(c.name, c); setOpen(false); };
 
+  // Safety net: if the typed text is an exact match for a saved customer
+  // but the user tabbed/clicked away instead of clicking the dropdown row,
+  // still capture that customer's real id — otherwise customerId silently
+  // stays null and the invoice/sale never links back to the contact.
+  const tryAutoPick = () => {
+    if (!q) return;
+    const exact = all.find(c => c.name.toLowerCase() === q.trim().toLowerCase());
+    if (exact) pick(exact);
+  };
+
   return (
     <div ref={ref} style={{ position:"relative" }}>
       <div style={{ position:"relative" }}>
@@ -558,12 +568,15 @@ function CustomerCombobox({ value, onChange, customers, placeholder="Search cust
         <input value={q}
           name="customer-search-field" autoComplete="off" autoCorrect="off" spellCheck="false"
           onChange={e=>{ setQ(e.target.value); onChange(e.target.value, null); setOpen(true); }}
-          onFocus={()=>setOpen(true)} placeholder={placeholder}
+          onFocus={()=>setOpen(true)}
+       onBlur={()=>setTimeout(tryAutoPick, 150)}
+          onKeyDown={e=>{ if (e.key==="Enter") { e.preventDefault(); tryAutoPick(); } }}
+          placeholder={placeholder}
           style={{ width:"100%", border:`1px solid ${open?GREEN:BORDER}`, borderRadius:6,
             padding:"7px 34px 7px 32px", fontSize:13, fontFamily:F, background:"#fff",
             color:TEXT_MAIN, outline:"none", boxSizing:"border-box" }}
         />
-        {q && <button onMouseDown={()=>{ setQ(""); onChange("",null); setOpen(true); }}
+        {q && <button onMouseDown={()=>{ setQ(""); onChange("",null); setOpen(true); }} 
           style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
             background:"none", border:"none", cursor:"pointer", color:TEXT_MUTED, display:"flex" }}>{IC.close}</button>}
       </div>
@@ -925,7 +938,7 @@ const cols = [
   ));
 
   return (
-    <div style={PAGE}>
+    <div style={PAGE}>  
    <PageHeader title="All Sales" breadcrumb="Home / Sell / All Sales"
         actions={<>
           {selectedIds.length>0 && (

@@ -125,6 +125,7 @@ export const updateLocation = async (id, data) => {
   }
 };
 
+// NEW
 export const deactivateLocation = async (id) => {
   try {
     const res = await fetch(`${API_BASE}/locations/${id}/deactivate`, {
@@ -139,6 +140,19 @@ export const deactivateLocation = async (id) => {
   }
 };
 
+export const deleteLocation = async (id) => {
+  try {
+    const res = await fetch(`${API_BASE}/locations/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.error('❌ Error deleting location:', error);
+    return { success: false, message: error.message };
+  }
+};
 // ─── RECEIPT PRINTERS ──────────────────────────────────────
 export const getPrinters = async () => {
   try {
@@ -204,10 +218,12 @@ export const deletePrinter = async (id) => {
 };
 
 // ─── BUSINESS SETTINGS ────────────────────────────────────
+// NEW
 export const getBusinessSettings = async () => {
   try {
-    const res = await fetch(`${API_BASE}/business`, {
-      headers: { 'Authorization': `Bearer ${getToken()}` }
+    const res = await fetch(`${API_BASE}/business?t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      cache: 'no-store'
     });
     const json = await res.json();
     return json;

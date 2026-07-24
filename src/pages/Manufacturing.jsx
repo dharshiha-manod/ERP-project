@@ -1205,15 +1205,6 @@ const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCas
     }));
   };
 
-  const startRun = async (woId) => {
-    setStartingId(woId);
-    try {
-      await api(`/work-orders/${woId}/start`, { method: "POST" });
-      show("Production started — machines/resources set to Running.");
-      api("/work-orders").then(setWorkOrders).catch(() => {});
-    } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
-  };
-
   const finishRun = async (woId) => {
     setStartingId(woId);
     try {
@@ -1223,6 +1214,13 @@ const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCas
     } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
   };
 
+  const checkShortage = async (woId) => {
+    setStartingId(woId);
+    try {
+      const result = await api(`/work-orders/${woId}/create-po`, { method: "POST" });
+      show(result.message || "Checked.", result.created?.length ? "success" : "info");
+    } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
+  };
   const openAdd = () => { setForm({ ...blank, ref_no: genRef("PRD", rows) }); setEdit(null); setModal(true); };
   const openEdit = r => { setForm({ ref_no: r.ref_no, location: r.location || "", product_id: r.product_id || "", product: r.product, quantity: r.quantity, scrap_qty: r.scrap_qty || "", scrap_reason: r.scrap_reason || "", total_cost: r.total_cost || "", date: r.date?.slice(0, 10) || today, bom_id: r.bom_id || "", notes: r.notes || "" }); setEdit(r); setModal(true); };
   const del = async r => {
@@ -1273,6 +1271,9 @@ const COLS = [
                 <Code v={w.wo_number} />
                 <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.gray900 }}>{w.product_name} · {w.quantity} {w.unit}</div>
                 <Badge value={w.status} />
+                <button onClick={() => checkShortage(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.blueBd}`, background: C.blueBg, color: C.blue, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
+                  {startingId === w.id ? "Checking…" : "Check Shortage → PO"}
+                </button>
                 {w.status === "planned" ? (
                   <button onClick={() => startRun(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
                     {startingId === w.id ? "Starting…" : "Start Production"}
@@ -2176,10 +2177,13 @@ function ReportsTab({ show }) {
   const [to, setTo] = useState(today);
   const [data, setData] = useState(null);
   const [load, setLoad] = useState(false);
-
+const [variance, setVariance] = useState(null);
   const doFetch = useCallback(async () => {
     setLoad(true);
-    try { setData(await api(`/reports/summary?from=${from}&to=${to}`)); }
+    try {
+      setData(await api(`/reports/summary?from=${from}&to=${to}`));
+      setVariance(await api(`/reports/cost-variance?from=${from}&to=${to}`));
+    }
     catch { setData({ total_productions: 0, total_quantity: 0, total_cost: 0, completed_orders: 0, top_products: [], qc_summary: { total_checked: 0, total_passed: 0, total_failed: 0 } }); }
     finally { setLoad(false); }
   }, [from, to]);

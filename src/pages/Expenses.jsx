@@ -379,7 +379,34 @@ const totalDue = expenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0
 
   // ── Active KPI filter ──────────────────────────────────────────────────────
   // null = show all; "paid" | "partial" | "due" | "refund" = filtered
-  const [kpiFilter, setKpiFilter] = useState(null);
+const [kpiFilter, setKpiFilter] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredExpenses.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredExpenses.map((e) => e.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected expense(s)?`)) return;
+    try {
+      await Promise.all(selectedIds.map((id) => expensesAPI.remove(id)));
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      alert(err?.response?.data?.error || "Failed to delete selected expenses");
+    }
+  };
 
  const searchFiltered = search.trim() === "" ? expenses : expenses.filter((e) => {
     const q = search.toLowerCase();
@@ -482,8 +509,13 @@ const totalDue = expenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0
                 <option>25</option><option>50</option><option>100</option>
               </select>
               <span style={{ fontSize: 13, color: T.textSub }}>entries</span>
-              <button style={styles.exportBtn("#217a48")} onClick={exportCSV}>📊 Export CSV</button>
+           <button style={styles.exportBtn("#217a48")} onClick={exportCSV}>📊 Export CSV</button>
               <button style={styles.exportBtn()} onClick={() => window.print()}>🖨️ Print</button>
+              {selectedIds.length > 0 && (
+                <button style={styles.exportBtn("#e53e3e")} onClick={handleBulkDelete}>
+                  🗑️ Delete Selected ({selectedIds.length})
+                </button>
+              )}
             </div>
             <input
               placeholder="Search ref, category..."
@@ -502,6 +534,14 @@ const totalDue = expenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0
           <table style={styles.table}>
             <thead>
               <tr>
+               <th style={{ ...styles.th, width: 36 }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length}
+                    onChange={toggleSelectAll}
+                    style={{ width: 15, height: 15, accentColor: T.primary, cursor: "pointer" }}
+                  />
+                </th>
                 {["Date", "Reference No", "Category", "Sub category", "Location", "Payment Status", "Tax", "Total amount", "Refund", "Net Expense", "Payment due", "Expense for", "Note", "Action"].map((h) => (
                   <th key={h} style={styles.th}>{h}</th>
                 ))}
@@ -509,12 +549,20 @@ const totalDue = expenses.reduce((s, e) => s + parseFloat(e.payment_due || 0), 0
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={14} style={{ ...styles.td, textAlign: "center", padding: 30 }}>Loading...</td></tr>
+             <tr><td colSpan={15} style={{ ...styles.td, textAlign: "center", padding: 30 }}>Loading...</td></tr>
               ) : filteredExpenses.length === 0 ? (
-                <tr><td colSpan={12} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>
+                <tr><td colSpan={15} style={{ ...styles.td, textAlign: "center", padding: 30, color: T.textMuted }}>
                   {kpiFilter ? `No "${kpiFilter}" expenses found — click the card again to clear filter` : "No expenses found"}
                 </td></tr>
 ) : filteredExpenses.map((e, i) => (                <tr key={e.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafcfb" }}>
+                  <td style={styles.td}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(e.id)}
+                      onChange={() => toggleSelect(e.id)}
+                      style={{ width: 15, height: 15, accentColor: T.primary, cursor: "pointer" }}
+                    />
+                  </td>
                   <td style={styles.td}>{e.expense_date ? new Date(e.expense_date).toLocaleDateString("en-GB") : "—"}</td>
                   <td style={styles.td}><strong>{e.expense_number}</strong></td>
                   <td style={styles.td}>{e.category_name || e.category || "—"}</td>

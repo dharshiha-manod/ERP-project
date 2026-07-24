@@ -46,7 +46,7 @@ export default function Categories() {
   const [error, setError]           = useState("");
   const [showModal, setShowModal]   = useState(false);
   const [editItem, setEditItem]     = useState(null);
-  const [form, setForm]             = useState({ name: "", parent_id: "", description: "" });
+const [form, setForm]             = useState({ name: "", parent_id: "", description: "", default_hsn_code: "" });
   const [saving, setSaving]         = useState(false);
   // Column visibility
   const [visibleCols, setVisibleCols] = useState({ category: true, code: true, description: true, parent: true, action: true });
@@ -77,14 +77,14 @@ export default function Categories() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const openAdd  = () => { setForm({ name: "", parent_id: "", description: "" }); setEditItem(null); setShowModal(true); };
-  const openEdit = (c) => { setForm({ name: c.name, parent_id: c.parent_id || "", description: c.description || "" }); setEditItem(c); setShowModal(true); };
+const openAdd  = () => { setForm({ name: "", parent_id: "", description: "", default_hsn_code: "" }); setEditItem(null); setShowModal(true); };
+  const openEdit = (c) => { setForm({ name: c.name, parent_id: c.parent_id || "", description: c.description || "", default_hsn_code: c.default_hsn_code || "" }); setEditItem(c); setShowModal(true); };
 
   const handleSave = async () => {
     if (!form.name.trim()) { alert("Category name is required"); return; }
     setSaving(true);
     try {
-      const payload = { name: form.name.trim(), parent_id: form.parent_id || null, description: form.description.trim() };
+const payload = { name: form.name.trim(), parent_id: form.parent_id || null, description: form.description.trim(), default_hsn_code: form.default_hsn_code.trim() || null };
       if (editItem) await categoriesAPI.update(editItem.id, payload);
       else          await categoriesAPI.create(payload);
       setShowModal(false); setPage(1); await load(); await loadAll();
@@ -235,9 +235,13 @@ export default function Categories() {
                 ))}
               </select>
 
-              <label style={s.lbl}>Description:</label>
+             <label style={s.lbl}>Description:</label>
               <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
                 placeholder="Short description" rows={3} style={{ ...s.inp, resize:"vertical" }}/>
+
+              <label style={s.lbl}>Default HSN/SAC Code:</label>
+              <input value={form.default_hsn_code} onChange={e => setForm({ ...form, default_hsn_code: e.target.value })}
+                placeholder="e.g. 8517 — auto-fills on new products in this category" style={s.inp}/>
             </div>
             <div style={s.modalFoot}>
               <button onClick={handleSave} disabled={saving} style={{ ...s.btnSave, opacity: saving?0.7:1 }}>

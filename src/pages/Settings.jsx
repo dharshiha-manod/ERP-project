@@ -122,6 +122,7 @@ function BusinessSettings() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const f = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+// NEW
 useEffect(() => {
   (async () => {
     const res = await settingsAPI.getBusinessSettings();
@@ -131,13 +132,22 @@ useEffect(() => {
         name: res.data.business_name || "",
         currency: res.data.currency || "INR",
         timezone: res.data.timezone || "Asia/Kolkata",
+        startDate: res.data.start_date || prev.startDate,
+        profit: res.data.profit_percent != null ? String(res.data.profit_percent) : prev.profit,
+        symbolPlacement: res.data.symbol_placement || prev.symbolPlacement,
+        financialMonth: res.data.financial_year_start_month || prev.financialMonth,
+        stockMethod: res.data.stock_method || prev.stockMethod,
+        editDays: res.data.transaction_edit_days != null ? String(res.data.transaction_edit_days) : prev.editDays,
+        dateFormat: res.data.date_format || prev.dateFormat,
+        timeFormat: res.data.time_format || prev.timeFormat,
+        currencyPrecision: res.data.currency_precision != null ? String(res.data.currency_precision) : prev.currencyPrecision,
+        qtyPrecision: res.data.qty_precision != null ? String(res.data.qty_precision) : prev.qtyPrecision,
       }));
     }
     // If 404 (no settings row yet), keep default form values so user can create one
     setLoading(false);
   })();
-}, []); 
-
+}, []);
  const handleSave = async () => {
     setSaving(true); setMsg(null);
 
@@ -151,10 +161,22 @@ useEffect(() => {
       }
     }
 
+   // NEW
+   // NEW
     const res = await settingsAPI.updateBusinessSettings({
       business_name: form.name,
       currency: form.currency,
       timezone: form.timezone,
+      start_date: form.startDate,
+      profit_percent: form.profit,
+      symbol_placement: form.symbolPlacement,
+      financial_year_start_month: form.financialMonth,
+      stock_method: form.stockMethod,
+      transaction_edit_days: form.editDays,
+      date_format: form.dateFormat,
+      time_format: form.timeFormat,
+      currency_precision: form.currencyPrecision,
+      qty_precision: form.qtyPrecision,
     });
     setSaving(false);
     setMsg(res.success ? "✅ Settings updated" : `❌ ${res.message}`);
@@ -302,9 +324,21 @@ function BusinessLocations() {
   }
 };
 
+ // NEW
+// NEW
   const handleDeactivate = async (dbId) => {
     await settingsAPI.deactivateLocation(dbId);
     loadLocations();
+  };
+
+const handleDelete = async (dbId) => {
+    if (!window.confirm("Permanently delete this location? This cannot be undone.")) return;
+    const res = await settingsAPI.deleteLocation(dbId);
+    if (res.success) {
+      loadLocations();
+    } else {
+      alert(res.message || "Failed to delete location");
+    }
   };
 
   const thStyle = { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
@@ -340,11 +374,13 @@ function BusinessLocations() {
                 <td style={tdStyle}>{loc.invoiceScheme}</td>
                 <td style={tdStyle}>{loc.invoiceLayoutPOS}</td>
                 <td style={tdStyle}>{loc.invoiceLayoutSale}</td>
+          
               <td style={tdStyle}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <BtnGreen style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => openEdit(loc)}>✏️ Edit</BtnGreen>
                     <BtnBlue style={{ padding: "5px 12px", fontSize: 12 }}>⚙️ Settings</BtnBlue>
                     <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDeactivate(loc.dbId)}>🚫 Deactivate</BtnRed>
+                    <BtnRed style={{ padding: "5px 12px", fontSize: 12, background: G.black }} onClick={() => handleDelete(loc.dbId)}>🗑️ Delete</BtnRed>
                   </div>
                 </td>
               </tr>
@@ -460,7 +496,9 @@ useEffect(() => {
   })();
 }, []);
 
-  const handleSave = async () => {
+// NEW
+ const handleSave = async () => {
+    console.log("SAVE CLICKED, profit value:", form.profit, "full form:", form);
     setSaving(true); setMsg(null);
    const res = await settingsAPI.updateInvoiceSettings({
   invoice_prefix: form.prefix,

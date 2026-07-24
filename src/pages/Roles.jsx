@@ -43,7 +43,8 @@ const DEFAULT_PERMISSIONS = [
   { group: "Access selling price groups", items: ["Default Selling Price"] },
   { group: "Crm",             items: ["Access all follow up","Access own follow up","Access all leads","Access own leads","Access all campaigns","Access own campaigns","Access contact login","Access sources","Access life stage","Access proposal"] },
   { group: "Essentials",      items: ["Add/Edit/View/Delete leave type","Add/Edit/View/Delete all leave","Add/View own leave","Approve Leave","Add/Edit/View/Delete all attendance","View own attendance","Allow users to enter their own attendance from web","Allow users to enter their own attendance from api","View Pay Component","Add Pay Component","Add/Edit/View/Delete department","Add/Edit/View/Delete designation","View all Payroll","Add Payroll","Edit Payroll","Delete Payroll","Assign To Do's to others","Add To Do's","Edit To Do's","Delete To Do's","Create Message","View Message","Access Sales Targets","Edit Knowledge Base","Delete Knowledge Base"] },
-  { group: "Manufacturing",   items: ["View Recipe","Add Recipe","Edit Recipe","Access Production"] },
+ { group: "Manufacturing",   items: ["View Recipe","Add Recipe","Edit Recipe","Access Production"] },
+{ group: "Accounting",      items: ["View Accounting Dashboard","Access General Ledger","Access Receivables/Payables","Access Cash & Bank","Access GST & Tax","Manage Fixed Assets","Manage Cost Centers & Budgets","Access Financial Statements","Post Journal Entries"] },
 ];
 
 function exportCSV(roles) {

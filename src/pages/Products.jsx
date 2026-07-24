@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
+// NEW
 import { productsAPI, brandsAPI, unitsAPI, categoriesAPI, variationsAPI } from "../api/productAPI";
+import { getLocations, getBusinessSettings } from "../api/settingsAPI"; 
 
 // ── Constants ──────────────────────────────────────────────
 const TAXES        = ["None","GST 5%","GST 12%","GST 18%","GST 28%"];
 const TAX_TYPES    = ["Exclusive","Inclusive"];
 const PRODUCT_TYPES= ["Single","Variable"];
 const BARCODE_TYPES= ["Code 128 (C128)","EAN-13","EAN-8","QR Code","UPC-A"];
-const LOCATIONS    = ["Manodtechnologies (BL0001)"];
+// NEW
+// Business locations are now fetched live from Settings → Business Locations
 const ITEM_TYPES   = ["Finished Product", "Raw Material", "Semi-Finished Product", "Packing Material", "Service"];
 
 // ── Auto-generate SKU ──────────────────────────────────────
@@ -22,12 +25,13 @@ const EMPTY_FORM = {
   name:"", sku:"", barcodeType:"Code 128 (C128)",
   unit:"", brand:"", category:"", subCategory:"", variationTemplate:"", warranty:"",
   itemType:"Finished Product",
-  businessLocation:"Manodtechnologies (BL0001)",
+  businessLocation:"",
+  hsnCode:"",
   alertQty:"", manageStock:true,
   description:"", weight:"", prepTime:"",
   tax:"None", sellingPriceTaxType:"Exclusive",
   productType:"Single",
-  excTax:"", incTax:"", margin:"25.00", excTaxSell:"",
+  excTax:"", incTax:"",  margin:"", excTaxSell:"",
   openingStock:"", openingStockValue:"",
   image:null, imagePreview:null,
 };
@@ -189,6 +193,7 @@ const [units,       setUnits]       = useState([]);
   const [subCats,     setSubCats]     = useState([]);
   const [allCats,     setAllCats]     = useState([]);
   const [warranties,  setWarranties]  = useState([]);
+  const [locations,   setLocations]   = useState([]);
 const [variationTemplates, setVariationTemplates] = useState([]);
   const [saving,      setSaving]      = useState(false);
 const initForm = editProduct ? {
@@ -201,8 +206,9 @@ const initForm = editProduct ? {
     subCategory:         editProduct.sub_category || "",
     variationTemplate:   editProduct.variation_template || "",
     warranty:            editProduct.warranty || "",
-    itemType:            editProduct.item_type || "Finished Product",
-    businessLocation:    editProduct.business_location || "Manodtechnologies (BL0001)",
+itemType:            editProduct.item_type || "Finished Product",
+  businessLocation:    editProduct.business_location || "",
+    hsnCode:              editProduct.hsn_code || "",
     alertQty:            editProduct.alert_qty ?? "",
     manageStock:         editProduct.manage_stock !== undefined ? editProduct.manage_stock : true,
     description:         editProduct.description || "",
@@ -305,6 +311,12 @@ const [form, setForm] = useState(initForm);
     }
   }, [form.openingStock, form.excTax]);
 
+// Auto-fill HSN Code from the selected category's default — fully locked, no manual override
+  useEffect(() => {
+    if (!form.category) { set("hsnCode", ""); return; }
+    const cat = allCats.find(c => c.name === form.category);
+    set("hsnCode", cat?.default_hsn_code || "");
+  }, [form.category, allCats]);
  // Load dropdowns — each isolated so one failure can't block the others
   useEffect(() => {
     (async () => {
@@ -347,7 +359,27 @@ const [form, setForm] = useState(initForm);
   if (editProduct?.warranty) {
     setForm(f => ({ ...f, warranty: editProduct.warranty }));
   }
+// NEW
 } catch (e) { console.error("Warranties load error:", e.message); }
+
+try {
+    const locRes = await getLocations();
+    const list = (locRes.data || []).map(x => ({ id: x.id, name: x.location_name }));
+    setLocations(list);
+    if (!editProduct && list.length) {
+      setForm(f => ({ ...f, businessLocation: f.businessLocation || list[0].name }));
+    }
+  } catch (e) { console.error("Locations load error:", e.message); }
+
+  try {
+    if (!editProduct) {
+      const bsRes = await getBusinessSettings();
+      const defaultMargin = bsRes?.data?.profit_percent;
+      if (defaultMargin != null) {
+        setForm(f => ({ ...f, margin: f.margin || String(defaultMargin) }));
+      }
+    }
+  } catch (e) { console.error("Default profit % load error:", e.message); }
     })();
   }, []);
 
@@ -387,9 +419,10 @@ const [form, setForm] = useState(initForm);
       category:               form.category || null,
        sub_category:           form.subCategory || null,
         variation_template:     form.variationTemplate || null,
-        business_location:      form.businessLocation,
+     business_location:      form.businessLocation,
         warranty:               form.warranty || null,
         item_type:              form.itemType || "Finished Product",
+        hsn_code:                form.hsnCode || null,
        
         alert_qty:              form.alertQty || 0,
         manage_stock:           form.manageStock,
@@ -492,8 +525,8 @@ exc_tax_sell:           form.excTaxSell || 0,
           {/* Category - searchable */}
           <div style={f.field}>
             <label style={f.lbl}>Category</label>
-            <SearchableSelect options={categories} value={form.category}
-              onChange={v => { set("category", v); set("subCategory", ""); }}
+     <SearchableSelect options={categories} value={form.category}
+              onChange={v => { set("category", v); set("subCategory", ""); set("hsnCode", ""); }}
               placeholder="Search category..."/>
           </div>
         </div>
@@ -513,9 +546,11 @@ exc_tax_sell:           form.excTaxSell || 0,
           <div style={f.field}>
             <label style={f.lbl}>Business Locations</label>
             <div style={f.locBox}>
+        
               <select value={form.businessLocation} onChange={e => set("businessLocation", e.target.value)}
                 style={{ border:"none", background:"transparent", outline:"none", fontSize:14, width:"100%", cursor:"pointer" }}>
-                {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                {locations.length === 0 && <option value="">Loading locations...</option>}
+                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
               </select>
             </div>
           </div>
@@ -528,7 +563,7 @@ exc_tax_sell:           form.excTaxSell || 0,
           </div>
         </div>
 
-     <div style={f.row2}>
+<div style={f.row3}>
           <div style={f.field}>
             <label style={f.lbl}>
               Warranty
@@ -546,7 +581,15 @@ exc_tax_sell:           form.excTaxSell || 0,
               {ITEM_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
-        </div>
+  <div style={f.field}>
+            <label style={f.lbl}>
+              HSN/SAC Code
+              <span style={f.hint} title="Auto-filled from the selected category's default HSN code. Set the default on the category to change it.">ⓘ</span>
+            </label>
+            <input style={{ ...f.inp, background:"#f0fdf4" }} placeholder="Select a category to auto-fill"
+              value={form.hsnCode} disabled/>
+          </div>
+        </div>  
 
         <div style={f.row1}>
           <label style={f.checkRow}>

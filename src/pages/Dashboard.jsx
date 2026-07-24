@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "./ThemeContext";
+import { useBusiness } from "../context/BusinessContext";
 
 const BASES = ["http://localhost:5000/api","http://localhost:3000/api","http://127.0.0.1:5000/api"];
 async function apiFetch(path) {
@@ -179,7 +180,8 @@ function CardHeader({ title, subtitle, action }) {
 ════════════════════════════════════════════════════════════════════════════ */
 export default function Dashboard() {
   const C = useC();
-  const { theme } = useTheme();
+const { theme } = useTheme();
+  const { business } = useBusiness();
   const [period, setPeriod] = useState("This Month");
   const [mounted, setMounted] = useState(false);
 
@@ -346,9 +348,9 @@ setSalesData(paddedDays);
         <div style={{ position:"absolute", right:100, bottom:-80, width:180, height:180, borderRadius:"50%", background:"rgba(255,255,255,0.04)" }} />
         <div style={{ position:"relative" }}>
           <div style={{ color:"rgba(255,255,255,0.75)", fontSize:13, marginBottom:4 }}>{today}</div>
-          <h1 style={{ color:"#fff", fontSize:30, fontWeight:900, margin:0 }}>Welcome back, Admin 👋</h1>
-          <p style={{ color:"rgba(255,255,255,0.75)", margin:"6px 0 0", fontSize:14 }}>
-            Here's your business snapshot for <strong style={{ color:"#fff" }}>Manodtechnologies</strong>
+       <h1 style={{ color:"#fff", fontSize:30, fontWeight:900, margin:0 }}>Welcome back, Admin 👋</h1>
+         <p style={{ color:"rgba(255,255,255,0.75)", margin:"6px 0 0", fontSize:14 }}>
+            Here's your business snapshot for <strong style={{ color:"#fff" }}>{business?.business_name || "Manodtechnologies"}</strong>
           </p>
         </div>
         <div style={{ display:"flex", gap:8, position:"relative" }}>

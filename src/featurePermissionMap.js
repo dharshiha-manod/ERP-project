@@ -117,14 +117,9 @@ export const FEATURE_PERM_MAP = {
     hp("Crm", "Access all leads")      ||
     hp("Crm", "Access own leads"),
 
-  // ── Accounting ────────────────────────────────────────────
-  // No dedicated "Accounting" permission group exists in Roles yet —
-  // gate it behind Report access (profit/loss, tax) until a real
-  // Accounting permission group is added to DEFAULT_PERMISSIONS.
+// ── Accounting ────────────────────────────────────────────
   [FEATURES.ACCOUNTING]: (hp) =>
-    hp("Report", "View profit/loss report") ||
-    hp("Report", "View Tax report"),
-
+    hp("Accounting", "View Accounting Dashboard"),
   // ── HRM ───────────────────────────────────────────────────
   [FEATURES.HRM]: (hp) =>
     hp("Essentials", "View all Payroll")               ||

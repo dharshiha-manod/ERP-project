@@ -56,6 +56,11 @@ export const createWorkOrder = (data) => request(`${MFG}/work-orders`, { method:
 export const updateWorkOrder = (id, data) => request(`${MFG}/work-orders/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const deleteWorkOrder = (id) => request(`${MFG}/work-orders/${id}`, { method: "DELETE" });
 
+// Purchases module integration: check this Work Order's BOM against real
+// stock and auto-raise Purchase Order(s) for any shortfall (grouped by each
+// component's default supplier on the Products table).
+export const createPOForShortfall = (woId) => request(`${MFG}/work-orders/${woId}/create-po`, { method: "POST" });
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PRODUCTION RUNS
 // ══════════════════════════════════════════════════════════════════════════════
