@@ -69,6 +69,7 @@
     delete:       (id)     => fetch(`${BASE_URL}/products/${id}`,       { method:'DELETE',       headers: authHeaders() }).then(handleResponse),
     updateStatus: (id, s)  => fetch(`${BASE_URL}/products/${id}/status`,{ method:'PATCH',        headers: authHeaders(), body: JSON.stringify({ status: s }) }).then(handleResponse),
     updateStock:  (id, d)  => fetch(`${BASE_URL}/products/${id}/stock`, { method:'PATCH',        headers: authHeaders(), body: JSON.stringify(d) }).then(handleResponse),
+    getStockByLocation: (id) => fetch(`${BASE_URL}/products/${id}/stock-by-location`, { headers: authHeaders() }).then(handleResponse),
   };
 
   export const warrantiesAPI = {

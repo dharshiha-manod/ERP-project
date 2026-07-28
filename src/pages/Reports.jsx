@@ -310,7 +310,7 @@ function printTable(cols, data, title) {
 }
 
 // ── Formatting helpers for live data ───────────────────────────────────────
-const fmtINR = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const fmtINR = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtDate = (d) => {
   if (!d) return "—";
   const dt = new Date(d);
@@ -399,6 +399,82 @@ export function StockReport() {
         onPrint={() => printTable(COLS, tableRows, "Stock Report")}
       />
       <FilterBar fields={["Location", "Category", "Brand"]} filters={filters} onChange={handle} onRun={load} />
+      {loading ? <ReportLoading /> : error ? <ReportError message={error} onRetry={load} /> : (
+        <>
+          <DataTable cols={COLS} data={tableRows} />
+          <Pagination total={total} page={page} perPage={PER} onPage={setPage} />
+        </>
+      )}
+    </ReportPage>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 6b. LOCATION-WISE STOCK REPORT  (LIVE — product_stock_by_location joined to
+//     products + business_locations. Shows qty PER location, unlike Stock Report.)
+// ═══════════════════════════════════════════════════════════════════════════════
+export function LocationWiseStockReport() {
+  const [filters, setFilters] = useState({});
+  const [page, setPage] = useState(1);
+  const PER = 10;
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState(null);
+
+  const handle = (k, v) => {
+    if (k === "__reset__") setFilters({});
+    else setFilters((p) => ({ ...p, [k]: v }));
+    setPage(1);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await reportsAPI.getLocationWiseStockReport({
+        location_id: filters["Business Location"] || "",
+        product_id: filters.Product || "",
+        page,
+        limit: PER,
+      });
+      setRows(res.data || []);
+      setTotal(res.total || 0);
+      setSummary(res.summary || null);
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [page, filters["Business Location"], filters.Product]);
+
+  const COLS = ["Product", "SKU", "Business Location", "Available Quantity"];
+  const tableRows = rows.map((r) => ({
+    product: r.product,
+    sku: r.sku || "—",
+    businessLocation: r.business_location || "—",
+    availableQuantity: String(r.available_quantity),
+  }));
+
+  return (
+    <ReportPage icon="📍" label="Location-wise Stock Report" description="Stock quantity per product, broken down by business location">
+      {summary && (
+        <KpiCards cards={[
+          { label: "Products", value: String(summary.product_count || 0) },
+          { label: "Locations", value: String(summary.location_count || 0), color: C.blue },
+          { label: "Total Quantity", value: String(summary.total_quantity || 0), accent: true },
+        ]} />
+      )}
+      <ActionBar
+        onExportCSV={() => exportCSV(COLS, tableRows, "location-wise-stock")}
+        onExportExcel={() => exportCSV(COLS, tableRows, "location-wise-stock")}
+        onPrint={() => printTable(COLS, tableRows, "Location-wise Stock Report")}
+      />
+      <FilterBar fields={["Business Location", "Product"]} filters={filters} onChange={handle} onRun={load} />
       {loading ? <ReportLoading /> : error ? <ReportError message={error} onRetry={load} /> : (
         <>
           <DataTable cols={COLS} data={tableRows} />
@@ -705,12 +781,12 @@ export function ProductSellReport() {
 
   return (
     <ReportPage icon="🛍️" label="Product Sell Report" description="Sales history per product with customer details">
-      {summary && (
+   {summary && (
         <KpiCards cards={[
           { label: "Total Orders", value: String(summary.total_orders || 0) },
           { label: "Total Revenue", value: fmtINR(summary.total_revenue), accent: true },
-          { label: "Paid / Received", value: String(summary.paid_or_received_count || 0), color: C.green1 },
-          { label: "Due", value: String(summary.due_count || 0), color: C.red },
+          { label: "Paid / Received", value: fmtINR(summary.paid_amount), color: C.green1 },
+          { label: "Due", value: fmtINR(summary.due_amount), color: C.red },
           { label: "Total Units", value: String(summary.total_units || 0), color: C.blue },
         ]} />
       )}
@@ -1853,7 +1929,8 @@ export default function Reports() {
       <Route path="tax"                  element={<TaxReport />} />
       <Route path="supplier-customer"    element={<SupplierCustomerReport />} />
       <Route path="customer-groups"      element={<CustomerGroupsReport />} />
-      <Route path="stock"                element={<StockReport />} />
+ <Route path="stock"                element={<StockReport />} />
+      <Route path="location-wise-stock"  element={<LocationWiseStockReport />} />
       <Route path="stock-adjustment"     element={<StockAdjustmentReport />} />
       <Route path="trending-products"    element={<TrendingProductsReport />} />
       <Route path="items"                element={<ItemsReport />} />

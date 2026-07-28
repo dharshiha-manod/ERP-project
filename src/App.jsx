@@ -39,7 +39,7 @@ import { CRMRoutes } from "./pages/CRM";
 import Settings from "./pages/Settings";
 import {
   ProfitLossReport, PurchaseSaleReport, TaxReport, SupplierCustomerReport,
-  CustomerGroupsReport, StockReport, StockAdjustmentReport, TrendingProductsReport,
+  CustomerGroupsReport, StockReport, LocationWiseStockReport, StockAdjustmentReport, TrendingProductsReport,
   ItemsReport, ProductPurchaseReport, ProductSellReport, PurchasePaymentReport,
   SalesPaymentReport, ExpenseReport, RegisterReport, SalesRepresentativeReport,
   ActivityLogReport,
@@ -242,7 +242,8 @@ function AppLayout() {
           <Route path="/reports/tax"                  element={<FeatureRoute feature={FEATURES.REPORTS}><TaxReport /></FeatureRoute>} />
           <Route path="/reports/supplier-customer"    element={<FeatureRoute feature={FEATURES.REPORTS}><SupplierCustomerReport /></FeatureRoute>} />
           <Route path="/reports/customer-groups"      element={<FeatureRoute feature={FEATURES.REPORTS}><CustomerGroupsReport /></FeatureRoute>} />
-          <Route path="/reports/stock"                element={<FeatureRoute feature={FEATURES.REPORTS}><StockReport /></FeatureRoute>} />
+<Route path="/reports/stock"                element={<FeatureRoute feature={FEATURES.REPORTS}><StockReport /></FeatureRoute>} />
+          <Route path="/reports/location-wise-stock"  element={<FeatureRoute feature={FEATURES.REPORTS}><LocationWiseStockReport /></FeatureRoute>} />
           <Route path="/reports/stock-adjustment"     element={<FeatureRoute feature={FEATURES.REPORTS}><StockAdjustmentReport /></FeatureRoute>} />
           <Route path="/reports/trending-products"    element={<FeatureRoute feature={FEATURES.REPORTS}><TrendingProductsReport /></FeatureRoute>} />
           <Route path="/reports/items"                element={<FeatureRoute feature={FEATURES.REPORTS}><ItemsReport /></FeatureRoute>} />

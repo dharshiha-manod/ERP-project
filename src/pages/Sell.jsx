@@ -53,8 +53,8 @@ async function apiFetch(path, opts = {}) {
       if (r.ok) return await r.json();
       const errBody = await r.json().catch(() => ({}));
       const msg = errBody.message || errBody.error || `HTTP ${r.status}`;
-      console.error(`[apiFetch] ${path} failed:`, msg);
-      return null; // caller checks `if (res)` — but now the real reason is in console
+      console.error(`[apiFetch] ${path} failed (${r.status}):`, msg);
+      return { __error: true, status: r.status, message: msg }; // caller can now tell WHY it failed
     } catch (e) {
       if (e.message && !e.message.includes("Failed to fetch")) throw e;
       /* network-level failure only — try next base */
@@ -157,7 +157,7 @@ function buildInvoiceNo(settings, fallbackPrefix = "INV") {
 }
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt   = n  => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-const genNo = px => `${px}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}${Math.floor(Math.random()*90+10)}`;
+const genNo = px => `${px}-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}${Math.floor(Math.random()*900+100)}`;
 
 // Formats any date value (ISO timestamp, "YYYY-MM-DD", or already-formatted
 // string) down to a plain DD/MM/YYYY — fixes dates showing raw time/timezone.
@@ -1306,22 +1306,31 @@ const handleSave = async () => {
       }),
     });
 
-    // Invoice number collided (409) — regenerate a fresh one and retry once
-    if (!res) {
-      invNoToUse = genNo("INV") + "-" + Math.floor(Math.random()*900+100);
+  // Invoice number collided (409) — regenerate a fresh one and retry once.
+    // Only retry on an actual 409 conflict, not on validation/server errors —
+    // otherwise real bugs get masked as "just try a new number".
+    if (!res && apiFetch.lastStatus === 409) {
+      invNoToUse = genNo("INV");
       setInvoiceNo(invNoToUse);
       res = await apiFetch("/sales-invoice",{
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-          invoiceNo: invNoToUse, invoiceDate, customer, customerType, warehouse,
+          invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
           salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
           paymentStatus, paidAmount:Number(paidAmount)||0,
+          useAdvanceAmount:Number(useAdvanceAmount)||0,
           dueDate:dueDateISO(), shippingAmt:Number(shipping),
           globalDiscount:globalDisc, taxAmt:taxAmt.toFixed(2),
           grandTotal:grandTotal.toFixed(2), notes, items,
         }),
       });
+    }
+
+    if (!res && apiFetch.lastStatus !== 409) {
+      setSaving(false);
+      alert(`Save failed: ${apiFetch.lastMessage || "Unknown error — check server logs"}`);
+      return;
     }
 
     if (res) {

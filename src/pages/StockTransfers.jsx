@@ -935,17 +935,13 @@ const updateProductRow = (idx, field, val) => {
                 {locationNames.filter((l) => l !== form.location_to).map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
-           <div style={S.formGroup}>
-  <label style={S.label}>Location (To) <span style={S.req}>*</span></label>
-  <input
-    type="text"
-    style={S.input}
-    value={form.location_to}
-    onChange={(e) => set("location_to", e.target.value)}
-    placeholder="Enter destination location"
-    required
-  />
-</div>
+ <div style={S.formGroup}>
+              <label style={S.label}>Location (To) <span style={S.req}>*</span></label>
+              <select style={S.input} value={form.location_to} onChange={(e) => set("location_to", e.target.value)} required>
+                <option value="">{locationNames.length === 0 ? "Loading…" : "-- Select location --"}</option>
+                {locationNames.filter((l) => l !== form.location_from).map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
           </div>
 
           <div style={S.sectionTitle}>Products</div>

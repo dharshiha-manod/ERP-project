@@ -94,6 +94,10 @@ const getActivityLogReport = (params = {}) => request('GET', `/reports/activity-
 // ── REGISTER REPORT ───────────────────────────────────────────────────────
 const getRegisterReport = (params = {}) => request('GET', `/reports/register${buildQuery(params)}`);
 
+// ── LOCATION-WISE STOCK REPORT ────────────────────────────────────────────
+const getLocationWiseStockReport = (params = {}) =>
+  request('GET', `/reports/location-wise-stock${buildQuery(params)}`);
+
 const reportsAPI = {
   getStockReport,
   getStockAdjustmentReport,
@@ -111,8 +115,9 @@ getSupplierCustomerReport,
   sendLedger,
   getCustomerGroupsReport,
   getPurchaseSaleReport,
-  getActivityLogReport,
+ getActivityLogReport,
   getRegisterReport,
+  getLocationWiseStockReport,
 };
 
 export default reportsAPI;

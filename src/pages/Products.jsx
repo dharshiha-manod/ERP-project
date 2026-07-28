@@ -820,6 +820,8 @@ export default function ListProducts() {
 const [showEdit,    setShowEdit]    = useState(false);
 const [viewProduct, setViewProduct] = useState(null);
 const [showView,    setShowView]    = useState(false);
+const [viewStockLocations, setViewStockLocations] = useState([]);
+const [viewStockLoading,   setViewStockLoading]   = useState(false);
  const [cols, setCols] = useState({
     image:false, action:true, product:true, location:false,
     purchase:true, selling:true, stock:true, type:false,
@@ -1135,7 +1137,16 @@ const stockColor = (qty, alertQty) => {
        {cols.action && (
   <td style={p.td}>
     <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-      <button onClick={()=>{setViewProduct(prod);setShowView(true);}} style={p.iconBtnView} title="View">
+<button onClick={()=>{
+          setViewProduct(prod);
+          setShowView(true);
+          setViewStockLocations([]);
+          setViewStockLoading(true);
+          productsAPI.getStockByLocation(prod.id)
+            .then(res => setViewStockLocations(res.locations || []))
+            .catch(e => console.error("Stock by location load error:", e.message))
+            .finally(() => setViewStockLoading(false));
+        }} style={p.iconBtnView} title="View">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
         </svg>
@@ -1240,6 +1251,33 @@ const stockColor = (qty, alertQty) => {
               <div><b>Tax:</b> {viewProduct.tax||"—"}</div>
               <div><b>Business Location:</b> {viewProduct.business_location||"—"}</div>
             </div>
+
+            <div style={{ marginTop:16 }}>
+              <b style={{ fontSize:13 }}>Stock by Location:</b>
+              {viewStockLoading ? (
+                <div style={{ fontSize:12, color:"#9ca3af", marginTop:6 }}>Loading...</div>
+              ) : viewStockLocations.length === 0 ? (
+                <div style={{ fontSize:12, color:"#9ca3af", marginTop:6 }}>No per-location stock recorded</div>
+              ) : (
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginTop:8 }}>
+                  <thead>
+                    <tr style={{ background:"#f9fafb" }}>
+                      <th style={{ textAlign:"left", padding:"6px 8px", fontWeight:600, color:"#374151", borderBottom:"1px solid #e5e7eb" }}>Location</th>
+                      <th style={{ textAlign:"right", padding:"6px 8px", fontWeight:600, color:"#374151", borderBottom:"1px solid #e5e7eb" }}>Quantity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewStockLocations.map(loc => (
+                      <tr key={loc.location_id}>
+                        <td style={{ padding:"6px 8px", borderBottom:"1px solid #f5f5f5" }}>{loc.location_name}</td>
+                        <td style={{ padding:"6px 8px", borderBottom:"1px solid #f5f5f5", textAlign:"right", fontWeight:600 }}>{loc.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
             {viewProduct.description && (
               <div style={{ marginTop:16, fontSize:13, color:"#374151" }}>
                 <b>Description:</b>

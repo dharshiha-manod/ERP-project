@@ -316,15 +316,21 @@ function printTable(rows, cols, title) {
 }
 
 // ─── Main data table ──────────────────────────────────────────────────────────
-function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols = [] }) {
+function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols = [], selectable = false, selectedIds = [], onToggleRow, onToggleAll }) {
   const visible = cols.filter(c => !hiddenCols.includes(c.k));
   if (loading) return <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400, fontSize: 13, fontFamily: font }}>Loading…</div>;
   if (!rows?.length) return <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400, fontSize: 13, fontFamily: font }}>No records found. Use the button above to add one.</div>;
+  const allSelected = rows.length > 0 && rows.every(r => selectedIds.includes(r.id));
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: font }}>
         <thead>
           <tr style={{ background: C.gray50, borderBottom: `2px solid ${C.gray200}` }}>
+            {selectable && (
+              <th style={{ padding: "10px 14px", width: 36 }}>
+                <input type="checkbox" checked={allSelected} onChange={e => onToggleAll(e.target.checked)} />
+              </th>
+            )}
             {visible.map(c => (
               <th key={c.k} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase", letterSpacing: .5, whiteSpace: "nowrap" }}>{c.l}</th>
             ))}
@@ -334,9 +340,14 @@ function DataTable({ cols, rows, onView, onEdit, onDelete, loading, hiddenCols =
         <tbody>
           {rows.map((row, i) => (
             <tr key={row.id || i}
-              style={{ borderBottom: `1px solid ${C.gray100}`, transition: "background .1s" }}
-              onMouseEnter={e => e.currentTarget.style.background = C.gray50}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              style={{ borderBottom: `1px solid ${C.gray100}`, transition: "background .1s", background: selectedIds.includes(row.id) ? C.greenLight : "transparent" }}
+              onMouseEnter={e => { if (!selectedIds.includes(row.id)) e.currentTarget.style.background = C.gray50; }}
+              onMouseLeave={e => { if (!selectedIds.includes(row.id)) e.currentTarget.style.background = "transparent"; }}>
+              {selectable && (
+                <td style={{ padding: "11px 14px" }}>
+                  <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => onToggleRow(row.id)} />
+                </td>
+              )}
               {visible.map(c => (
                 <td key={c.k} style={{ padding: "11px 14px", color: C.gray700, verticalAlign: "middle" }}>
                   {c.render ? c.render(row[c.k], row) : (row[c.k] ?? <span style={{ color: C.gray300 }}>—</span>)}
@@ -483,7 +494,27 @@ function KPIs({ cards }) {
     </div>
   );
 }
-
+// ─── Bulk delete bar ──────────────────────────────────────────────────────────
+function BulkDeleteBar({ count, onDelete, onClear, deleting }) {
+  if (!count) return null;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "10px 20px",
+      background: C.redBg, borderBottom: `1px solid ${C.redBd}`, fontFamily: font,
+    }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: C.red }}>{count} selected</span>
+      <button onClick={onDelete} disabled={deleting} style={{
+        padding: "6px 14px", borderRadius: 6, border: "none", background: C.red,
+        color: C.white, fontSize: 12, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
+        opacity: deleting ? .7 : 1, fontFamily: font,
+      }}>{deleting ? "Deleting…" : "Delete Selected"}</button>
+      <button onClick={onClear} style={{
+        padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.gray300}`, background: C.white,
+        color: C.gray600, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: font,
+      }}>Clear</button>
+    </div>
+  );
+}
 // ─── Card wrapper for table ───────────────────────────────────────────────────
 function Card({ children }) {
   return (
@@ -506,6 +537,21 @@ function PlanningTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} plan(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/plans/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} plan(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
 
   const blank = { title: "", description: "", start_date: "", end_date: "", status: "planned", priority: "medium", assigned_team: "", product_id: "", target_quantity: "", bom_id: "", work_center: "", estimated_hours: "", resource_ids: [], machine_ids: [] };
   const [form, setForm] = useState(blank);
@@ -590,7 +636,7 @@ const openEdit = r => { setForm({ title: r.title, description: r.description || 
         { icon: "⚙️", label: "In Progress",  value: rows.filter(r => r.status === "in_progress").length, color: C.amber },
         { icon: "✅", label: "Completed",    value: rows.filter(r => r.status === "completed").length,   color: C.green },
       ]} />
-      <Card>
+     <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar
             onAdd={openAdd} addLabel="Add Plan"
@@ -608,7 +654,9 @@ const openEdit = r => { setForm({ title: r.title, description: r.description || 
             }
           />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>
           Showing {fil.length} of {rows.length} entries
         </div>
@@ -703,6 +751,21 @@ function BOMTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} BOM(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/bom/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} BOM(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
   const { products } = useProductOptions();
   // Split into finished goods (what a BOM can produce) and raw materials
   // (what a BOM can consume), based on each product's item_type.
@@ -775,7 +838,7 @@ function BOMTab({ show }) {
 
   return (
     <PageShell title="Bill of Materials" sub="Define product structure and material costs" icon="📐">
-      <Card>
+    <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar
             onAdd={openAdd} addLabel="New BOM"
@@ -786,10 +849,11 @@ function BOMTab({ show }) {
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden}
           />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
-
       {viewRow && (
         <Modal title={viewRow.product_name} sub={`${viewRow.product_code} · v${viewRow.version} · ₹${totalCost(viewRow).toLocaleString("en-IN")} total`} onClose={() => setViewRow(null)} wide>
           <DR label="BOM Code" value={<Code v={viewRow.product_code} />} />
@@ -883,6 +947,21 @@ function WorkOrdersTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} work order(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/work-orders/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} work order(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
   const { products } = useProductOptions();
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
 
@@ -1038,7 +1117,9 @@ function WorkOrdersTab({ show }) {
             }
           />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
 
@@ -1142,6 +1223,21 @@ function ProductionTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} production record(s)? This will reverse their stock effect.`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/production/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} record(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
   const { products } = useProductOptions();
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
   const today = new Date().toISOString().split("T")[0];
@@ -1183,6 +1279,11 @@ const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCas
  const [workOrders, setWorkOrders] = useState([]);
   const [plans, setPlans] = useState([]);
   const [startingId, setStartingId] = useState(null);
+  const [finishModalWO, setFinishModalWO] = useState(null);
+  const [finishQty, setFinishQty] = useState("");
+  const [finishScrap, setFinishScrap] = useState("");
+  const [finishScrapReason, setFinishScrapReason] = useState("");
+  const [confirmingFinish, setConfirmingFinish] = useState(false);
   useEffect(() => {
     api("/work-orders").then(setWorkOrders).catch(() => {});
     api("/plans").then(setPlans).catch(() => {});
@@ -1205,11 +1306,38 @@ const fil = rows.filter(r => `${r.ref_no} ${r.product} ${r.location}`.toLowerCas
     }));
   };
 
-  const finishRun = async (woId) => {
+const openFinishModal = (wo) => {
+    setFinishModalWO(wo);
+    setFinishQty(wo.quantity ?? "");
+    setFinishScrap("");
+    setFinishScrapReason("");
+  };
+
+  const confirmFinish = async () => {
+    if (!finishModalWO) return;
+    if (!finishQty || Number(finishQty) <= 0) { show("Produced quantity must be greater than 0.", "error"); return; }
+    setConfirmingFinish(true);
+    try {
+      await api(`/work-orders/${finishModalWO.id}/finish`, {
+        method: "POST",
+        body: JSON.stringify({
+          quantity: finishQty,
+          scrap_qty: finishScrap || 0,
+          scrap_reason: finishScrapReason || null,
+        }),
+      });
+      show("Production completed — stock updated, machines set to Idle.");
+      api("/work-orders").then(setWorkOrders).catch(() => {});
+      api("/production").then(setRows).catch(() => {});
+      setFinishModalWO(null);
+    } catch (e) { show(e.message, "error"); } finally { setConfirmingFinish(false); }
+  };
+
+  const startRun = async (woId) => {
     setStartingId(woId);
     try {
-      await api(`/work-orders/${woId}/finish`, { method: "POST" });
-      show("Production finished — machines/resources set to Idle.");
+      await api(`/work-orders/${woId}/start`, { method: "POST" });
+      show("Production started — machines/resources set to Running.");
       api("/work-orders").then(setWorkOrders).catch(() => {});
     } catch (e) { show(e.message, "error"); } finally { setStartingId(null); }
   };
@@ -1274,13 +1402,13 @@ const COLS = [
                 <button onClick={() => checkShortage(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.blueBd}`, background: C.blueBg, color: C.blue, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
                   {startingId === w.id ? "Checking…" : "Check Shortage → PO"}
                 </button>
-                {w.status === "planned" ? (
+              {w.status === "planned" ? (
                   <button onClick={() => startRun(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: C.green, color: C.white, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
                     {startingId === w.id ? "Starting…" : "Start Production"}
                   </button>
                 ) : (
-                  <button onClick={() => finishRun(w.id)} disabled={startingId === w.id} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.amber}`, background: C.amberBg, color: C.amber, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
-                    {startingId === w.id ? "Finishing…" : "Finish Production"}
+                  <button onClick={() => openFinishModal(w)} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${C.amber}`, background: C.amberBg, color: C.amber, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>
+                    Finish Production
                   </button>
                 )}
               </div>
@@ -1289,16 +1417,17 @@ const COLS = [
         </Card>
       )}
 
-      <Card>
+    <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add Production" search={search} onSearch={setSearch}
             onCSV={() => exportCSV(fil, COLS, "production.csv")} onExcel={() => exportExcel(fil, COLS, "production.xls")} onPrint={() => printTable(fil, COLS, "Production Records")}
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden} />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
-
    {viewRow && (
         <Modal title={viewRow.ref_no} sub="Production Record Details" onClose={() => setViewRow(null)}>
           <DR label="Reference No" value={<Code v={viewRow.ref_no} />} />
@@ -1380,7 +1509,33 @@ const COLS = [
             </div>
           )}
 
-          <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Save Production"} />
+ <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Save Production"} />
+        </Modal>
+      )}
+
+      {finishModalWO && (
+        <Modal title="Confirm Production Completion" sub={`${finishModalWO.wo_number} · ${finishModalWO.product_name}`} onClose={() => setFinishModalWO(null)}>
+          <G2>
+            <Fld label="Planned Quantity"><input style={{ ...inp, background: C.gray50 }} value={finishModalWO.quantity} disabled /></Fld>
+            <Fld label="Actual Quantity Produced" req>
+              <input type="number" style={inp} value={finishQty} onChange={e => setFinishQty(e.target.value)} min={0} autoFocus />
+            </Fld>
+            <Fld label="Scrap / Rejected Qty">
+              <input type="number" style={inp} value={finishScrap} onChange={e => setFinishScrap(e.target.value)} min={0} />
+            </Fld>
+            {Number(finishScrap) > 0 && (
+              <Fld label="Scrap Reason">
+                <select style={sel} value={finishScrapReason} onChange={e => setFinishScrapReason(e.target.value)}>
+                  <option value="">Select reason...</option>
+                  {["Machine Defect", "Material Defect", "Human Error", "Quality Rejection", "Calibration Issue", "Other"].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </Fld>
+            )}
+          </G2>
+          <div style={{ marginTop: 14, fontSize: 12, color: C.gray500, background: C.greenLight, border: `1px solid ${C.greenBorder}`, borderRadius: 8, padding: "10px 14px" }}>
+            Confirming will auto-create the Production Record, increase finished-good stock for <b>{finishModalWO.product_name}</b> by <b>{finishQty || 0}</b>, deduct BOM raw materials, and set the machine/resources to Idle.
+          </div>
+          <MFoot onClose={() => setFinishModalWO(null)} onSave={confirmFinish} saving={confirmingFinish} label="Confirm & Complete Production" />
         </Modal>
       )}
     </PageShell>
@@ -1399,6 +1554,21 @@ function ResourcesTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} resource(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/resources/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} resource(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
 
   const blank = { name: "", type: "Machine", capacity: "", shift: "Morning", operator: "", status: "idle", notes: "" };
   const [form, setForm] = useState(blank);
@@ -1444,13 +1614,15 @@ function ResourcesTab({ show }) {
         { icon: "⏸️", label: "Idle",        value: rows.filter(r => r.status === "idle").length,              color: C.amber },
         { icon: "🔧", label: "Maintenance", value: rows.filter(r => r.status === "maintenance").length,       color: C.red },
       ]} />
-      <Card>
+   <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add Resource" search={search} onSearch={setSearch}
             onCSV={() => exportCSV(fil, COLS, "resources.csv")} onExcel={() => exportExcel(fil, COLS, "resources.xls")} onPrint={() => printTable(fil, COLS, "Resources")}
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden} />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
 
@@ -1769,6 +1941,21 @@ function MachinesTab({ show }) {
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
   const [fleetOee, setFleetOee] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} machine(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/machines/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} machine(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
 
   const blank = { name: "", machine_code: "", type: "", location: "", manufacturer: "", model: "", purchase_date: "", status: "active", last_maintenance: "", next_maintenance: "", notes: "", rated_capacity: "", rated_capacity_unit: "units/hr", power_rating: "", serial_number: "", warranty_expiry: "", install_date: "" };
   const [form, setForm] = useState(blank);
@@ -1828,13 +2015,15 @@ function MachinesTab({ show }) {
           ⚠ {rows.filter(r => r.status === "maintenance").length} machine(s) under maintenance are excluded from Production Planning and Work Order assignment until their status changes.
         </div>
       )}
-      <Card>
+     <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add Machine" search={search} onSearch={setSearch}
             onCSV={() => exportCSV(fil, COLS, "machines.csv")} onExcel={() => exportExcel(fil, COLS, "machines.xls")} onPrint={() => printTable(fil, COLS, "Machines")}
             cols={COLS} hiddenCols={hidden} setHiddenCols={setHidden} />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={r => setDetailMachineId(r.id)} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={r => setDetailMachineId(r.id)} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries · click 👁 for full profile, OEE and health timeline</div>
       </Card>
 
@@ -1883,7 +2072,21 @@ function QCTab({ show }) {
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
   const today = new Date().toISOString().split("T")[0];
-
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} QC record(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/quality-checks/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} QC record(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
  const blank = { ref_no: "", product: "", product_id: "", batch_no: "", inspected_by: "", inspection_date: today, quantity_checked: "", quantity_passed: "", quantity_failed: "", status: "pending", remarks: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -1944,7 +2147,7 @@ const save = async () => {
         { icon: "❌", label: "Failed",       value: rows.filter(r => r.status === "failed").length,      color: C.red },
         { icon: "⏳", label: "Pending",      value: rows.filter(r => r.status === "pending").length,     color: C.amber },
       ]} />
-      <Card>
+     <Card>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.gray100}` }}>
           <Toolbar onAdd={openAdd} addLabel="Add QC Check" search={search} onSearch={setSearch}
             onCSV={() => exportCSV(fil, COLS, "quality-checks.csv")} onExcel={() => exportExcel(fil, COLS, "qc.xls")} onPrint={() => printTable(fil, COLS, "Quality Control")}
@@ -1957,10 +2160,11 @@ const save = async () => {
             }
           />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
-
       {viewRow && (
         <Modal title={viewRow.ref_no} sub="Quality Check Details" onClose={() => setViewRow(null)}>
           <DR label="QC Ref No" value={<Code v={viewRow.ref_no} />} />
@@ -2011,6 +2215,21 @@ function MaintenanceTab({ show }) {
   const [edit, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} maintenance record(s)?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/maintenance/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} maintenance record(s) deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
 const blank = { ref_no: "", machine_name: "", machine_id: "", maintenance_type: "Preventive", technician: "", scheduled_date: "", completed_date: "", status: "scheduled", cost: "", description: "", notes: "" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -2096,7 +2315,9 @@ const blank = { ref_no: "", machine_name: "", machine_id: "", maintenance_type: 
             }
           />
         </div>
-        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+        <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+        <DataTable cols={COLS} rows={fil} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+          selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
         <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {fil.length} of {rows.length} entries</div>
       </Card>
 
@@ -2290,6 +2511,21 @@ function ScheduleTab({ show }) {
   const [saving, setSaving] = useState(false);
   const [hidden, setHidden] = useState([]);
   const today = new Date().toISOString().split("T")[0];
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const toggleAll = (checked) => setSelectedIds(checked ? tableRows.map(r => r.id) : []);
+  const bulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} schedule entr${selectedIds.length === 1 ? "y" : "ies"}?`)) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(selectedIds.map(id => api(`/schedule/${id}`, { method: "DELETE" })));
+      setRows(p => p.filter(x => !selectedIds.includes(x.id)));
+      show(`${selectedIds.length} entr${selectedIds.length === 1 ? "y" : "ies"} deleted.`, "info");
+      setSelectedIds([]);
+    } catch (e) { show(e.message, "error"); } finally { setBulkDeleting(false); }
+  };
 
   const blank = {
     ref_no: "", title: "", event_type: "Production Run", product_name: "",
@@ -2421,9 +2657,11 @@ const fil = merged.filter(e => {
 
         {load ? (
           <div style={{ padding: "48px 0", textAlign: "center", color: C.gray400, fontSize: 13, fontFamily: font }}>Loading…</div>
-        ) : view === "table" ? (
+       ) : view === "table" ? (
           <>
-            <DataTable cols={COLS} rows={tableRows.filter(r => `${r.ref_no} ${r.title}`.toLowerCase().includes(search.toLowerCase()))} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del} />
+            <BulkDeleteBar count={selectedIds.length} onDelete={bulkDelete} onClear={() => setSelectedIds([])} deleting={bulkDeleting} />
+            <DataTable cols={COLS} rows={tableRows.filter(r => `${r.ref_no} ${r.title}`.toLowerCase().includes(search.toLowerCase()))} loading={load} hiddenCols={hidden} onView={setViewRow} onEdit={openEdit} onDelete={del}
+              selectable selectedIds={selectedIds} onToggleRow={toggleRow} onToggleAll={toggleAll} />
             <div style={{ padding: "10px 20px", borderTop: `1px solid ${C.gray100}`, fontSize: 12, color: C.gray400, fontFamily: font }}>Showing {tableRows.length} scheduled entries</div>
           </>
         ) : dateKeys.length === 0 ? (
@@ -2536,13 +2774,14 @@ const VALID_TABS = new Set(["planning", "bom", "workorders", "production", "reso
 
 export default function Manufacturing() {
   const [searchParams] = useSearchParams();
-  const raw = searchParams.get("tab");
-  const tab = VALID_TABS.has(raw) ? raw : "planning";
-  const { show, el } = useToast();
+  const { show, el: toastEl } = useToast();
+
+  let tab = searchParams.get("tab") || "planning";
+  if (!VALID_TABS.has(tab)) tab = "planning";
 
   return (
-    <div style={{ fontFamily: font }}>
-      {el}
+    <>
+      {toastEl}
       {tab === "planning"    && <PlanningTab    show={show} />}
       {tab === "bom"         && <BOMTab         show={show} />}
       {tab === "workorders"  && <WorkOrdersTab  show={show} />}
@@ -2550,9 +2789,10 @@ export default function Manufacturing() {
       {tab === "resources"   && <ResourcesTab   show={show} />}
       {tab === "machines"    && <MachinesTab    show={show} />}
       {tab === "qc"          && <QCTab          show={show} />}
-   {tab === "maintenance" && <MaintenanceTab show={show} />}
+      {tab === "maintenance" && <MaintenanceTab show={show} />}
       {tab === "reports"     && <ReportsTab     show={show} />}
       {tab === "schedule"    && <ScheduleTab    show={show} />}
-    </div>
+    </>
   );
 }
+
