@@ -111,6 +111,7 @@ const Divider = () => <hr style={{ border: "none", borderTop: "1px solid #f0f0f0
 function BusinessSettings() {
   const { refreshBusiness } = useBusiness();
   const logoInputRef = useRef(null);
+  const [subTab, setSubTab] = useState("general");
   const [form, setForm] = useState({
     name: "", startDate: "05/23/2026", profit: "25.00",
     currency: "INR", symbolPlacement: "Before amount", timezone: "Asia/Kolkata",
@@ -185,8 +186,29 @@ useEffect(() => {
 
   if (loading) return <Card>Loading...</Card>;
 
+  const subTabs = [
+    { key: "general", label: "General" },
+    { key: "format", label: "Format" },
+    { key: "auditlog", label: "Audit Log" },
+  ];
+
   return (
     <Card>
+      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+        {subTabs.map(t => (
+          <button key={t.key} onClick={() => setSubTab(t.key)}
+            style={{
+              padding: "7px 16px", border: "1px solid #e0e0e0", borderRadius: 6, cursor: "pointer",
+              fontSize: 12.5, fontWeight: 600, fontFamily: "inherit",
+              background: subTab === t.key ? "#1a6b3c" : "#fff",
+              color: subTab === t.key ? "#fff" : "#555",
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "general" && <>
       <SectionTitle>General Business Information</SectionTitle>
       <FormRow cols={3}>
         <FG label="Business Name" required><Input value={form.name} onChange={f("name")} /></FG>
@@ -242,8 +264,9 @@ useEffect(() => {
           </Select>
         </FG>
       </FormRow>
+</>}
 
-      <Divider />
+      {subTab === "format" && <>
       <SectionTitle>Transaction & Format Settings</SectionTitle>
       <FormRow cols={3}>
         <FG label="Stock Accounting Method" required>
@@ -270,13 +293,16 @@ useEffect(() => {
         <FG label="Quantity Precision" required>
           <Select value={form.qtyPrecision} onChange={f("qtyPrecision")}><option>2</option><option>3</option><option>4</option></Select>
         </FG>
-      </FormRow>
+     </FormRow>
 <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
         <BtnGreen onClick={handleSave} style={{ padding: "13px 44px", fontSize: 15, borderRadius: 10, background: G.green, boxShadow: "0 4px 16px rgba(26,107,60,.35)", opacity: saving ? 0.6 : 1 }}>
           {saving ? "Saving..." : "💾 Update Settings"}
         </BtnGreen>
         {msg && <span style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#1a6b3c" : "#e53935" }}>{msg}</span>}
       </div>
+      </>}
+
+      {subTab === "auditlog" && <AuditLog />}
     </Card>
   );
 }
@@ -865,8 +891,119 @@ if (loading) return <Card>Loading...</Card>;
     </Card>
   );
 }
+// ─── 7. AUDIT LOG ─────────────────────────────────────────────────────────────
+function AuditLog() {
+  const [logs, setLogs] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ module: "", action: "" });
+  const [viewLog, setViewLog] = useState(null);
 
-// ─── ROOT SETTINGS PAGE ───────────────────────────────────────────────────────
+  const loadLogs = async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filters.module) params.append("module", filters.module);
+    if (filters.action) params.append("action", filters.action);
+    const token = localStorage.getItem("manod_token");
+    const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/audit-logs?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setLogs(data.rows || []);
+    setTotal(data.total || 0);
+    setLoading(false);
+  };
+  useEffect(() => { loadLogs(); }, [filters.module, filters.action]);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this audit log entry? This cannot be undone.")) return;
+    const token = localStorage.getItem("manod_token");
+    await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/audit-logs/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    loadLogs();
+  };
+
+  const thStyle= { padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#555", background: "#f8f8f8", borderBottom: "1px solid #e0e0e0" };
+  const tdStyle = { padding: "10px 12px", fontSize: 13, color: "#444", borderBottom: "1px solid #f4f4f4" };
+
+  return (
+    <>
+      <SectionTitle>Audit Log</SectionTitle>
+      <FormRow cols={2}>
+        <FG label="Module">
+          <Input placeholder="e.g. PurchaseReturn" value={filters.module} onChange={e => setFilters({ ...filters, module: e.target.value })} />
+        </FG>
+        <FG label="Action">
+          <Select value={filters.action} onChange={e => setFilters({ ...filters, action: e.target.value })}>
+            <option value="">All</option>
+            <option>CREATE</option>
+            <option>UPDATE</option>
+            <option>DELETE</option>
+          </Select>
+        </FG>
+      </FormRow>
+      {loading ? (
+        <p style={{ fontSize: 13, color: "#888" }}>Loading...</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+        <tr>{["Date/Time","Module","Action","Record","User","Details","Action"].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {logs.map(log => (
+                <tr key={log.id}>
+                  <td style={tdStyle}>{new Date(log.created_at).toLocaleString()}</td>
+                  <td style={tdStyle}>{log.module}</td>
+                  <td style={tdStyle}>{log.action}</td>
+                  <td style={tdStyle}>{log.record_label || log.record_id || "—"}</td>
+                  <td style={tdStyle}>{log.user_name || "—"}</td>
+             <td style={tdStyle}>
+                    {log.old_data || log.new_data
+                      ? <span onClick={() => setViewLog(log)} style={{ color: "#1a6b3c", fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>View</span>
+                      : "—"}
+                  </td>
+                  <td style={tdStyle}>
+                    <BtnRed style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => handleDelete(log.id)}>🗑️ Delete</BtnRed>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+  <p style={{ fontSize: 12, color: "#aaa", marginTop: 10 }}>Showing {logs.length} of {total} entries</p>
+
+      <Modal open={!!viewLog} onClose={() => setViewLog(null)}
+        title={viewLog ? `${viewLog.module} — ${viewLog.action} (${viewLog.record_label || viewLog.record_id})` : ""}
+        footer={<BtnBlack onClick={() => setViewLog(null)}>✕ Close</BtnBlack>}>
+        {viewLog && (
+          <div style={{ display: "grid", gridTemplateColumns: viewLog.old_data && viewLog.new_data ? "1fr 1fr" : "1fr", gap: 16 }}>
+            {viewLog.old_data && (
+              <div>
+                <Label>Old Data</Label>
+                <pre style={{ background: "#fff5f5", border: "1px solid #f5c2c2", borderRadius: 6, padding: 12, fontSize: 11.5, overflowX: "auto", maxHeight: 400 }}>
+                  {JSON.stringify(typeof viewLog.old_data === "string" ? JSON.parse(viewLog.old_data) : viewLog.old_data, null, 2)}
+                </pre>
+              </div>
+            )}
+            {viewLog.new_data && (
+              <div>
+                <Label>New Data</Label>
+                <pre style={{ background: "#f5fff7", border: "1px solid #b8e6c1", borderRadius: 6, padding: 12, fontSize: 11.5, overflowX: "auto", maxHeight: 400 }}>
+                  {JSON.stringify(typeof viewLog.new_data === "string" ? JSON.parse(viewLog.new_data) : viewLog.new_data, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+// ─── ROOT SETTINGS PAGE───────────────────────────────────────────────────────
 const TABS = [
   { key: "business", label: "Business Settings", icon: "🏢" },
   { key: "locations", label: "Business Locations", icon: "📍" },
@@ -875,7 +1012,6 @@ const TABS = [
   { key: "printers", label: "Receipt Printers", icon: "🖨️" },
   { key: "taxrates", label: "Tax Rates", icon: "💹" },
 ];
-
 export default function Settings({ defaultTab = "business" }) {
   const [active, setActive] = useState(defaultTab);
   useEffect(() => { setActive(defaultTab); }, [defaultTab]);
@@ -910,7 +1046,7 @@ export default function Settings({ defaultTab = "business" }) {
         {active === "invoice" && <InvoiceSettings />}
         {active === "barcode" && <BarcodeSettings />}
         {active === "printers" && <ReceiptPrinters />}
-        {active === "taxrates" && <TaxRates />}
+   {active === "taxrates" && <TaxRates />}
       </div>
 
       <p style={{ textAlign: "center", color: "#bbb", fontSize: 12, paddingBottom: 20 }}>
