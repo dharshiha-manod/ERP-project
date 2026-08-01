@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
+// NEW
 import * as settingsAPI from "../api/settingsAPI"; // adjust path to your actual file
 import { useBusiness } from "../context/BusinessContext";
-
-
+import GeneralSettings from './GeneralSettings';
+// GeneralSettings component not built yet
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const G = {
   green: "linear-gradient(135deg,#27ae60 0%,#1a6b3c 100%)",
@@ -1003,8 +1004,11 @@ function AuditLog() {
     </>
   );
 }
+
 // ─── ROOT SETTINGS PAGE───────────────────────────────────────────────────────
+// NEW
 const TABS = [
+  { key: "general", label: "General Settings", icon: "⚙️" },
   { key: "business", label: "Business Settings", icon: "🏢" },
   { key: "locations", label: "Business Locations", icon: "📍" },
   { key: "invoice", label: "Invoice Settings", icon: "🧾" },
@@ -1039,8 +1043,8 @@ export default function Settings({ defaultTab = "business" }) {
             </button>
           ))}
         </div>
-
-        {/* Tab content */}
+      {/* Tab content */}
+{active === "general" && <GeneralSettings />}
         {active === "business" && <BusinessSettings />}
         {active === "locations" && <BusinessLocations />}
         {active === "invoice" && <InvoiceSettings />}

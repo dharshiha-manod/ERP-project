@@ -305,6 +305,7 @@ const [editIdx,  setEditIdx]  = useState(null);
 ══════════════════════════════════════════ */
 const HRM_TABS = [
   { label:"HRM",           path:"/hrm" },
+  { label:"Employees",     path:"/hrm/employees" },
   { label:"Leave Type",    path:"/hrm/leave-type" },
   { label:"Leave",         path:"/hrm/leave" },
   { label:"Attendance",    path:"/hrm/attendance" },
@@ -440,8 +441,8 @@ function HRMDashboard() {
         <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading dashboard…</div>
       ) : (
         <KpiRow cards={[
-          { label:"Present Today", value:String(att.present), accent:true, large:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:presentAttRows } },
-          { label:"Late Today",    value:String(att.late),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:lateAttRows } },
+{ label:"Present Today", value:String(att.present + att.late), sub:`${att.present} on time, ${att.late} late`, accent:true, large:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:[...presentAttRows, ...lateAttRows] } },
+{ label:"Late Today",    value:String(att.late),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:lateAttRows } },
           { label:"Absent Today",  value:String(att.absent),  color:G.red,   modalData:{ columns:["Employee","Date"], rows:absentAttRows } },
           { label:"On Leave Today",value:String(att.on_leave),color:G.blue },
           { label:"Pending Leaves",value:String(leaves.pending), color:G.blue, modalData:{ columns:["Ref No","Leave Type","Employee","Date","Reason","Status"], rows:pendingLeaveRows } },
@@ -543,17 +544,54 @@ function HRMDashboard() {
 /* ══════════════════════════════════════════
    LEAVE TYPE — API connected, original UI
 ══════════════════════════════════════════ */
+// NEW
+const LEAVE_TYPE_DEFAULT_FORM = {
+  name:"", leaveCode:"", description:"",
+  isPaid:true, maxCount:"", monthlyAccrual:"0",
+  carryForward:false, maxCarryForwardDays:"0",
+  requiresApproval:true, requiresDocument:false, minDaysRequiringAttachment:"0",
+  allowHalfDay:true, allowNegativeBalance:false, deductFromBalance:true,
+  affectsPayroll:false, countAsPresent:true, countAsAbsent:false, active:true,
+};
+
+// A compact Yes/No pair — used a dozen times below so every toggle stays consistent
+const YesNoField = ({ label, value, onChange, hint }) => (
+  <Field label={label}>
+    <div style={{ display:"flex", gap:20, marginTop:2 }}>
+      <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:13.5 }}>
+        <input type="radio" checked={value===true} onChange={()=>onChange(true)} /> Yes
+      </label>
+      <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:13.5 }}>
+        <input type="radio" checked={value===false} onChange={()=>onChange(false)} /> No
+      </label>
+    </div>
+    {hint && <div style={{ fontSize:11.5, color:G.muted, marginTop:4 }}>{hint}</div>}
+  </Field>
+);
+
 function LeaveType() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ type:"", maxCount:"", interval:"None" });
+  const [form, setForm] = useState(LEAVE_TYPE_DEFAULT_FORM);
+  const [editingId, setEditingId] = useState(null);
 
-  const rows = records.map(lt => [
+  const yn = (v) => (v === false ? "No" : "Yes");
+
+const rows = records.map(lt => [
     `LT-${String(lt.id).padStart(3,"0")}`,
-    lt.name, String(lt.max_count), lt.interval,
+    lt.leave_code || "—",
+    lt.name,
+    yn(lt.is_paid),
+    lt.max_count === 0 ? "Unlimited" : String(lt.max_count),
+    yn(lt.requires_approval),
+    yn(lt.affects_payroll),
+    yn(lt.active),
   ]);
 
+  const COLUMNS = [
+    "ID","Code","Leave Type","Paid","Annual Limit","Requires Approval","Affects Payroll","Active",
+  ];
   const load = async () => {
     setLoading(true);
     try {
@@ -565,35 +603,70 @@ function LeaveType() {
   useEffect(() => { load(); }, []);
 
   const newId = () => `LT-${String(records.length + 1).padStart(3,"0")}`;
+
+  const toBody = () => ({
+    name: form.name,
+    leave_code: form.leaveCode || null,
+    description: form.description || null,
+    max_count: parseInt(form.maxCount) || 0,
+    interval: "None",
+    is_paid: form.isPaid,
+    monthly_accrual: parseFloat(form.monthlyAccrual) || 0,
+    carry_forward: form.carryForward,
+    max_carry_forward_days: parseInt(form.maxCarryForwardDays) || 0,
+    requires_approval: form.requiresApproval,
+    requires_document: form.requiresDocument,
+    min_days_requiring_attachment: parseInt(form.minDaysRequiringAttachment) || 0,
+    allow_half_day: form.allowHalfDay,
+    allow_negative_balance: form.allowNegativeBalance,
+    deduct_from_balance: form.deductFromBalance,
+    affects_payroll: form.affectsPayroll,
+    count_as_present: form.countAsPresent,
+    count_as_absent: form.countAsAbsent,
+    active: form.active,
+  });
+
+  const resetForm = () => { setModal(false); setEditingId(null); setForm(LEAVE_TYPE_DEFAULT_FORM); };
+
   const save = async () => {
-    if (!form.type) return;
-    try {
-      await hrmAPI.createLeaveType({ name:form.type, max_count:parseInt(form.maxCount)||0, interval:form.interval });
-      await load();
-    } catch (e) { alert(e.message); }
-    setModal(false); setForm({ type:"", maxCount:"", interval:"None" });
+    if (!form.name) return;
+    try { await hrmAPI.createLeaveType(toBody()); await load(); }
+    catch (e) { alert(e.message); }
+    resetForm();
   };
 
- const apiDelete = async (i) => {
+  const apiDelete = async (i) => {
     const rec = records[i];
     await hrmAPI.deleteLeaveType(rec.id);
     await load();
   };
 
-  const [editingId,setEditingId]=useState(null);
   const openEdit = (i) => {
     const rec = records[i];
     setEditingId(rec.id);
-    setForm({ type: rec.name || "", maxCount: String(rec.max_count ?? ""), interval: rec.interval || "None" });
+    setForm({
+      name: rec.name || "", leaveCode: rec.leave_code || "", description: rec.description || "",
+      isPaid: rec.is_paid !== false,
+      maxCount: String(rec.max_count ?? ""), monthlyAccrual: String(rec.monthly_accrual ?? "0"),
+      carryForward: !!rec.carry_forward, maxCarryForwardDays: String(rec.max_carry_forward_days ?? "0"),
+      requiresApproval: rec.requires_approval !== false,
+      requiresDocument: !!rec.requires_document, minDaysRequiringAttachment: String(rec.min_days_requiring_attachment ?? "0"),
+      allowHalfDay: rec.allow_half_day !== false,
+      allowNegativeBalance: !!rec.allow_negative_balance,
+      deductFromBalance: rec.deduct_from_balance !== false,
+      affectsPayroll: !!rec.affects_payroll,
+      countAsPresent: rec.count_as_present !== false,
+      countAsAbsent: !!rec.count_as_absent,
+      active: rec.active !== false,
+    });
     setModal(true);
   };
+
   const saveEditType = async () => {
-    if (!form.type) return;
-    try {
-      await hrmAPI.updateLeaveType(editingId, { name:form.type, max_count:parseInt(form.maxCount)||0, interval:form.interval });
-      await load();
-    } catch (e) { alert(e.message); }
-    setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });
+    if (!form.name) return;
+    try { await hrmAPI.updateLeaveType(editingId, toBody()); await load(); }
+    catch (e) { alert(e.message); }
+    resetForm();
   };
 
   return (
@@ -604,37 +677,59 @@ function LeaveType() {
         <GreenBtn onClick={()=>setModal(true)}>+ Add Leave Type</GreenBtn>
       </div>
       <KpiRow cards={[
-        { label:"Total Types", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","Leave Type","Max Count","Interval"], rows } },
-        { label:"Max Annual Leave", value:`${records.find(lt => /annual|vacation/i.test(lt.name))?.max_count ?? 0} days`, color:G.green },
-        { label:"Max Sick Leave",   value:`${records.find(lt => /sick|health/i.test(lt.name))?.max_count ?? 0} days`, color:G.blue  },
+        { label:"Total Types", value:rows.length.toString(), accent:true, modalData:{ columns:COLUMNS, rows } },
+        { label:"Affects Payroll", value:records.filter(lt=>lt.affects_payroll).length.toString(), color:G.red },
+        { label:"Active Types",   value:records.filter(lt=>lt.active!==false).length.toString(), color:G.green },
       ]} />
-    <Card>
+      <Card>
         {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-          <HRMTable columns={["ID","Leave Type","Max Count","Interval"]} rows={rows} exportFilename="leave-types" onApiDelete={apiDelete} onEditClick={openEdit} />}
+          <HRMTable columns={COLUMNS} rows={rows} exportFilename="leave-types" onApiDelete={apiDelete} onEditClick={openEdit} />}
       </Card>
       {modal && (
-        <Modal title={editingId ? "Edit Leave Type" : "Add Leave Type"} onClose={()=>{setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });}}>
-          <AutoIdField label="Leave Type ID" value={newId()} />
-          <Field label="Leave Type" required><FInput value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} placeholder="e.g. Sick Leave" /></Field>
-          <Field label="Max Leave Count"><FInput type="number" value={form.maxCount} onChange={e=>setForm(f=>({...f,maxCount:e.target.value}))} placeholder="e.g. 12" /></Field>
-          <Field label="Leave Count Interval">
-            <div style={{ display:"flex", gap:20, marginTop:4 }}>
-              {["Current month","Current financial year","None"].map(v=>(
-                <label key={v} style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", fontSize:14 }}>
-                  <input type="radio" name="interval" checked={form.interval===v} onChange={()=>setForm(f=>({...f,interval:v}))} />{v}
-                </label>
-              ))}
-            </div>
-          </Field>
-         <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:10 }}>
-            <GreenBtn onClick={editingId ? saveEditType : save}>{editingId ? "Update" : "Save"}</GreenBtn><DarkBtn onClick={()=>{setModal(false); setEditingId(null); setForm({ type:"", maxCount:"", interval:"None" });}}>Close</DarkBtn>
+        <Modal title={editingId ? "Edit Leave Type" : "Add Leave Type"} onClose={resetForm} width={620}>
+          <AutoIdField label="Leave Type ID" value={editingId ? `LT-${String(editingId).padStart(3,"0")}` : newId()} />
+          <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:16 }}>
+            <Field label="Leave Type Name" required><FInput value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Sick Leave" /></Field>
+            <Field label="Leave Code"><FInput value={form.leaveCode} onChange={e=>setForm(f=>({...f,leaveCode:e.target.value.toUpperCase()}))} placeholder="e.g. SL" /></Field>
+          </div>
+          <Field label="Description"><FTextarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} placeholder="Brief description of this leave type" /></Field>
+
+          <YesNoField label="Paid Leave" value={form.isPaid} onChange={v=>setForm(f=>({...f,isPaid:v}))} hint="Approved leave of this type will not reduce salary." />
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Annual Leave Limit (0 = Unlimited)"><FInput type="number" value={form.maxCount} onChange={e=>setForm(f=>({...f,maxCount:e.target.value}))} placeholder="e.g. 12" /></Field>
+            <Field label="Monthly Accrual (days/month)"><FInput type="number" step="0.5" value={form.monthlyAccrual} onChange={e=>setForm(f=>({...f,monthlyAccrual:e.target.value}))} placeholder="0" /></Field>
+          </div>
+
+          <YesNoField label="Carry Forward" value={form.carryForward} onChange={v=>setForm(f=>({...f,carryForward:v}))} />
+          {form.carryForward && (
+            <Field label="Maximum Carry Forward Days"><FInput type="number" value={form.maxCarryForwardDays} onChange={e=>setForm(f=>({...f,maxCarryForwardDays:e.target.value}))} /></Field>
+          )}
+
+          <YesNoField label="Requires Approval" value={form.requiresApproval} onChange={v=>setForm(f=>({...f,requiresApproval:v}))} />
+          <YesNoField label="Requires Supporting Document" value={form.requiresDocument} onChange={v=>setForm(f=>({...f,requiresDocument:v}))} />
+          {form.requiresDocument && (
+            <Field label="Minimum Days Requiring Attachment"><FInput type="number" value={form.minDaysRequiringAttachment} onChange={e=>setForm(f=>({...f,minDaysRequiringAttachment:e.target.value}))} /></Field>
+          )}
+
+          <YesNoField label="Allow Half-Day Leave" value={form.allowHalfDay} onChange={v=>setForm(f=>({...f,allowHalfDay:v}))} />
+          <YesNoField label="Allow Negative Leave Balance" value={form.allowNegativeBalance} onChange={v=>setForm(f=>({...f,allowNegativeBalance:v}))} />
+          <YesNoField label="Deduct From Leave Balance" value={form.deductFromBalance} onChange={v=>setForm(f=>({...f,deductFromBalance:v}))} />
+
+          <YesNoField label="Affects Payroll" value={form.affectsPayroll} onChange={v=>setForm(f=>({...f,affectsPayroll:v}))} hint="Yes = salary is deducted for approved leave of this type (e.g. LOP)." />
+          <YesNoField label="Count as Present" value={form.countAsPresent} onChange={v=>setForm(f=>({...f,countAsPresent:v}))} />
+          <YesNoField label="Count as Absent" value={form.countAsAbsent} onChange={v=>setForm(f=>({...f,countAsAbsent:v}))} />
+          <YesNoField label="Active" value={form.active} onChange={v=>setForm(f=>({...f,active:v}))} />
+
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:10 }}>
+            <GreenBtn onClick={editingId ? saveEditType : save}>{editingId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={resetForm}>Close</DarkBtn>
           </div>
         </Modal>
       )}
     </div>
   );
 }
-
 /* ══════════════════════════════════════════
    LEAVE — API connected, original UI
 ══════════════════════════════════════════ */
@@ -712,14 +807,16 @@ const apiDelete = async (i) => {
     } catch (e) { alert(e.message); }
     setModal(false); setEditingId(null); setForm({ employee:"", leaveType:"", startDate:"", endDate:"", reason:"" });
   };
-  const approveLeave = async (i) => {
+const approveLeave = async (i) => {
     if (!window.confirm("Approve this leave request?")) return;
-    try { await hrmAPI.updateLeaveStatus(records[i].id, "Approved"); await load(); }
+    const remarks = window.prompt("Add a remark for the employee (optional):", "") || "";
+    try { await hrmAPI.updateLeaveStatus(records[i].id, "Approved", remarks); await load(); }
     catch (e) { alert(e.message); }
   };
   const rejectLeave = async (i) => {
     if (!window.confirm("Reject this leave request?")) return;
-    try { await hrmAPI.updateLeaveStatus(records[i].id, "Rejected"); await load(); }
+    const remarks = window.prompt("Reason for rejection (optional):", "") || "";
+    try { await hrmAPI.updateLeaveStatus(records[i].id, "Rejected", remarks); await load(); }
     catch (e) { alert(e.message); }
   };
 
@@ -764,9 +861,10 @@ const apiDelete = async (i) => {
           <Field label="Leave Type" required>
             <FSelect value={form.leaveType} onChange={e=>setForm(f=>({...f,leaveType:e.target.value}))}>
               <option value="">Please Select</option>
+           // NEW
               {leaveTypes.length === 0
                 ? <option value="" disabled>No leave types added yet — add one in Leave Type tab</option>
-                : leaveTypes.map(lt => <option key={lt.id} value={lt.name}>{lt.name}</option>)}
+                : leaveTypes.filter(lt => lt.active !== false).map(lt => <option key={lt.id} value={lt.name}>{lt.name}</option>)}
             </FSelect>
           </Field>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
@@ -809,9 +907,12 @@ function getDateRange(filter,customFrom,customTo) {
   return null;
 }
 function parseIndianDate(str) { if(!str) return null; const p=str.split("/"); if(p.length!==3) return null; return new Date(+p[2],+p[1]-1,+p[0]); }
+
 function Attendance() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [officeSettings,setOfficeSettings]=useState(null);
+  useEffect(() => { hrmAPI.getSettings().then(d=>setOfficeSettings(d.settings)).catch(()=>{}); }, []);
   const params = new URLSearchParams(location.search);
   const initialTab = params.get("tab") || "All Attendance";
   const [tab,_setTab]=useState(initialTab);
@@ -963,9 +1064,16 @@ const byShiftRows = attRecords
             setAttForm({ employee:"", date:new Date().toISOString().split("T")[0], status:"Present", clockIn:"", clockOut:"", department:"", shiftName:"" });
             setAddAttModal(true);
           }}>+ Add Attendance</GreenBtn>
+    
           <GreenBtn onClick={()=>setClockInModal(true)}>⬇ Clock In</GreenBtn>
         </div>
       </div>
+      {officeSettings && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, padding:"10px 16px", background:G.greenBg, border:`1px solid ${G.border}`, borderRadius:10, fontSize:13, color:G.text, fontWeight:600 }}>
+          🕒 Office Hours: {officeSettings.work_start_time?.slice(0,5) || "09:00"} – {officeSettings.work_end_time?.slice(0,5) || "18:00"}
+          <span style={{ color:G.muted, fontWeight:500 }}>(grace: {officeSettings.late_grace_minutes ?? 15} min — clock in after this counts as Late. Edit in HRM → Settings.)</span>
+        </div>
+      )}
      <KpiRow cards={[
         { label:"Present Today",  value:presentToday.length.toString(), accent:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:presentToday } },
         { label:"Late Today",     value:lateToday.length.toString(),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out","Status","Dept"], rows:lateToday } },
@@ -1018,7 +1126,7 @@ const byShiftRows = attRecords
               )}
 
               <div style={{ position:"relative", flex:1, minWidth:220 }}>
-                <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:G.muted, fontSize:14 }}>🔍</span>
+                <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:G.muted, fontSize:14 }}></span>
                 <input
                   type="text"
                   placeholder="Search ..."
@@ -1291,15 +1399,71 @@ const [form,setForm]=useState({ employee:"", month:"", department:"", designatio
   const [compLoading,setCompLoading]=useState(true);
   const payComp = compRecords.map(c => [`PC-${String(c.id).padStart(3,"0")}`, c.description, c.component_type, c.calc_method||"Fixed", c.calc_method==="Percentage" ? `${Number(c.amount||0)}%` : `₹${Number(c.amount||0).toLocaleString("en-IN")}`, c.status||"Active", c.applicable_from ? String(c.applicable_from).slice(0,10) : "—"]);
 
- const [compModal,setCompModal]=useState(false);
+const [compModal,setCompModal]=useState(false);
   const [compForm,setCompForm]=useState({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
   const [compSaving,setCompSaving]=useState(false);
+  const [editingCompId,setEditingCompId]=useState(null);
+  const openEditComp = (i) => {
+    const rec = compRecords[i];
+    setEditingCompId(rec.id);
+    setCompForm({
+      desc: rec.description || "",
+      type: rec.component_type || "Earning",
+      calcMethod: rec.calc_method || "Fixed",
+      amount: String(rec.amount ?? ""),
+      status: rec.status || "Active",
+      date: rec.applicable_from ? String(rec.applicable_from).slice(0,10) : "",
+    });
+    setCompModal(true);
+  };
+  const saveEditComp = async () => {
+    if (!compForm.desc) return;
+    try {
+      await hrmAPI.updatePayComponent(editingCompId, {
+        description: compForm.desc,
+        component_type: compForm.type,
+        calc_method: compForm.calcMethod,
+        amount: parseFloat(compForm.amount) || 0,
+        status: compForm.status,
+        applicable_from: compForm.date || null,
+      });
+      await loadComponents();
+    } catch(e) { alert(e.message); }
+    setCompModal(false); setEditingCompId(null);
+    setCompForm({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
+  };
 
   const [groupRecords,setGroupRecords]=useState([]);
   const [groupsLoading,setGroupsLoading]=useState(true);
   const groupRows = groupRecords.map(g => [`PG-${String(g.id).padStart(3,"0")}`, g.name, g.pay_schedule||"—", g.employee_count!=null?String(g.employee_count):"0", g.description||"—"]);
-  const [groupModal,setGroupModal]=useState(false);
+const [groupModal,setGroupModal]=useState(false);
   const [groupForm,setGroupForm]=useState({ name:"", schedule:"Monthly", employees:"", desc:"" });
+  const [editingGroupId,setEditingGroupId]=useState(null);
+  const openEditGroup = (i) => {
+    const rec = groupRecords[i];
+    setEditingGroupId(rec.id);
+    setGroupForm({
+      name: rec.name || "",
+      schedule: rec.pay_schedule || "Monthly",
+      employees: String(rec.employee_count ?? ""),
+      desc: rec.description || "",
+    });
+    setGroupModal(true);
+  };
+  const saveEditGroup = async () => {
+    if (!groupForm.name) return;
+    try {
+      await hrmAPI.updatePayrollGroup(editingGroupId, {
+        name: groupForm.name,
+        pay_schedule: groupForm.schedule,
+        employee_count: parseInt(groupForm.employees) || 0,
+        description: groupForm.desc,
+      });
+      await loadGroups();
+    } catch(e) { alert(e.message); }
+    setGroupModal(false); setEditingGroupId(null);
+    setGroupForm({ name:"", schedule:"Monthly", employees:"", desc:"" });
+  };
 
   const [manageCompModal,setManageCompModal]=useState(false);
   const [managingGroupIdx,setManagingGroupIdx]=useState(null);
@@ -1343,10 +1507,10 @@ const [form,setForm]=useState({ employee:"", month:"", department:"", designatio
     setEmployeesLoading(false);
   };
 
-  const handleAssign = async (userId, groupId) => {
+const handleAssign = async (userId, groupId, source) => {
     setAssigningId(userId);
     try {
-      await hrmAPI.assignPayrollGroup(userId, groupId || null);
+      await hrmAPI.assignPayrollGroup(userId, groupId || null, source || 'user');
       await loadEmployees();
       await loadGroups();
     } catch(e) { alert(e.message); }
@@ -1472,15 +1636,23 @@ const compApiEdit = async (i, vals) => {
     } catch(e) { alert(e.message); }
     setEligibleLoading(false);
   };
-
-  const toggleEmpSelect = (id) => {
-    setSelectedEmpIds(ids => ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id]);
+const toggleEmpSelect = (id, source) => {
+    setSelectedEmpIds(ids => {
+      const exists = ids.some(x => (typeof x === 'object' ? x.id : x) === id);
+      if (exists) return ids.filter(x => (typeof x === 'object' ? x.id : x) !== id);
+      return [...ids, { id, source: source || 'user' }];
+    });
   };
+  const isEmpSelected = (id) => selectedEmpIds.some(x => (typeof x === 'object' ? x.id : x) === id);
+  const allEmpSelected = eligible.length > 0 && selectedEmpIds.length === eligible.length;
+  const toggleSelectAll = () => {
+    setSelectedEmpIds(allEmpSelected ? [] : eligible.map(emp => ({ id: emp.id, source: emp.source || 'user' })));
+  };  
 
-  const previewOne = async (employeeId) => {
+const previewOne = async (employeeId, source) => {
     setPreviewLoading(true);
     try {
-      const d = await hrmAPI.previewPayroll(employeeId);
+      const d = await hrmAPI.previewPayroll(employeeId, source || 'user', runMonth);
       setPreviewData(d.preview);
     } catch(e) { alert(e.message); }
     setPreviewLoading(false);
@@ -1593,10 +1765,10 @@ const executeRun = async () => {
             </button>
           )}
         />}</Card>}
-      {tab==="Payroll Groups" && (
+   {tab==="Payroll Groups" && (
         <Card>
           <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}>
-            <GreenBtn onClick={()=>setGroupModal(true)}>+ Add Group</GreenBtn>
+            <GreenBtn onClick={()=>{ setEditingGroupId(null); setGroupForm({ name:"", schedule:"Monthly", employees:"", desc:"" }); setGroupModal(true); }}>+ Add Group</GreenBtn>
           </div>
           {groupsLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
             <HRMTable
@@ -1604,25 +1776,23 @@ const executeRun = async () => {
               rows={groupRows}
               exportFilename="payroll-groups"
               onApiDelete={groupApiDelete}
-              onApiEdit={groupApiEdit}
-              columnEditors={{ 2: ["Monthly","Bi-weekly","Weekly"] }}
+              onEditClick={openEditGroup}
               extraActions={(i) => (
                 <button onClick={()=>openManageComponents(i)} style={{ padding:"5px 12px", background:G.purpleBg, color:G.purple, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>⚙ Components</button>
               )}
             />}
         </Card>
       )}
-      {tab==="Pay Components" && (
+     {tab==="Pay Components" && (
         <Card>
-          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><GreenBtn onClick={()=>setCompModal(true)}>+ Add Component</GreenBtn></div>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:14 }}><GreenBtn onClick={()=>{ setEditingCompId(null); setCompForm({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" }); setCompModal(true); }}>+ Add Component</GreenBtn></div>
           {compLoading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
             <HRMTable
               columns={["ID","Description","Type","Calc Method","Amount","Status","Applicable From"]}
               rows={payComp}
               exportFilename="pay-components"
               onApiDelete={compApiDelete}
-              onApiEdit={compApiEdit}
-              columnEditors={{ 2: ["Earning","Deduction"], 3: ["Fixed","Percentage"], 5: ["Active","Inactive"] }}
+              onEditClick={openEditComp}
             />}
         </Card>
       )}
@@ -1634,22 +1804,27 @@ const executeRun = async () => {
           ) : (
             <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13.5 }}>
-                <thead>
+           <thead>
                   <tr style={{ background:G.greenBg }}>
-                    {["Employee","Email","Assigned Payroll Group"].map(c => (
+                    {["Employee","Type","Email","Assigned Payroll Group"].map(c => (
                       <th key={c} style={{ padding:"10px 14px", textAlign:"left", borderBottom:`2px solid ${G.border}`, fontWeight:700, color:G.green, fontSize:11, textTransform:"uppercase", letterSpacing:".05em" }}>{c}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {employees.map((emp,i) => (
-                    <tr key={emp.id} style={{ background:i%2===0?G.white:G.rowHov }}>
+                    <tr key={`${emp.source||'user'}-${emp.id}`} style={{ background:i%2===0?G.white:G.rowHov }}>
                       <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.text, fontWeight:600 }}>{emp.full_name || "—"}</td>
-                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{emp.email}</td>
+                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>
+                        <span style={{ fontSize:11, fontWeight:700, padding:"2px 9px", borderRadius:20, background:emp.source==="employee"?G.purpleBg:G.blueBg, color:emp.source==="employee"?G.purple:G.blue }}>
+                          {emp.source==="employee" ? "Non-login" : "User"}
+                        </span>
+                      </td>
+                      <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}`, color:G.muted }}>{emp.email || "—"}</td>
                       <td style={{ padding:"10px 14px", borderBottom:`1px solid ${G.border}` }}>
                         <FSelect
                           value={emp.payroll_group_id || ""}
-                          onChange={e=>handleAssign(emp.id, e.target.value ? parseInt(e.target.value) : null)}
+                          onChange={e=>handleAssign(emp.id, e.target.value ? parseInt(e.target.value) : null, emp.source || 'user')}
                           style={{ opacity:assigningId===emp.id?0.6:1, pointerEvents:assigningId===emp.id?"none":"auto", maxWidth:220 }}
                         >
                           <option value="">Unassigned</option>
@@ -1679,14 +1854,22 @@ const executeRun = async () => {
             <div style={{ textAlign:"center", padding:24, color:G.muted, fontSize:13 }}>No eligible employees — either everyone already has a payroll record for this month, or no one has an assigned Payroll Group.</div>
           ) : (
             <>
-              <div style={{ fontSize:13, fontWeight:600, color:G.text, marginBottom:8 }}>Select Employees ({selectedEmpIds.length} selected)</div>
+<div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                <span style={{ fontSize:13, fontWeight:600, color:G.text }}>Select Employees ({selectedEmpIds.length} selected)</span>
+                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, fontWeight:600, color:G.green, cursor:"pointer" }}>
+                  <input type="checkbox" checked={allEmpSelected} onChange={toggleSelectAll} /> Select All
+                </label>
+              </div>
               <div style={{ maxHeight:240, overflowY:"auto", border:`1px solid ${G.border}`, borderRadius:8, marginBottom:16 }}>
-                {eligible.map(emp => (
-                  <div key={emp.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderBottom:`1px solid ${G.border}` }}>
-                    <input type="checkbox" checked={selectedEmpIds.includes(emp.id)} onChange={()=>toggleEmpSelect(emp.id)} />
+              {eligible.map(emp => (
+                  <div key={`${emp.source||'user'}-${emp.id}`} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderBottom:`1px solid ${G.border}` }}>
+                    <input type="checkbox" checked={isEmpSelected(emp.id)} onChange={()=>toggleEmpSelect(emp.id, emp.source)} />
                     <span style={{ flex:1, fontSize:13.5, color:G.text }}>{emp.full_name}</span>
+                    <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20, background:emp.source==="employee"?G.purpleBg:G.blueBg, color:emp.source==="employee"?G.purple:G.blue }}>
+                      {emp.source==="employee" ? "Non-login" : "User"}
+                    </span>
                     <span style={{ fontSize:12, color:G.muted }}>{emp.payroll_group_name}</span>
-                    <button onClick={()=>previewOne(emp.id)} style={{ padding:"4px 10px", background:G.blueBg, color:G.blue, border:"none", borderRadius:6, cursor:"pointer", fontSize:11, fontWeight:700 }}>Preview</button>
+                    <button onClick={()=>previewOne(emp.id, emp.source)} style={{ padding:"4px 10px", background:G.blueBg, color:G.blue, border:"none", borderRadius:6, cursor:"pointer", fontSize:11, fontWeight:700 }}>Preview</button>
                   </div>
                 ))}
               </div>
@@ -1796,16 +1979,16 @@ const executeRun = async () => {
           </div>
         </Modal>
       )}
-     {groupModal && (
-        <Modal title="Add Payroll Group" onClose={()=>setGroupModal(false)}>
-          <AutoIdField label="Group ID" value={newGroupId()} />
+  {groupModal && (
+        <Modal title={editingGroupId ? "Edit Payroll Group" : "Add Payroll Group"} onClose={()=>{setGroupModal(false); setEditingGroupId(null);}}>
+          {!editingGroupId && <AutoIdField label="Group ID" value={newGroupId()} />}
           <Field label="Group Name" required><FInput value={groupForm.name} onChange={e=>setGroupForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Monthly Staff" /></Field>
           <Field label="Pay Schedule"><FSelect value={groupForm.schedule} onChange={e=>setGroupForm(f=>({...f,schedule:e.target.value}))}><option>Monthly</option><option>Bi-weekly</option><option>Weekly</option></FSelect></Field>
           <Field label="Number of Employees"><FInput type="number" value={groupForm.employees} onChange={e=>setGroupForm(f=>({...f,employees:e.target.value}))} placeholder="e.g. 12" /></Field>
           <Field label="Description"><FTextarea value={groupForm.desc} onChange={e=>setGroupForm(f=>({...f,desc:e.target.value}))} placeholder="Brief description" /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-            <GreenBtn onClick={saveGroup}>Save</GreenBtn>
-            <DarkBtn onClick={()=>setGroupModal(false)}>Close</DarkBtn>
+            <GreenBtn onClick={editingGroupId ? saveEditGroup : saveGroup}>{editingGroupId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setGroupModal(false); setEditingGroupId(null);}}>Close</DarkBtn>
           </div>
         </Modal>
       )}
@@ -1861,9 +2044,9 @@ const executeRun = async () => {
           </div>
         </Modal>
       )}
-      {compModal && (
-        <Modal title="Add Pay Component" onClose={()=>setCompModal(false)}>
-          <AutoIdField label="Component ID" value={newCompId()} />
+     {compModal && (
+        <Modal title={editingCompId ? "Edit Pay Component" : "Add Pay Component"} onClose={()=>{setCompModal(false); setEditingCompId(null);}}>
+          {!editingCompId && <AutoIdField label="Component ID" value={newCompId()} />}
           <Field label="Description" required><FInput value={compForm.desc} onChange={e=>setCompForm(f=>({...f,desc:e.target.value}))} placeholder="e.g. Basic Salary, HRA, PF" /></Field>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
             <Field label="Type"><FSelect value={compForm.type} onChange={e=>setCompForm(f=>({...f,type:e.target.value}))}><option>Earning</option><option>Deduction</option></FSelect></Field>
@@ -1877,19 +2060,22 @@ const executeRun = async () => {
 <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn
               onClick={async()=>{
-                if(compForm.desc && !compSaving){
-                  setCompSaving(true);
-                  try {
+                if(!compForm.desc || compSaving) return;
+                setCompSaving(true);
+                try {
+                  if (editingCompId) {
+                    await saveEditComp();
+                  } else {
                     await hrmAPI.createPayComponent({ description:compForm.desc, component_type:compForm.type, calc_method:compForm.calcMethod, amount:parseFloat(compForm.amount)||0, status:compForm.status, applicable_from:compForm.date||null });
                     await loadComponents();
-                  } catch(e){ alert(e.message); }
-                  setCompSaving(false);
-                  setCompModal(false); setCompForm({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
-                }
+                    setCompModal(false); setCompForm({ desc:"", type:"Earning", calcMethod:"Fixed", amount:"", status:"Active", date:"" });
+                  }
+                } catch(e){ alert(e.message); }
+                setCompSaving(false);
               }}
               style={{ opacity:compSaving?0.6:1, pointerEvents:compSaving?"none":"auto" }}
-            >{compSaving ? "Saving..." : "Save"}</GreenBtn>
-            <DarkBtn onClick={()=>setCompModal(false)}>Close</DarkBtn>
+            >{compSaving ? "Saving..." : (editingCompId ? "Update" : "Save")}</GreenBtn>
+            <DarkBtn onClick={()=>{setCompModal(false); setEditingCompId(null);}}>Close</DarkBtn>
           </div>        </Modal>
       )}
     </div>
@@ -2019,7 +2205,286 @@ function MyPayrolls() {
     </div>
   );
 }
+/* ══════════════════════════════════════════
+   EMPLOYEES (non-login staff for Payroll/Attendance/Leave)
+══════════════════════════════════════════ */
+// NEW
+function HrmEmployees() {
+  const [records,setRecords]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [typeFilter,setTypeFilter]=useState("All");
+  const [deptFilter,setDeptFilter]=useState("All");
+  const [sortBy,setSortBy]=useState("name-asc");
+  const typeBadge = (source, linkedUserId) => (
+    <span style={{
+      display:"inline-block", padding:"3px 12px", borderRadius:20, fontSize:11.5, fontWeight:700,
+      background: (source==="user" || linkedUserId) ? G.blueBg : G.purpleBg,
+      color: (source==="user" || linkedUserId) ? G.blue : G.purple,
+    }}>
+      {source==="user" ? "User" : linkedUserId ? "Login enabled" : "Non-login"}
+    </span>
+  );
+const uniqueDepts = [...new Set(records.map(e => e.department).filter(Boolean))].sort();
 
+  const filteredRecords = records
+    .filter(e => {
+      if (typeFilter === "Non-login" && e.source === "user") return false;
+      if (typeFilter === "User" && e.source !== "user") return false;
+      if (deptFilter !== "All" && e.department !== deptFilter) return false;
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const hay = `${e.full_name||""} ${e.department||""} ${e.designation||""} ${e.phone||""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "name-asc")   return (a.full_name||"").localeCompare(b.full_name||"");
+      if (sortBy === "name-desc")  return (b.full_name||"").localeCompare(a.full_name||"");
+      if (sortBy === "salary-high") return (Number(b.basic_salary)||0) - (Number(a.basic_salary)||0);
+      if (sortBy === "salary-low")  return (Number(a.basic_salary)||0) - (Number(b.basic_salary)||0);
+      return 0;
+    });
+
+  const rows = filteredRecords.map(e => [
+    e.source === "user" ? `USR-${String(e.id).slice(0,8)}` : `EMP-${String(e.id).padStart(3,"0")}`,
+    e.full_name,
+    e.department||"—",
+    e.designation||"—",
+    `₹${Number(e.basic_salary||0).toLocaleString("en-IN")}`,
+    e.salary_period||"—",
+    e.phone||"—",
+    e.status||"active",
+    typeBadge(e.source, e.linked_user_id),
+  ]);
+
+  const [modal,setModal]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [form,setForm]=useState({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+  const [departments,setDepartments]=useState([]);
+  const [designations,setDesignations]=useState([]);
+
+  // ── Enable Login modal state ──
+  const [enableModal,setEnableModal]=useState(false);
+  const [enableTargetIdx,setEnableTargetIdx]=useState(null);
+  const [enableForm,setEnableForm]=useState({ email:"", password:"" });
+  const [enableSaving,setEnableSaving]=useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try { const d = await hrmAPI.getHrmEmployees(); setRecords(d.employees||[]); } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+  const loadDeptDesig = async () => {
+    try {
+      const d = await hrmAPI.getDepartments(); setDepartments(d.departments||[]);
+      const g = await hrmAPI.getDesignations(); setDesignations(g.designations||[]);
+    } catch(e){ console.error(e); }
+  };
+  useEffect(() => { load(); loadDeptDesig(); }, []);
+
+  const newId=()=>`EMP-${String(records.length+1).padStart(3,"0")}`;
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+    setModal(true);
+  };
+const openEdit = (i) => {
+    const rec = filteredRecords[i];
+    if (rec.source === "user") {
+      alert("This is a login user account, not a non-login employee record — it can't be edited from this page. Manage it from User Management instead.");
+      return;
+    }
+    setEditingId(rec.id);
+    setForm({
+      fullName: rec.full_name || "",
+      department: rec.department || "",
+      designation: rec.designation || "",
+      basicSalary: String(rec.basic_salary ?? ""),
+      salaryPeriod: rec.salary_period || "Per Month",
+      phone: rec.phone || "",
+      status: rec.status || "active",
+    });
+    setModal(true);
+  };  
+
+  const save = async () => {
+    if (!form.fullName) return;
+    try {
+      const payload = {
+        full_name: form.fullName,
+        department: form.department || null,
+        designation: form.designation || null,
+        basic_salary: parseFloat(form.basicSalary) || 0,
+        salary_period: form.salaryPeriod,
+        phone: form.phone || null,
+        status: form.status,
+      };
+      if (editingId) {
+        await hrmAPI.updateHrmEmployee(editingId, payload);
+      } else {
+        await hrmAPI.createHrmEmployee(payload);
+      }
+      await load();
+    } catch(e){ alert(e.message); }
+    setModal(false); setEditingId(null);
+    setForm({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+  };
+
+
+const apiDelete = async (i) => {
+  const rec = filteredRecords[i];
+  if (!rec) return;
+  if (rec.source === "user") {
+    alert("This is a login user account, not a non-login employee record — it can't be deleted from this page. Manage it from User Management instead.");
+    return;
+  }
+  await hrmAPI.deleteHrmEmployee(rec.id);
+  await load();
+};
+
+  // ── Enable Login handlers ──
+  const openEnableLogin = (i) => {
+    setEnableTargetIdx(i);
+    setEnableForm({ email:"", password:"" });
+    setEnableModal(true);
+  };
+  const closeEnableLogin = () => {
+    setEnableModal(false); setEnableTargetIdx(null);
+    setEnableForm({ email:"", password:"" });
+  };
+  const submitEnableLogin = async () => {
+    const rec = filteredRecords[enableTargetIdx];
+    if (!rec) return;
+    if (!enableForm.email || !enableForm.password) { alert("Email and password are required"); return; }
+    setEnableSaving(true);
+    try {
+      await hrmAPI.enableEmployeeLogin(rec.id, { email: enableForm.email, password: enableForm.password });
+      await load();
+      closeEnableLogin();
+    } catch(e) { alert(e.message || "Failed to enable login"); }
+    setEnableSaving(false);
+  };
+
+  return (
+    <div>
+      <HRMNav />
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+        <div>
+          <h2 style={{ margin:0, fontSize:20, fontWeight:700, color:G.text }}>Employees</h2>
+          <p style={{ margin:0, fontSize:13, color:G.muted, marginTop:2 }}>Non-login staff — warehouse workers, drivers, cleaners, etc. who need Payroll/Attendance/Leave but never log in</p>
+        </div>
+ <GreenBtn onClick={openAdd}>+ Add Employee</GreenBtn>
+      </div>
+      <KpiRow cards={[
+        { label:"Total Employees", value:records.length.toString(), accent:true },
+        { label:"Non-login Staff", value:records.filter(e=>e.source!=="user" && !e.linked_user_id).length.toString(), color:G.purple },
+        { label:"Login Users",     value:records.filter(e=>e.source==="user" || e.linked_user_id).length.toString(), color:G.blue },
+      ]} />
+<Card style={{ marginBottom:16, padding:"16px 20px" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe", minWidth:140 }}>
+            <option value="All">All Types</option>
+            <option value="Non-login">Non-login</option>
+            <option value="User">Login User</option>
+          </select>
+          <select value={deptFilter} onChange={e=>setDeptFilter(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe", minWidth:160 }}>
+            <option value="All">All Departments</option>
+            {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ padding:"7px 10px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, background:"#fafffe", minWidth:160 }}>
+            <option value="name-asc">Name (A–Z)</option>
+            <option value="name-desc">Name (Z–A)</option>
+            <option value="salary-high">Salary (High–Low)</option>
+            <option value="salary-low">Salary (Low–High)</option>
+          </select>
+          <div style={{ position:"relative", flex:1, minWidth:220 }}>
+            <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:G.muted, fontSize:14 }}></span>
+            <input
+              type="text"
+              placeholder="Search by name, department, designation, phone..."
+              value={search}
+              onChange={e=>setSearch(e.target.value)}
+              style={{ width:"100%", padding:"7px 12px 7px 34px", border:`1px solid ${G.border}`, borderRadius:8, fontSize:13, fontFamily:"'Inter',sans-serif", color:G.text, boxSizing:"border-box" }}
+            />
+          </div>
+          {(typeFilter!=="All" || deptFilter!=="All" || sortBy!=="name-asc" || search.trim()) && (
+            <button onClick={()=>{ setTypeFilter("All"); setDeptFilter("All"); setSortBy("name-asc"); setSearch(""); }} style={{ padding:"7px 16px", background:G.redBg, color:G.red, border:"none", borderRadius:8, cursor:"pointer", fontSize:13, fontWeight:700 }}>✕ Reset</button>
+          )}
+        </div>
+      </Card>
+    <Card>
+        {loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
+         filteredRecords.length === 0 ? (
+           <div style={{ textAlign:"center", padding:"40px 0", color:G.muted }}>
+             <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
+             <div style={{ fontSize:15, fontWeight:600 }}>No employees match your filter</div>
+             <div style={{ fontSize:13, marginTop:4 }}>Try adjusting the type, department, or search</div>
+           </div>
+         ) : (
+<HRMTable
+  columns={["ID","Name","Department","Designation","Basic Salary","Period","Phone","Status","Type"]}
+  rows={rows}
+  exportFilename="employees"
+  onApiDelete={apiDelete}
+  onEditClick={openEdit}
+  extraActions={(i) => {
+    const rec = filteredRecords[i];
+    if (!rec || rec.source === "user" || rec.linked_user_id) return null;
+    return (
+      <button title="Enable Login" onClick={()=>openEnableLogin(i)} style={{ padding:"5px 12px", background:G.purpleBg, color:G.purple, border:"none", borderRadius:6, cursor:"pointer", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>
+        🔑 Enable Login
+      </button>
+    );
+  }}
+/>
+         )}
+      </Card>
+      {modal && (
+        <Modal title={editingId ? "Edit Employee" : "Add Employee"} onClose={()=>{setModal(false); setEditingId(null);}}>
+          {!editingId && <AutoIdField label="Employee ID" value={newId()} />}
+          <Field label="Full Name" required><FInput value={form.fullName} onChange={e=>setForm(f=>({...f,fullName:e.target.value}))} placeholder="e.g. Ramesh Kumar" /></Field>
+          <Field label="Department">
+            <FSelect value={form.department} onChange={e=>setForm(f=>({...f,department:e.target.value}))}>
+              <option value="">Please Select</option>
+              {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Designation">
+            <FSelect value={form.designation} onChange={e=>setForm(f=>({...f,designation:e.target.value}))}>
+              <option value="">Please Select</option>
+              {designations.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </FSelect>
+          </Field>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Basic Salary"><FInput type="number" value={form.basicSalary} onChange={e=>setForm(f=>({...f,basicSalary:e.target.value}))} placeholder="₹0" /></Field>
+            <Field label="Salary Period"><FSelect value={form.salaryPeriod} onChange={e=>setForm(f=>({...f,salaryPeriod:e.target.value}))}><option>Per Month</option><option>Per Day</option><option>Per Hour</option></FSelect></Field>
+          </div>
+          <Field label="Phone"><FInput value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="Phone number" /></Field>
+          <Field label="Status"><FSelect value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option value="active">Active</option><option value="inactive">Inactive</option></FSelect></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn>
+            <DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+      {enableModal && (
+        <Modal title={`Enable Login — ${filteredRecords[enableTargetIdx]?.full_name || ""}`} onClose={closeEnableLogin} width={440}>
+          <p style={{ color:G.muted, fontSize:13, margin:"0 0 16px" }}>This creates a login account pre-filled with this employee's existing name, department, designation and salary — nothing else changes.</p>
+
+          <Field label="Email" required><FInput type="email" name={`enable-login-email-${filteredRecords[enableTargetIdx]?.id || "x"}`} autoComplete="off" value={enableForm.email} onChange={e=>setEnableForm(f=>({...f,email:e.target.value}))} placeholder="employee@example.com" /></Field>
+          <Field label="Password" required><FInput type="password" name={`enable-login-password-${filteredRecords[enableTargetIdx]?.id || "x"}`} autoComplete="new-password" value={enableForm.password} onChange={e=>setEnableForm(f=>({...f,password:e.target.value}))} placeholder="Set a login password" /></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <GreenBtn onClick={submitEnableLogin} style={{ opacity:enableSaving?0.6:1, pointerEvents:enableSaving?"none":"auto" }}>{enableSaving ? "Enabling..." : "Enable Login"}</GreenBtn>
+            <DarkBtn onClick={closeEnableLogin}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
 /* ══════════════════════════════════════════
    HOLIDAY (original UI + API save + exports)
 ══════════════════════════════════════════ */
@@ -2028,16 +2493,19 @@ function Holiday() {
   const [loading,setLoading]=useState(true);
   const rows = records.map(h => [`HOL-${String(h.id).padStart(3,"0")}`, h.name, h.start_date?String(h.start_date).slice(0,10):"", h.end_date?String(h.end_date).slice(0,10):"", h.duration, h.location]);
 
-  const [modal,setModal]=useState(false);
+ const [modal,setModal]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [form,setForm]=useState({ name:"", startDate:"", endDate:"", location:"All Locations", note:"" });
-
+  const [locations,setLocations]=useState([]);
+const loadLocations = async () => {
+    try { const d = await hrmAPI.getBusinessLocations(); setLocations(d.data||[]); } catch(e){ console.error(e); }
+  };
   const load = async () => {
     setLoading(true);
     try { const d = await hrmAPI.getHolidays(); setRecords(d.holidays||[]); } catch(e){ console.error(e); }
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+useEffect(() => { load(); loadLocations(); }, []);
 
   const newId=()=>editingId ? `HOL-${String(records.findIndex(r=>r.id===editingId)+1).padStart(3,"0")}` : `HOL-${String(records.length+1).padStart(3,"0")}`;
 
@@ -2095,8 +2563,14 @@ function Holiday() {
             <Field label="Start Date" required><FInput type="date" value={form.startDate} onChange={e=>setForm(f=>({...f,startDate:e.target.value}))} /></Field>
             <Field label="End Date"   required><FInput type="date" value={form.endDate}   onChange={e=>setForm(f=>({...f,endDate:e.target.value}))} /></Field>
           </div>
-          <Field label="Location"><FSelect value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}><option>All Locations</option><option>Manodtechnologies</option><option>Branch 1</option></FSelect></Field>
-          <Field label="Note"><FTextarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} /></Field>
+<Field label="Location">
+            <FSelect value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}>
+              <option value="All Locations">All Locations</option>
+              {locations.length === 0
+                ? <option value="" disabled>No locations found — add one in Settings → Business Locations</option>
+                : locations.map(loc => <option key={loc.id} value={loc.location_name}>{loc.location_name}</option>)}
+            </FSelect>
+          </Field>        <Field label="Note"><FTextarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}><GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn><DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn></div>
         </Modal>
       )}
@@ -2256,15 +2730,46 @@ function Designations() {
 function SalesTargets() {
   const [records,setRecords]=useState([]);
   const [loading,setLoading]=useState(true);
-  const rows = records.map((t,i) => [`ST-${String(t.id).padStart(3,"0")}`, t.employee_name, `₹${Number(t.target_amount||0).toLocaleString("en-IN")}`, `${t.commission_pct||0}%`, t.month_year||"—"]);
+  const [employees,setEmployees]=useState([]);
+
+  const TARGET_TYPES = [
+    { value:"amount",     label:"Sales Amount" },
+    { value:"orders",     label:"Number of Orders" },
+    { value:"customers",  label:"Number of Customers" },
+  ];
+  const PERIOD_TYPES = ["Monthly","Quarterly","Yearly","Custom"];
+
+  const statusColor = (s) => ({ Exceeded:G.blue, Achieved:G.green, "In Progress":G.amber, "Not Started":G.muted }[s] || G.muted);
+
+  const rows = records.map((t) => {
+    const type = t.order_target>0 ? "orders" : t.customer_target>0 ? "customers" : "amount";
+    const targetVal = type==="orders" ? t.order_target : type==="customers" ? t.customer_target : t.target_amount;
+    const achievedVal = type==="orders" ? t.order_achieved : type==="customers" ? t.customer_achieved : t.achieved_amount;
+    const fmtVal = (v) => type==="amount" ? `₹${Number(v||0).toLocaleString("en-IN")}` : String(v||0);
+    return [
+      `ST-${String(t.id).padStart(3,"0")}`,
+      t.employee_name,
+      TARGET_TYPES.find(x=>x.value===type)?.label || "Sales Amount",
+      t.month_year||"—",
+      fmtVal(targetVal),
+      fmtVal(achievedVal),
+      fmtVal(Math.max(0,(targetVal||0)-(achievedVal||0))),
+      `${t.achievement_pct||0}%`,
+      t.computed_status || "Not Started",
+    ];
+  });
 
   const [modal,setModal]=useState(false);
   const [editingId,setEditingId]=useState(null);
-  const [form,setForm]=useState({ user:"", target:"", commission:"", month:"" });
+  const [form,setForm]=useState({ employeeKey:"", targetType:"amount", periodType:"Monthly", month:"", target:"", commission:"", notes:"" });
 
   const load = async () => {
     setLoading(true);
-    try { const d = await hrmAPI.getSalesTargets(); setRecords(d.targets||[]); } catch(e){ console.error(e); }
+    try {
+      const [d, e] = await Promise.all([hrmAPI.getSalesTargets(), hrmAPI.getEmployeesWithGroups()]);
+      setRecords(d.targets||[]);
+      setEmployees(e.employees||[]);
+    } catch(err) { console.error(err); }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -2273,42 +2778,54 @@ function SalesTargets() {
 
   const openAdd = () => {
     setEditingId(null);
-    setForm({ user:"", target:"", commission:"", month:"" });
+    setForm({ employeeKey:"", targetType:"amount", periodType:"Monthly", month:"", target:"", commission:"", notes:"" });
     setModal(true);
   };
   const openEdit = (i) => {
     const rec = records[i];
+    const type = rec.order_target>0 ? "orders" : rec.customer_target>0 ? "customers" : "amount";
+    const targetVal = type==="orders" ? rec.order_target : type==="customers" ? rec.customer_target : rec.target_amount;
     setEditingId(rec.id);
     setForm({
-      user: rec.employee_name || "",
-      target: String(rec.target_amount || ""),
-      commission: String(rec.commission_pct || ""),
+      employeeKey: rec.employee_id ? `${rec.employee_source||'user'}:${rec.employee_id}` : "",
+      targetType: type,
+      periodType: "Monthly",
       month: rec.month_year || "",
+      target: String(targetVal || ""),
+      commission: String(rec.commission_pct || ""),
+      notes: rec.remarks || "",
     });
     setModal(true);
   };
 
   const save = async () => {
-    if(!form.user||!form.target) return;
+    if(!form.employeeKey||!form.target) return;
+    const emp = employees.find(e => `${e.source||'user'}:${e.id}` === form.employeeKey);
+    const payload = {
+      employee_name: emp?.full_name || "",
+      employee_id: emp?.id ? String(emp.id) : null,
+      employee_source: emp?.source || 'user',
+      commission_pct: parseFloat(form.commission)||0,
+      month_year: form.month,
+      remarks: form.notes || null,
+      target_amount:     form.targetType==="amount"    ? parseFloat(String(form.target).replace(/[₹,]/g,""))||0 : 0,
+      order_target:      form.targetType==="orders"    ? parseInt(form.target)||0 : 0,
+      customer_target:   form.targetType==="customers" ? parseInt(form.target)||0 : 0,
+    };
     try {
       if (editingId) {
-        const rec = records.find(r=>r.id===editingId);
-        await hrmAPI.updateSalesTarget(editingId, {
-          employee_name: form.user,
-          target_amount: parseFloat(String(form.target).replace(/[₹,]/g,""))||0,
-          commission_pct: parseFloat(form.commission)||0,
-          month_year: form.month,
-          achieved_amount: rec?.achieved_amount || 0,
-        });
+        await hrmAPI.updateSalesTarget(editingId, payload);
       } else {
-        await hrmAPI.createSalesTarget({ employee_name:form.user, target_amount:parseFloat(String(form.target).replace(/[₹,]/g,""))||0, commission_pct:parseFloat(form.commission)||0, month_year:form.month });
+        await hrmAPI.createSalesTarget(payload);
       }
       await load();
     } catch(e){ alert(e.message); }
-    setModal(false); setEditingId(null); setForm({ user:"", target:"", commission:"", month:"" });
+    setModal(false); setEditingId(null); setForm({ employeeKey:"", targetType:"amount", periodType:"Monthly", month:"", target:"", commission:"", notes:"" });
   };
 
   const apiDelete = async (i) => { await hrmAPI.deleteSalesTarget(records[i].id); await load(); };
+
+  const totalAmountTargets = records.filter(r=>!r.order_target && !r.customer_target);
 
   return (
     <div>
@@ -2318,19 +2835,43 @@ function SalesTargets() {
         <GreenBtn onClick={openAdd}>+ Add Target</GreenBtn>
       </div>
       <KpiRow cards={[
-        { label:"Total Reps", value:rows.length.toString(), accent:true, modalData:{ columns:["ID","User","Target Amount","Commission %","Month"], rows } },
-        { label:"Total Target",            value:`₹${records.reduce((s,r)=>s+Number(r.target_amount||0),0).toLocaleString("en-IN")}`, color:G.green },
-        { label:"Total Commission Budget", value:`₹${records.reduce((s,r)=>s+(Number(r.target_amount||0)*Number(r.commission_pct||0)/100),0).toLocaleString("en-IN")}`,    color:G.blue  },
+        { label:"Total Targets", value:records.length.toString(), accent:true, modalData:{ columns:["ID","Employee","Type","Period","Target","Achieved","Remaining","Progress","Status"], rows } },
+        { label:"Achieved",      value:records.filter(r=>r.computed_status==="Achieved").length.toString(), color:G.green },
+        { label:"Over Achieved", value:records.filter(r=>r.computed_status==="Exceeded").length.toString(), color:G.blue },
+        { label:"Pending",       value:records.filter(r=>r.computed_status==="Not Started"||r.computed_status==="In Progress").length.toString(), color:G.amber },
+        { label:"Total Target Value", value:`₹${totalAmountTargets.reduce((s,r)=>s+Number(r.target_amount||0),0).toLocaleString("en-IN")}`, color:G.text },
       ]} />
       <Card>{loading ? <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading…</div> :
-        <HRMTable columns={["ID","User","Target Amount","Commission %","Month"]} rows={rows} exportFilename="sales-targets" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
+        <HRMTable columns={["ID","Employee","Type","Period","Target","Achieved","Remaining","Progress","Status"]} rows={rows} exportFilename="sales-targets" onApiDelete={apiDelete} onEditClick={openEdit} />}</Card>
       {modal && (
         <Modal title={editingId ? "Edit Sales Target" : "Add Sales Target"} onClose={()=>{setModal(false); setEditingId(null);}}>
           <AutoIdField label="Target ID" value={newId()} />
-          <Field label="User" required><FInput value={form.user} onChange={e=>setForm(f=>({...f,user:e.target.value}))} placeholder="Employee name" /></Field>
-          <Field label="Target Amount" required><FInput value={form.target} onChange={e=>setForm(f=>({...f,target:e.target.value}))} placeholder="₹0" /></Field>
-          <Field label="Commission %"><FInput type="number" value={form.commission} onChange={e=>setForm(f=>({...f,commission:e.target.value}))} placeholder="5" /></Field>
+          <Field label="Employee" required>
+            <FSelect value={form.employeeKey} onChange={e=>setForm(f=>({...f,employeeKey:e.target.value}))}>
+              <option value="">Please Select</option>
+              {employees.map(e => (
+                <option key={`${e.source||'user'}-${e.id}`} value={`${e.source||'user'}:${e.id}`}>
+                  {e.full_name} {e.source==="employee" ? "(Non-login)" : ""}
+                </option>
+              ))}
+            </FSelect>
+          </Field>
+          <Field label="Target Type" required>
+            <FSelect value={form.targetType} onChange={e=>setForm(f=>({...f,targetType:e.target.value}))}>
+              {TARGET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </FSelect>
+          </Field>
+          <Field label="Target Period">
+            <FSelect value={form.periodType} onChange={e=>setForm(f=>({...f,periodType:e.target.value}))}>
+              {PERIOD_TYPES.map(p => <option key={p}>{p}</option>)}
+            </FSelect>
+          </Field>
           <Field label="Month / Year"><FInput type="month" value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))} /></Field>
+          <Field label={form.targetType==="amount" ? "Target Amount" : "Target Count"} required>
+            <FInput value={form.target} onChange={e=>setForm(f=>({...f,target:e.target.value}))} placeholder={form.targetType==="amount" ? "₹0" : "0"} />
+          </Field>
+          <Field label="Commission %"><FInput type="number" value={form.commission} onChange={e=>setForm(f=>({...f,commission:e.target.value}))} placeholder="5" /></Field>
+          <Field label="Notes"><FTextarea value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Optional notes" /></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn>
             <DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn>
@@ -2344,8 +2885,9 @@ function SalesTargets() {
 /* ══════════════════════════════════════════
    HRM SETTINGS (original — unchanged)
 ══════════════════════════════════════════ */
+// NEW
 function HRMSettings() {
-  const [form,setForm]=useState({ workDays:"5", workHours:"8", overtimeRate:"1.5", currency:"INR", payslipNote:"Thank you for your service.", leaveApproval:"manager", attendanceMode:"manual" });
+  const [form,setForm]=useState({ workDays:"5", workHours:"8", overtimeRate:"1.5", currency:"INR", payslipNote:"Thank you for your service.", leaveApproval:"manager", attendanceMode:"manual", workStartTime:"09:00", workEndTime:"18:00", lateGraceMinutes:"15" });
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
@@ -2355,6 +2897,7 @@ function HRMSettings() {
     try {
       const d = await hrmAPI.getSettings();
       const s = d.settings;
+   // NEW
       if (s) {
         setForm({
           workDays: String(s.work_days_per_week ?? "5"),
@@ -2364,6 +2907,9 @@ function HRMSettings() {
           payslipNote: s.payslip_note || "",
           leaveApproval: s.leave_approval || "manager",
           attendanceMode: s.attendance_mode || "manual",
+          workStartTime: (s.work_start_time || "09:00").slice(0,5),
+          workEndTime: (s.work_end_time || "18:00").slice(0,5),
+          lateGraceMinutes: String(s.late_grace_minutes ?? "15"),
         });
       }
     } catch (e) { console.error(e); }
@@ -2374,6 +2920,7 @@ function HRMSettings() {
   const save = async () => {
     setSaving(true);
     try {
+ // NEW
       await hrmAPI.updateSettings({
         work_days_per_week: parseInt(form.workDays) || 5,
         work_hours_per_day: parseFloat(form.workHours) || 8,
@@ -2382,6 +2929,9 @@ function HRMSettings() {
         payslip_note: form.payslipNote,
         leave_approval: form.leaveApproval,
         attendance_mode: form.attendanceMode,
+        work_start_time: form.workStartTime,
+        work_end_time: form.workEndTime,
+        late_grace_minutes: parseInt(form.lateGraceMinutes) || 15,
       });
       setSaved(true); setTimeout(()=>setSaved(false),2500);
     } catch (e) { alert(e.message); }
@@ -2401,8 +2951,12 @@ function HRMSettings() {
           <Field label="Working Hours / Day"><FInput type="number" value={form.workHours} onChange={e=>setForm(f=>({...f,workHours:e.target.value}))} /></Field>
           <Field label="Overtime Rate Multiplier"><FInput type="number" step="0.1" value={form.overtimeRate} onChange={e=>setForm(f=>({...f,overtimeRate:e.target.value}))} /></Field>
           <Field label="Currency"><FSelect value={form.currency} onChange={e=>setForm(f=>({...f,currency:e.target.value}))}>{["INR","USD","EUR","GBP"].map(v=><option key={v}>{v}</option>)}</FSelect></Field>
+        
           <Field label="Leave Approval"><FSelect value={form.leaveApproval} onChange={e=>setForm(f=>({...f,leaveApproval:e.target.value}))}><option value="manager">Manager</option><option value="hr">HR Dept</option><option value="auto">Auto Approve</option></FSelect></Field>
           <Field label="Attendance Mode"><FSelect value={form.attendanceMode} onChange={e=>setForm(f=>({...f,attendanceMode:e.target.value}))}><option value="manual">Manual Clock In/Out</option><option value="biometric">Biometric</option><option value="gps">GPS Based</option></FSelect></Field>
+          <Field label="Office Start Time"><FInput type="time" value={form.workStartTime} onChange={e=>setForm(f=>({...f,workStartTime:e.target.value}))} /></Field>
+          <Field label="Office End Time"><FInput type="time" value={form.workEndTime} onChange={e=>setForm(f=>({...f,workEndTime:e.target.value}))} /></Field>
+          <Field label="Late Grace Period (minutes)"><FInput type="number" value={form.lateGraceMinutes} onChange={e=>setForm(f=>({...f,lateGraceMinutes:e.target.value}))} placeholder="15" /></Field>
         </div>
         <Field label="Payslip Footer Note"><FTextarea value={form.payslipNote} onChange={e=>setForm(f=>({...f,payslipNote:e.target.value}))} /></Field>
         <div style={{ display:"flex", gap:12, alignItems:"center", marginTop:10 }}>
@@ -2743,6 +3297,7 @@ export function HRMRoutes() {
   return (
     <Routes>
       <Route path="/"              element={<HRMDashboard />} />
+      <Route path="/employees"     element={<HrmEmployees />} />
       <Route path="/leave-type"    element={<LeaveType />} />
       <Route path="/leave"         element={<Leave />} />
       <Route path="/attendance"    element={<Attendance />} />

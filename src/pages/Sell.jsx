@@ -55,7 +55,10 @@ async function apiFetch(path, opts = {}) {
       const msg = errBody.message || errBody.error || `HTTP ${r.status}`;
       console.error(`[apiFetch] ${path} failed (${r.status}):`, msg);
       return { __error: true, status: r.status, message: msg }; // caller can now tell WHY it failed
-    } catch (e) {
+   } catch (e) {
+      // Network failures AND timeouts should both fall through to the
+      // next base URL — only a genuine app-level throw should stop the loop.
+      if (e.name === "AbortError" || e.name === "TimeoutError") continue;
       if (e.message && !e.message.includes("Failed to fetch")) throw e;
       /* network-level failure only — try next base */
     }
@@ -72,16 +75,19 @@ function useAPI(path) {
   useEffect(() => {
     if (_cache[path]) { setData(_cache[path]); setLoading(false); return; }
     setLoading(true);
-    apiFetch(path).then(d => {
-      if (d) { _cache[path] = d; setData(d); }
-      setLoading(false);
-    });
+    apiFetch(path)
+      .then(d => { if (d) { _cache[path] = d; setData(d); } })
+      .catch(e => console.error(`[useAPI] ${path} failed:`, e.message))
+      .finally(() => setLoading(false));
   }, [path]);
 
   const refresh = useCallback(() => {
     delete _cache[path];
     setLoading(true);
-    apiFetch(path).then(d => { if (d) { _cache[path] = d; setData(d); } setLoading(false); });
+    apiFetch(path)
+      .then(d => { if (d) { _cache[path] = d; setData(d); } })
+      .catch(e => console.error(`[useAPI] ${path} refresh failed:`, e.message))
+      .finally(() => setLoading(false));
   }, [path]);
 
   return { data, loading, refresh };
@@ -1089,6 +1095,14 @@ const [warehouse,   setWarehouse]   = useState("");
   const [useAdvanceAmount, setUseAdvanceAmount] = useState(0);
   const [customerType,setCustomerType]= useState("Walk-In");
   const [salesperson, setSalesperson] = useState("");
+  const [salespersonId, setSalespersonId] = useState("");
+  const [salespersonSource, setSalespersonSource] = useState("user");
+  const [employees, setEmployees] = useState([]);
+  useEffect(() => {
+    apiFetch("/hrm/employees").then(res => {
+      if (res?.employees) setEmployees(res.employees);
+    });
+  }, []);
   const [payTerm,     setPayTerm]     = useState("Immediate");
   const [payMethod,   setPayMethod]   = useState("Cash");
   const [paymentStatus, setPaymentStatus] = useState("Unpaid");
@@ -1296,8 +1310,9 @@ const handleSave = async () => {
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-        invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
-        salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
+   invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
+        salesperson, salespersonEmployeeId: salespersonId || null, salespersonSource,
+        paymentMethod:payMethod, paymentTerms:payTerm,  
         paymentStatus, paidAmount:Number(paidAmount)||0,
         useAdvanceAmount:Number(useAdvanceAmount)||0,
         dueDate:dueDateISO(), shippingAmt:Number(shipping),
@@ -1411,9 +1426,19 @@ const handleSave = async () => {
                   {priceGroups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
                 </Sel>
               </div>
-              <div><FL>Salesperson</FL>
-                <Sel value={salesperson} onChange={e=>setSalesperson(e.target.value)}>
-                  <option value="">— None —</option><option>Admin</option><option>Sales Rep</option><option>Cashier</option>
+            <div><FL>Salesperson</FL>
+                <Sel value={salespersonId} onChange={e=>{
+                  const emp = employees.find(x => String(x.id) === e.target.value);
+                  setSalespersonId(e.target.value);
+                  setSalesperson(emp?.full_name || "");
+                  setSalespersonSource(emp?.source || "user");
+                }}>
+                  <option value="">— None —</option>
+                  {employees.map(e => (
+                    <option key={`${e.source||'user'}-${e.id}`} value={e.id}>
+                      {e.full_name}{e.source==='employee' ? ' (Non-login)' : ''}
+                    </option>
+                  ))}
                 </Sel>
               </div>
               <div><FL>Payment Terms</FL>
@@ -2455,7 +2480,15 @@ export function AddQuotation() {
   const [contactPerson,setContactPerson] = useState("");
   const [email,       setEmail]       = useState("");
   const [phone,       setPhone]       = useState("");
-  const [salesperson, setSalesperson] = useState("");
+const [salesperson, setSalesperson] = useState("");
+  const [salespersonId, setSalespersonId] = useState("");
+  const [salespersonSource, setSalespersonSource] = useState("user");
+  const [employees, setEmployees] = useState([]);
+  useEffect(() => {
+    apiFetch("/hrm/employees").then(res => {
+      if (res?.employees) setEmployees(res.employees);
+    });
+  }, []);
 const [warehouse,   setWarehouse]   = useState("");
   const [items,       setItems]       = useState([]);
   const [globalDisc,  setGlobalDisc]  = useState(0);
@@ -2536,11 +2569,21 @@ const handleSave = async () => {
               <div><FL>Quotation Number</FL><Inp value={quotNo} onChange={e=>setQuotNo(e.target.value)}/></div>
               <div><FL>Quotation Date</FL><Inp type="date" value={quotDate} onChange={e=>setQuotDate(e.target.value)}/></div>
               <div><FL>Valid Until</FL><Inp type="date" value={validUntil} onChange={e=>setValidUntil(e.target.value)}/></div>
-              <div><FL>Salesperson</FL>
-                <Sel value={salesperson} onChange={e=>setSalesperson(e.target.value)}>
-                  <option value="">— None —</option><option>Admin</option><option>Sales Rep</option><option>Cashier</option>
+            <div><FL>Salesperson</FL>
+                <Sel value={salespersonId} onChange={e=>{
+                  const emp = employees.find(x => String(x.id) === e.target.value);
+                  setSalespersonId(e.target.value);
+                  setSalesperson(emp?.full_name || "");
+                  setSalespersonSource(emp?.source || "user");
+                }}>
+                  <option value="">— None —</option>
+                  {employees.map(e => (
+                    <option key={`${e.source||'user'}-${e.id}`} value={e.id}>
+                      {e.full_name}{e.source==='employee' ? ' (Non-login)' : ''}
+                    </option>
+                  ))}
                 </Sel>
-              </div>
+              </div>  
              <div><FL>Warehouse</FL>
                 <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
                   {locations.length===0

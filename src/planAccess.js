@@ -67,9 +67,10 @@ export function getAllowedFeatures() {
 
 export function hasFeature(featureKey) {
   if (!featureKey) return true; // items with no feature key are always visible
+  const plan = getCurrentPlan();
+  if (!plan) return true; // no subscription on record yet — do not block access, treat as unrestricted
   return getAllowedFeatures().includes(featureKey);
 }
-
 export function getPlanLabel() {
   const plan = getCurrentPlan();
   if (plan === "trial")   return "Free Trial";

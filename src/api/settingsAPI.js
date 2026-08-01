@@ -10,6 +10,35 @@ const API_BASE = import.meta.env.VITE_API_URL
   : 'http://localhost:5000/api/settings';
 
 const getToken = () => localStorage.getItem('manod_token');
+// ── GENERAL SETTINGS ───────────────────────────────────────────
+// NEW
+export const getGeneralSettings = async () => {
+  try {
+    const token = localStorage.getItem("manod_token");
+    const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings/general`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+export const updateGeneralSettings = async (payload) => {
+  try {
+    const token = localStorage.getItem("manod_token");
+    const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings/general`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
 
 // ─── TAX RATES ──────────────────────────────────────────────
 export const getTaxRates = async () => {

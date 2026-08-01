@@ -115,15 +115,17 @@ box-shadow: 1px 0 0 var(--sb-border);
 /* ── Nav ── */
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   padding: 16px 12px 24px;
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: #c8e6c9 transparent;
+  scrollbar-color: #7aab8e transparent;
 }
 
-.sidebar-nav::-webkit-scrollbar { width: 3px; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: #c8e6c9; border-radius: 4px; }
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #7aab8e; border-radius: 4px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: #2d6a4f; }
 
 /* ── Section Label ── */
 .sidebar-section-label {
@@ -135,7 +137,12 @@ box-shadow: 1px 0 0 var(--sb-border);
   padding: 12px 10px 4px;
   opacity: 0.7;
 }
-
+/* ── My Space (fixed footer row, not scrollable) ── */
+.sidebar-myspace {
+  flex-shrink: 0;
+  padding: 10px 12px 4px;
+  border-top: 1px solid var(--sb-border);
+}
 /* ── Item ── */
 .sidebar-item-wrapper { margin-bottom: 1px; }
 

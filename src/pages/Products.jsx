@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 // NEW
 import { productsAPI, brandsAPI, unitsAPI, categoriesAPI, variationsAPI } from "../api/productAPI";
-import { getLocations, getBusinessSettings } from "../api/settingsAPI"; 
+// NEW
+import { getLocations, getBusinessSettings } from "../api/settingsAPI";
+import { getGeneralSettings } from "../api/settingsAPI"; // General Settings module
 
 // ── Constants ──────────────────────────────────────────────
 const TAXES        = ["None","GST 5%","GST 12%","GST 18%","GST 28%"];
@@ -209,6 +211,9 @@ const initForm = editProduct ? {
 itemType:            editProduct.item_type || "Finished Product",
   businessLocation:    editProduct.business_location || "",
     hsnCode:              editProduct.hsn_code || "",
+    barcodeValue:         editProduct.barcode_value || "",
+    batchNumber:          editProduct.batch_number || "",
+    serialNumber:         editProduct.serial_number || "",
     alertQty:            editProduct.alert_qty ?? "",
     manageStock:         editProduct.manage_stock !== undefined ? editProduct.manage_stock : true,
     description:         editProduct.description || "",
@@ -237,9 +242,45 @@ const [form, setForm] = useState(initForm);
   console.log("DEBUG editProduct.warranty:", editProduct?.warranty, "| full editProduct:", editProduct);
 
   // ── Group Pricing state ──
+// NEW
   const [priceGroups, setPriceGroups] = useState([]);
   const [groupPrices, setGroupPrices] = useState({}); // { [groupId]: "price string" }
 
+  // NEW — General Settings integration (additive only, all safely defaulted)
+  const [genSettings, setGenSettings] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getGeneralSettings();
+        if (res.success && res.data) setGenSettings(res.data);
+      } catch (e) { console.error("General settings load error:", e.message); }
+    })();
+  }, []);
+const pd = {
+    defaultUnit: genSettings?.default_unit,
+    defaultCategory: genSettings?.default_category,
+    defaultTax: genSettings?.default_tax,
+    barcode: genSettings?.barcode_enabled,
+    batchTracking: genSettings?.batch_tracking_enabled,
+    serialTracking: genSettings?.serial_tracking_enabled,
+    manufacturingDate: genSettings?.manufacturing_date_enabled,
+    expiryDate: genSettings?.expiry_date_enabled,
+    productImages: genSettings?.product_images_enabled,
+    productVariants: genSettings?.product_variants_enabled,
+  };
+// NEW — dynamic industry-specific fields (Gold Purity, VIN, Wood Type, etc.)
+  const industryFields = genSettings?.industry_fields || {};
+  const activeIndustryFieldKeys = Object.keys(industryFields).filter(k => industryFields[k]);
+  const [customFieldValues, setCustomFieldValues] = useState(editProduct?.custom_fields || {});
+  const setCF = (k, v) => setCustomFieldValues(c => ({ ...c, [k]: v }));
+  // Auto-populate Default Unit / Default Category for NEW products only,
+  // and only if the admin hasn't already typed something in.
+useEffect(() => {
+    if (editProduct) return;
+    if (pd.defaultUnit && !form.unit && units.some(u => u.value === pd.defaultUnit)) set("unit", pd.defaultUnit);
+    if (pd.defaultCategory && !form.category && categories.some(c => c.value === pd.defaultCategory)) set("category", pd.defaultCategory);
+    if (pd.defaultTax && form.tax === "None") set("tax", pd.defaultTax);
+  }, [genSettings, units, categories]);
   const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
   const gpAuthHeaders = () => {
     const token = localStorage.getItem("manod_token");
@@ -422,8 +463,10 @@ try {
      business_location:      form.businessLocation,
         warranty:               form.warranty || null,
         item_type:              form.itemType || "Finished Product",
-        hsn_code:                form.hsnCode || null,
-       
+    hsn_code:                form.hsnCode || null,
+        barcode_value:           form.barcodeValue || null,
+        batch_number:            form.batchNumber || null,
+        serial_number:           form.serialNumber || null,
         alert_qty:              form.alertQty || 0,
         manage_stock:           form.manageStock,
         description:            form.description || null,
@@ -439,8 +482,8 @@ exc_tax_sell:           form.excTaxSell || 0,
       opening_stock:          form.openingStock !== undefined && form.openingStock !== null && form.openingStock !== "" ? parseInt(form.openingStock) : 0,
         status:                 "Active",
         image:                  form.imagePreview || null,
+        custom_fields:          customFieldValues,
       };
-
     let savedProductId = editProduct?.id;
       if (editProduct) {
         await productsAPI.update(editProduct.id, payload);
@@ -508,6 +551,49 @@ exc_tax_sell:           form.excTaxSell || 0,
             </select>
           </div>
         </div>
+
+ {/* Barcode field only shown if General Settings → Product Defaults → Barcode is enabled */}
+        {pd.barcode && (
+          <div style={f.row3}>
+            <div style={f.field}>
+              <label style={f.lbl}>Barcode</label>
+              <input style={f.inp} placeholder="Scan or enter barcode" value={form.barcodeValue || ""}
+                onChange={e => set("barcodeValue", e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        {/* NEW — Batch / Serial fields, shown only when enabled in General Settings */}
+         {(pd.batchTracking || pd.serialTracking) && (
+          <div style={f.row3}>
+            {pd.batchTracking && (
+              <div style={f.field}>
+                <label style={f.lbl}>Batch Number</label>
+                <input style={f.inp} placeholder="e.g. BATCH-2026-001" value={form.batchNumber || ""}
+                  onChange={e => set("batchNumber", e.target.value)} />
+              </div>
+            )}
+            {pd.serialTracking && (
+              <div style={f.field}>
+                <label style={f.lbl}>Serial Number</label>
+                <input style={f.inp} placeholder="e.g. SN-000123" value={form.serialNumber || ""}
+                  onChange={e => set("serialNumber", e.target.value)} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NEW — Industry-specific fields, driven by General Settings → Industry Type */}
+        {activeIndustryFieldKeys.length > 0 && (
+          <div style={f.row3}>
+            {activeIndustryFieldKeys.map(key => (
+              <div style={f.field} key={key}>
+                <label style={f.lbl}>{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
+                <input style={f.inp} value={customFieldValues[key] || ""} onChange={e => setCF(key, e.target.value)} />
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={f.row3}>
           {/* Unit - searchable */}
@@ -607,6 +693,7 @@ exc_tax_sell:           form.excTaxSell || 0,
               placeholder="Enter product description..." value={form.description}
               onChange={e => set("description", e.target.value)}/>
           </div>
+       {pd.productImages !== false && (
           <div style={f.field}>
             <label style={f.lbl}>Product Image</label>
             <div style={f.imgBox}>
@@ -618,7 +705,9 @@ exc_tax_sell:           form.excTaxSell || 0,
               <span style={{ fontSize:11, color:"#9ca3af" }}>Max 5MB · 1:1 ratio</span>
             </div>
           </div>
+          )}
         </div>
+
 
         <div style={f.row2}>
           <div style={f.field}>
@@ -630,6 +719,24 @@ exc_tax_sell:           form.excTaxSell || 0,
             <input style={f.inp} placeholder="e.g. 15" type="number" value={form.prepTime} onChange={e => set("prepTime", e.target.value)}/>
           </div>
         </div>
+
+        {/* NEW — Manufacturing Date / Expiry Date, shown only if enabled in General Settings */}
+     {(pd.manufacturingDate || pd.expiryDate) && (
+          <div style={f.row2}>
+            {pd.manufacturingDate && (
+              <div style={f.field}>
+                <label style={f.lbl}>Manufacturing Date</label>
+                <input style={f.inp} type="date" value={form.manufacturingDate || ""} onChange={e => set("manufacturingDate", e.target.value)}/>
+              </div>
+            )}
+            {pd.expiryDate && (
+              <div style={f.field}>
+                <label style={f.lbl}>Expiry Date</label>
+                <input style={f.inp} type="date" value={form.expiryDate || ""} onChange={e => set("expiryDate", e.target.value)}/>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pricing Card */}
@@ -656,6 +763,7 @@ exc_tax_sell:           form.excTaxSell || 0,
               {PRODUCT_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
+       
           {form.productType === "Variable" && (
             <div style={f.field}>
               <label style={f.lbl}>Variation *</label>
@@ -664,6 +772,13 @@ exc_tax_sell:           form.excTaxSell || 0,
             </div>
           )}
         </div>
+
+          {/* Product Variants section, only shown if enabled in General Settings */}
+        {pd.productVariants && form.productType !== "Variable" && (
+          <div style={{ background: "#f8fdf9", border: "1px dashed #1a6b3c", borderRadius: 8, padding: "10px 16px", marginTop: 12, fontSize: 12.5, color: "#1a6b3c" }}>
+            ℹ️ Product Variants is enabled in General Settings. Set Product Type to "Variable" above to configure variants for this product.
+          </div>
+        )}
 
         {/* Pricing table */}
         <div style={f.pricingWrap}>

@@ -11,7 +11,7 @@ import {
   Home, Users, BookUser, Package, Factory, ShoppingCart,
   BadgeDollarSign, ArrowLeftRight, SlidersHorizontal, Wallet,
   BarChart3, Bell, Settings, HeartHandshake, BriefcaseBusiness,
-  ClipboardCheck, Search, ChevronDown, Lock, Landmark,
+  ClipboardCheck, Search, ChevronDown, Lock, Landmark, UserCircle,
 } from "lucide-react";
 import { hasFeature, FEATURES, getPlanLabel } from "../planAccess";
 import { usePermissions } from "../context/PermissionsContext";
@@ -231,17 +231,16 @@ export default function Sidebar() {
 
   const { hasPermission, loaded, isAdmin, userName, userRole, userAvatar } = usePermissions();
   const planLabel = getPlanLabel();
-
 const visibleItems = navItems.filter(it => {
-    if (!hasFeature(it.feature)) return false;
-    if (!it.feature) return true; // items with no feature flag (rare/none currently) always show
+    if (!it.feature) return true; // items with no feature flag always show
     if (!loaded) return false;
-    if (isAdmin) return true;
+    if (isAdmin) return true; // admins bypass both plan-feature gating and permission checks
+    if (!hasFeature(it.feature)) return false;
     const checker = FEATURE_PERM_MAP[it.feature];
     if (!checker) return false; // no checker defined = deny by default, not allow
     return checker(hasPermission);
   });
-
+console.log("SIDEBAR DEBUG:", { loaded, isAdmin, userRole, permissions: usePermissions().permissions });
   const q        = search.toLowerCase().trim();
   const filtered = q
     ? visibleItems.filter(it =>
@@ -326,7 +325,7 @@ const visibleItems = navItems.filter(it => {
           );
         })}
 
-        {planLabel !== "Pro" && (
+ {planLabel !== "Pro" && (
           <Link to="/subscribe" className="sidebar-item-wrapper" style={{ textDecoration: "none" }}>
             <div className="sidebar-item" style={{
               marginTop: 8, background: "linear-gradient(135deg, #2e7d32, #43a047)",
@@ -338,6 +337,20 @@ const visibleItems = navItems.filter(it => {
           </Link>
         )}
       </nav>
+
+     {/* ── My Space (Employee Self-Service) ─────────────────────────
+          Deliberately OUTSIDE navItems/visibleItems/filtered — this is
+          not RBAC-gated and must show for every logged-in user
+          regardless of role, feature flags, or plan. Pinned as a fixed
+          footer row (not scrollable, not squeezed) above the user card. ── */}
+      <div className="sidebar-myspace">
+        <div className="sidebar-item-wrapper">
+          <Link to="/ess" className={`sidebar-item${location.pathname.startsWith("/ess") ? " active" : ""}`}>
+            <span className="sidebar-item-icon"><UserCircle size={16} strokeWidth={1.8} /></span>
+            <span className="sidebar-item-label">My Space</span>
+          </Link>
+        </div>
+      </div>
 
       {/* User Card */}
       <div className="sidebar-user" onClick={() => navigate("/profile")}

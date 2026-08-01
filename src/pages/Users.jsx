@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import {
   fetchAllUsers,
+  fetchUserById,
   createUser,
   updateUser,
   deleteUser,
@@ -11,6 +12,7 @@ import {
 } from "../api/userApi";
 import { fetchAllRoles } from "../api/roleApi";
 import { usePermissions } from "../context/PermissionsContext";  // ← NEW: permission checking
+import * as hrmAPI from "../api/hrmAPI";
 
 const emptyForm = {
   prefix: "", firstName: "", lastName: "", email: "", isActive: true,
@@ -49,12 +51,15 @@ export default function Users() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Reset password states
+ // Reset password states
   const [showReset, setShowReset] = useState(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
+
+  // Departments (from HRM module — real data, not hardcoded)
+  const [departments, setDepartments] = useState([]);
 
   const currentTabIndex = TABS.indexOf(activeTab);
   const isFirstTab = currentTabIndex === 0;
@@ -67,7 +72,7 @@ export default function Users() {
   const canDelete = () => isAdmin || hasPermission("User", "Delete user");
   const canResetPassword = () => isAdmin || hasPermission("User", "Edit user"); // Uses same perm as edit (or could be separate)
 
-  useEffect(() => { loadUsers(); loadRoles(); }, []);
+useEffect(() => { loadUsers(); loadRoles(); loadDepartments(); }, []);
 
   const loadUsers = async () => {
     try {
@@ -91,6 +96,15 @@ export default function Users() {
     }
   };
 
+  const loadDepartments = async () => {
+    try {
+      const data = await hrmAPI.getDepartments();
+      setDepartments(data.departments || []);
+    } catch (err) {
+      console.error("Failed to load departments:", err.message);
+    }
+  };
+
   const goNext = () => { if (!isLastTab) setActiveTab(TABS[currentTabIndex + 1]); };
   const goPrev = () => { if (!isFirstTab) setActiveTab(TABS[currentTabIndex - 1]); };
 
@@ -98,40 +112,62 @@ export default function Users() {
     setForm(emptyForm); setErrors({}); setModalMode("add");
     setActiveTab("basic"); setShowModal(true); setApiError("");
   };
-
-  const openEdit = (user) => {
-    const nameParts = (user.full_name || "").split(" ");
-    setForm({
-      ...emptyForm,
-      prefix: nameParts[0] || "",
-      firstName: nameParts[1] || nameParts[0] || "",
-      lastName: nameParts.slice(2).join(" "),
-      email: user.email,
-      username: user.email,
+const PREFIXES = ["Mr", "Mrs", "Ms", "Dr", "Er"];
+const userToForm = (user) => {
+  const nameParts = (user.full_name || "").trim().split(/\s+/).filter(Boolean);
+  const hasPrefix = nameParts.length > 1 && PREFIXES.includes(nameParts[0]);
+  const prefix = hasPrefix ? nameParts[0] : "";
+  const rest = hasPrefix ? nameParts.slice(1) : nameParts;
+  return {
+    ...emptyForm,
+    prefix,
+    firstName: rest[0] || "",
+    lastName: rest.slice(1).join(" "),
+    email: user.email,
+    username: user.email,
     role: user.role || "",
-      department: user.department || "",
-      mobile: user.phone || "",
-    });
-    setEditId(user.id); setErrors({}); setModalMode("edit");
-    setActiveTab("basic"); setShowModal(true); setApiError("");
+    department: user.department || "",
+    mobile: user.phone || "",
+    designation: user.designation || "",
+    basicSalary: user.basic_salary != null ? String(user.basic_salary) : "",
+    salaryPeriod: user.salary_period || "Per Month",
+    dob: user.dob ? String(user.dob).slice(0, 10) : "",
+    gender: user.gender || "",
+    maritalStatus: user.marital_status || "",
+    permanentAddress: user.permanent_address || "",
+    currentAddress: user.current_address || "",
+    accountHolder: user.account_holder || "",
+    accountNumber: user.account_number || "",
+    bankName: user.bank_name || "",
+    bankCode: user.bank_code || "",
+    branch: user.branch || "",
+    salesCommission: user.sales_commission_pct != null ? String(user.sales_commission_pct) : "",
+    maxDiscount: user.max_discount_pct != null ? String(user.max_discount_pct) : "",
   };
+};
 
-  const openView = (user) => {
-    const nameParts = (user.full_name || "").split(" ");
-    setForm({
-      ...emptyForm,
-      prefix: nameParts[0] || "",
-      firstName: nameParts[1] || nameParts[0] || "",
-      lastName: nameParts.slice(2).join(" "),
-      email: user.email,
-      username: user.email,
-      role: user.role || "employee",
-      department: user.department || "",
-      mobile: user.phone || "",
-    });
-    setEditId(user.id); setModalMode("view");
-    setActiveTab("basic"); setShowModal(true);
-  };
+const openEdit = async (user) => {
+  try {
+    const full = await fetchUserById(user.id);
+    setForm(userToForm(full));
+  } catch {
+    setForm(userToForm(user));
+  }
+  setEditId(user.id); setErrors({}); setModalMode("edit");
+  setActiveTab("basic"); setShowModal(true); setApiError("");
+};
+
+const openView = async (user) => {
+  try {
+    const full = await fetchUserById(user.id);
+    setForm(userToForm(full));
+  } catch {
+    setForm(userToForm(user));
+  }
+  setEditId(user.id); setModalMode("view");
+  setActiveTab("basic"); setShowModal(true);
+};
+
 
   const validate = () => {
     const e = {};
@@ -146,46 +182,54 @@ export default function Users() {
     if (!form.role) e.role = "Role is required";
     return e;
   };
+const handleSave = async () => {
+  const e = validate();
+  if (Object.keys(e).length) {
+    setErrors(e);
+    if (e.firstName || e.email || e.password || e.confirmPassword || e.role) setActiveTab("basic");
+    return;
+  }
+  try {
+    setSaving(true);
+    setApiError("");
+    const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
 
-  const handleSave = async () => {
-    const e = validate();
-    if (Object.keys(e).length) {
-      setErrors(e);
-      if (e.firstName || e.email || e.password || e.confirmPassword || e.role) setActiveTab("basic");
-      return;
+    const payload = {
+      full_name: fullName,
+      phone: form.mobile || null,
+      role: form.role,
+      department: form.department || null,
+      designation: form.designation || null,
+      basic_salary: form.basicSalary ? parseFloat(form.basicSalary) : null,
+      salary_period: form.salaryPeriod || "Per Month",
+      dob: form.dob || null,
+      gender: form.gender || null,
+      marital_status: form.maritalStatus || null,
+      permanent_address: form.permanentAddress || null,
+      current_address: form.currentAddress || null,
+      account_holder: form.accountHolder || null,
+      account_number: form.accountNumber || null,
+      bank_name: form.bankName || null,
+      bank_code: form.bankCode || null,
+      branch: form.branch || null,
+      sales_commission_pct: form.salesCommission ? parseFloat(form.salesCommission) : null,
+      max_discount_pct: form.maxDiscount ? parseFloat(form.maxDiscount) : null,
+    };
+
+    if (modalMode === "add") {
+      await createUser({ ...payload, email: form.email, password: form.password });
+    } else {
+      await updateUser(editId, { ...payload, email: form.email });
     }
-    try {
-      setSaving(true);
-      setApiError("");
-      const fullName = [form.prefix, form.firstName, form.lastName].filter(Boolean).join(" ");
 
-     if (modalMode === "add") {
-        await createUser({
-          email: form.email,
-          password: form.password,
-          full_name: fullName,
-          phone: form.mobile || null,
-          role: form.role,
-          department: form.department || null,
-        });
-      } else {
-        await updateUser(editId, {
-          email: form.email,
-          full_name: fullName,
-          phone: form.mobile || null,
-          role: form.role,
-          department: form.department || null,
-        });
-      }
-
-      await loadUsers();
-      setShowModal(false);
-    } catch (err) {
-      setApiError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+    await loadUsers();
+    setShowModal(false);
+  } catch (err) {
+    setApiError(err.message);
+  } finally {
+    setSaving(false);
+  }
+};
 
   const handleDelete = async (id) => {
     try {
@@ -802,15 +846,13 @@ export default function Users() {
             {activeTab === "hrm" && (
               <div>
                 <div style={row2}>
-                  <div style={fieldWrap}>
+                <div style={fieldWrap}>
                     <label style={lbl}>Department</label>
                     <select disabled={modalMode === "view"} value={form.department} onChange={f("department")} style={inp}>
                       <option value="">Please Select</option>
-                      <option>Digital Marketing</option>
-                      <option>Sales</option>
-                      <option>HR</option>
-                      <option>Finance</option>
-                      <option>Operations</option>
+                      {departments.length === 0
+                        ? <option value="" disabled>No departments added yet — add one in HRM → Departments</option>
+                        : departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                     </select>
                   </div>
                   <div style={fieldWrap}>

@@ -253,6 +253,9 @@ export default function PurchaseReturn(){
   const [editData,setEditData]=useState(null);
   const [viewData,setViewData]=useState(null);
   const [confirmDel,setConfirmDel]=useState(null);
+  const [selectedIds,setSelectedIds]=useState([]);
+  const [confirmBulkDel,setConfirmBulkDel]=useState(false);
+  const [bulkDeleting,setBulkDeleting]=useState(false);
   const [returns,setReturns]=useState([]);
   const [total,setTotal]=useState(0);
   const [loading,setLoading]=useState(false);
@@ -288,15 +291,38 @@ const load=useCallback(async(ov={})=>{
     finally{setLoading(false);}
   },[page,showEntries,search,fSup,fFrom,fTo,fPayStatus,reloadTick]);
 
-  useEffect(()=>{if(view==="list")load();},[view,load]);
+useEffect(()=>{if(view==="list")load();},[view,load]);
   useEffect(()=>setPage(1),[search,showEntries]);
+  useEffect(()=>{setSelectedIds([]);},[returns]);
 
-  const delReturn=async()=>{
+ const delReturn=async()=>{
     if(!confirmDel)return;
     try{await apiFetch("DELETE",`/purchase-returns/${confirmDel.id}`);showToast("Deleted","success");setConfirmDel(null);load();}
     catch(err){showToast(err.message,"error");setConfirmDel(null);}
   };
 
+  const toggleSelect=(id)=>{
+    setSelectedIds(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+  };
+  const toggleSelectAll=()=>{
+    setSelectedIds(prev=>prev.length===returns.length?[]:returns.map(r=>r.id));
+  };
+  const bulkDelete=async()=>{
+    if(selectedIds.length===0)return;
+    setBulkDeleting(true);
+    try{
+      const res=await apiFetch("POST","/purchase-returns/bulk-delete",{ids:selectedIds});
+      showToast(res.message||`Deleted ${selectedIds.length} return(s)`,"success");
+      setSelectedIds([]);
+      setConfirmBulkDel(false);
+      load();
+    }catch(err){
+      showToast(err.message||"Bulk delete failed","error");
+      setConfirmBulkDel(false);
+    }finally{
+      setBulkDeleting(false);
+    }
+  };
   const openEdit=async(r)=>{
     try{const full=await apiFetch("GET",`/purchase-returns/${r.id}`);setEditData(full.purchaseReturn||full);}
     catch{setEditData(r);}
@@ -369,15 +395,27 @@ const statCards=[
 
   return(
     <div style={{fontFamily:"'Segoe UI',-apple-system,sans-serif"}}>
-      {ToastEl}
+ {ToastEl}
       {confirmDel&&<ConfirmModal message={`Delete return "${confirmDel.ref}"?`} onConfirm={delReturn} onCancel={()=>setConfirmDel(null)}/>}
+      {confirmBulkDel&&<ConfirmModal message={`Delete ${selectedIds.length} selected return(s)? This cannot be undone.`} onConfirm={bulkDelete} onCancel={()=>setConfirmBulkDel(false)}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
         <div>
           <h2 style={{fontSize:24,fontWeight:700,margin:0,color:"#111827"}}>Purchase Returns</h2>
           <div style={{fontSize:12,color:"#9ca3af",marginTop:4}}>Home / Purchases / Purchase Return</div>
         </div>
-        <button onClick={()=>setView("add")} style={{...GN,display:"flex",alignItems:"center",gap:6,padding:"10px 20px",fontSize:14,borderRadius:20}}>＋ Add Return</button>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {selectedIds.length>0&&(
+            <button
+              onClick={()=>setConfirmBulkDel(true)}
+              disabled={bulkDeleting}
+              style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:20,padding:"10px 18px",fontSize:14,fontWeight:600,cursor:"pointer",opacity:bulkDeleting?0.7:1,display:"flex",alignItems:"center",gap:6}}
+            >
+              🗑 Delete Selected ({selectedIds.length})
+            </button>
+          )}
+          <button onClick={()=>setView("add")} style={{...GN,display:"flex",alignItems:"center",gap:6,padding:"10px 20px",fontSize:14,borderRadius:20}}>＋ Add Return</button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -425,8 +463,16 @@ const statCards=[
         {loading?<Spinner/>:(
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead>
+            <thead>
                 <tr style={{background:"#f9fafb",borderBottom:"2px solid #e5e7eb"}}>
+                  <th style={{padding:"11px 12px",width:36}}>
+                    <input
+                      type="checkbox"
+                      checked={returns.length>0&&selectedIds.length===returns.length}
+                      onChange={toggleSelectAll}
+                      style={{width:15,height:15,cursor:"pointer"}}
+                    />
+                  </th>
                   {["DATE","REFERENCE NO","PARENT PURCHASE","LOCATION","SUPPLIER","PAYMENT STATUS","GRAND TOTAL","PAYMENT DUE","ACTION"].map(h=>(
                     <th key={h} style={{padding:"11px 12px",textAlign:"left",fontWeight:700,color:"#374151",fontSize:12,letterSpacing:0.5,whiteSpace:"nowrap"}}>{h}</th>
                   ))}
@@ -434,9 +480,17 @@ const statCards=[
               </thead>
               <tbody>
                 {returns.length===0
-                  ?<tr><td colSpan={9} style={{textAlign:"center",padding:50,color:"#9ca3af",fontSize:14}}>No data available in table</td></tr>
+                  ?<tr><td colSpan={10} style={{textAlign:"center",padding:50,color:"#9ca3af",fontSize:14}}>No data available in table</td></tr>
                   :returns.map((r,i)=>(
-                    <tr key={r.id||i} style={{borderBottom:"1px solid #f3f4f6"}} onMouseEnter={e=>e.currentTarget.style.background="#fafafa"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <tr key={r.id||i} style={{borderBottom:"1px solid #f3f4f6",background:selectedIds.includes(r.id)?"#fef2f2":"transparent"}} onMouseEnter={e=>{if(!selectedIds.includes(r.id))e.currentTarget.style.background="#fafafa";}} onMouseLeave={e=>{if(!selectedIds.includes(r.id))e.currentTarget.style.background="transparent";}}>
+                      <td style={TD}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(r.id)}
+                          onChange={()=>toggleSelect(r.id)}
+                          style={{width:15,height:15,cursor:"pointer"}}
+                        />
+                      </td>
                       <td style={TD}>{fmtDate(r.return_date||r.created_at)}</td>
                       <td style={TD}><span style={{fontWeight:600,color:"#111827"}}>{r.return_number||"—"}</span></td>
                       <td style={TD}>{r.purchase_ref||"—"}</td>
@@ -455,8 +509,8 @@ const statCards=[
                     </tr>
                   ))}
               </tbody>
-              {returns.length>0&&<tfoot><tr style={{background:"#f9fafb",fontWeight:700,borderTop:"2px solid #e5e7eb"}}>
-                <td colSpan={6} style={{padding:"12px",color:"#374151"}}>Total ({total} records):</td>
+         {returns.length>0&&<tfoot><tr style={{background:"#f9fafb",fontWeight:700,borderTop:"2px solid #e5e7eb"}}>
+                <td colSpan={7} style={{padding:"12px",color:"#374151"}}>Total ({total} records):</td>
                 <td style={{padding:"12px",color:"#15803d"}}>{fmtINR(returns.reduce((s,r)=>s+parseFloat(r.total_amount||0),0))}</td>
                 <td style={{padding:"12px",color:"#b91c1c"}}>{fmtINR(returns.reduce((s,r)=>s+parseFloat(r.payment_due||0),0))}</td>
                 <td/>

@@ -49,7 +49,7 @@ export const deleteLeaveType   = (id)      => request('DELETE', `/hrm/leave-type
 export const getLeaves         = (params='')     => request('GET',    `/hrm/leaves${params}`);
 export const createLeave       = (body)          => request('POST',   '/hrm/leaves', body);
 export const updateLeave       = (id,body)       => request('PUT',    `/hrm/leaves/${id}`, body);
-export const updateLeaveStatus = (id,status)     => request('PATCH',  `/hrm/leaves/${id}/status`, { status });
+export const updateLeaveStatus = (id,status,remarks='') => request('PATCH', `/hrm/leaves/${id}/status`, { status, remarks });
 export const deleteLeave       = (id)            => request('DELETE', `/hrm/leaves/${id}`);
 
 // ── SHIFTS ───────────────────────────────────────────────────
@@ -73,7 +73,7 @@ export const createPayroll      = (body)      => request('POST',   '/hrm/payroll
 export const updatePayroll      = (id,body)   => request('PUT',    `/hrm/payroll/${id}`, body);
 export const deletePayroll      = (id)        => request('DELETE', `/hrm/payroll/${id}`);
 export const getEligibleForRun  = (monthYear) => request('GET', `/hrm/payroll-run/eligible?month_year=${encodeURIComponent(monthYear)}`);
-export const previewPayroll     = (employeeId) => request('GET', `/hrm/payroll-run/preview/${employeeId}`);
+export const previewPayroll     = (employeeId, source='user', month='') => request('GET', `/hrm/payroll-run/preview/${employeeId}?source=${source}${month ? `&month=${encodeURIComponent(month)}` : ''}`);
 export const runPayroll         = (employeeIds, monthYear) => request('POST', '/hrm/payroll-run', { employeeIds, month_year: monthYear });
 export const getPayrollItems    = (payrollId) => request('GET', `/hrm/payroll/${payrollId}/items`);
 // ── PAY COMPONENTS ───────────────────────────────────────────
@@ -89,8 +89,14 @@ export const updatePayrollGroup  = (id,body) => request('PUT',    `/hrm/payroll-
 export const deletePayrollGroup  = (id)      => request('DELETE', `/hrm/payroll-groups/${id}`);
 export const getGroupComponents    = (id)             => request('GET', `/hrm/payroll-groups/${id}/components`);
 export const updateGroupComponents = (id,componentIds) => request('PUT', `/hrm/payroll-groups/${id}/components`, { componentIds });
-export const getEmployeesWithGroups = ()             => request('GET', '/hrm/employees');
-export const assignPayrollGroup     = (userId,groupId) => request('PUT', `/hrm/employees/${userId}/payroll-group`, { payroll_group_id: groupId });
+export const getEmployeesWithGroups = ()                       => request('GET', '/hrm/employees');
+export const assignPayrollGroup     = (userId,groupId,source='user') => request('PUT', `/hrm/employees/${userId}/payroll-group`, { payroll_group_id: groupId, source });
+
+// ── HRM EMPLOYEES (non-login staff) ──────────────────────────
+export const getHrmEmployees    = ()        => request('GET',    '/hrm/hrm-employees');
+export const createHrmEmployee  = (body)    => request('POST',   '/hrm/hrm-employees', body);
+export const updateHrmEmployee  = (id,body) => request('PUT',    `/hrm/hrm-employees/${id}`, body);
+export const deleteHrmEmployee  = (id)      => request('DELETE', `/hrm/hrm-employees/${id}`);
 
 // ── HOLIDAYS ─────────────────────────────────────────────────
 export const getHolidays        = ()        => request('GET',    '/hrm/holidays');
@@ -105,13 +111,18 @@ export const createSalesTarget  = (body)      => request('POST',   '/hrm/sales-t
 export const updateSalesTarget  = (id,body)   => request('PUT',    `/hrm/sales-targets/${id}`, body);
 export const deleteSalesTarget  = (id)        => request('DELETE', `/hrm/sales-targets/${id}`);
 
+// NEW
 // ── SETTINGS ─────────────────────────────────────────────────
 export const getSettings        = ()        => request('GET', '/hrm/settings');
 export const updateSettings     = (body)    => request('PUT', '/hrm/settings', body);
+export const enableEmployeeLogin = (id, body) => request('POST', `/hrm/hrm-employees/${id}/enable-login`, body);
+// ── BUSINESS LOCATIONS (used by Holiday's Location dropdown) ─
+export const getBusinessLocations = () => request('GET', '/settings/locations');
 
 // ── DASHBOARD ────────────────────────────────────────────────
 // ── DASHBOARD ────────────────────────────────────────────────
 export const getDashboardStats  = ()          => request('GET',    '/hrm/dashboard');
+export const getMySalesTarget = () => request('GET', '/hrm/my/sales-target');
 
 // ── EXPORT HELPERS (client-side) ─────────────────────────────
 

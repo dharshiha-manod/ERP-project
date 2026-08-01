@@ -52,6 +52,7 @@ import { hasFeature, FEATURES } from "./planAccess";
 import "./App.css";
 import Accounting from "./pages/Accounting";
 import Notifications from "./pages/Notifications"; // adjust path as needed
+import EmployeeSelfService from "./pages/EmployeeSelfService";
 
 // ─── Auth helpers ──────────────────────────────────────────────────────────
 function isAuthenticated() {
@@ -135,9 +136,14 @@ function AppLayout() {
           {/* Dashboard */}
           <Route path="/" element={<FeatureRoute feature={FEATURES.DASHBOARD}><Dashboard /></FeatureRoute>} />
 
-          {/* Profile — always accessible */}
+ {/* Profile — always accessible */}
           <Route path="/profile"          element={<MyProfile />} />
           <Route path="/change-password"  element={<ChangePassword />} />
+
+          {/* Employee Self-Service — always accessible to every logged-in
+              user regardless of role. Deliberately NOT wrapped in
+              FeatureRoute — this is not an RBAC-gated feature. */}
+          <Route path="/ess"              element={<EmployeeSelfService />} />
 
           {/* User Management */}
           <Route path="/users"                   element={<FeatureRoute feature={FEATURES.USER_MANAGEMENT}><Users /></FeatureRoute>} />
