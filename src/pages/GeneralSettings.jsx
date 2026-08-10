@@ -1,5 +1,7 @@
+
 import { useState, useEffect } from "react";
 import * as settingsAPI from "../api/settingsAPI";
+import { useIndustry } from "../context/IndustryContext";
 
 // ─── Shared styles (mirrors Settings.jsx) ─────────────────────────────────
 const G = {
@@ -67,6 +69,7 @@ const Toggle = ({ checked, onChange, label }) => (
 );
 
 // ─── Industry recommended defaults ─────────────────────────────────────────
+// NEW
 const INDUSTRY_PRESETS = {
   jewellery_manufacturing: {
     default_unit: "Gram",
@@ -97,7 +100,15 @@ const INDUSTRY_PRESETS = {
       fabric_type: true, gsm: true, roll_length: true, pattern: true, color: true,
     },
   },
+  garments_manufacturing: {
+    default_unit: "Piece",
+    default_category: "Garments",
+    industry_fields: {
+      size: true, color: true, fabric_type: true, season: true, gender: true,
+    },
+  },
 };
+
 const INDUSTRY_LABELS = {
   general_manufacturing: "General Manufacturing",
   automobile_manufacturing: "Automobile Manufacturing",
@@ -106,8 +117,10 @@ const INDUSTRY_LABELS = {
   textile_manufacturing: "Textile Manufacturing",
   electronics_manufacturing: "Electronics Manufacturing",
   food_manufacturing: "Food Manufacturing",
+  garments_manufacturing: "Garments Manufacturing",
 };
 
+// NEW
 const INDUSTRY_FIELD_LABELS = {
   gold_purity: "Gold Purity", gross_weight: "Gross Weight", net_weight: "Net Weight",
   stone_weight: "Stone Weight", wastage_percentage: "Wastage Percentage",
@@ -116,6 +129,7 @@ const INDUSTRY_FIELD_LABELS = {
   model_year: "Model Year", variant: "Variant",
   wood_type: "Wood Type", material: "Material", dimensions: "Dimensions", finish: "Finish",
   fabric_type: "Fabric Type", gsm: "GSM", roll_length: "Roll Length", pattern: "Pattern", color: "Color",
+  size: "Size", season: "Season", gender: "Gender",
 };
 
 // ─── Default form state ─────────────────────────────────────────────────────
@@ -137,7 +151,9 @@ const DEFAULT_FORM = {
   machine_tracking_enabled: false, auto_production_number: true,
 };
 
+
 export default function GeneralSettings() {
+  const { activeIndustry } = useIndustry();
   const [form, setForm] = useState(DEFAULT_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -148,20 +164,29 @@ export default function GeneralSettings() {
   const tField = (k) => () =>
     setForm({ ...form, industry_fields: { ...form.industry_fields, [k]: !form.industry_fields[k] } });
 
+// NEW
   useEffect(() => {
+    setLoading(true);
     (async () => {
       const res = await settingsAPI.getGeneralSettings();
       if (res.success && res.data) {
+        // industry_type always comes from the backend, which derives it from
+        // the active workspace (industries table) — never from a saved value.
+        const preset = INDUSTRY_PRESETS[res.data.industry_type];
         setForm((prev) => ({
           ...prev,
           ...res.data,
-          industry_fields: res.data.industry_fields || {},
+          default_unit: res.data.default_unit || preset?.default_unit || "",
+          default_category: res.data.default_category || preset?.default_category || "",
+          industry_fields:
+            res.data.industry_fields && Object.keys(res.data.industry_fields).length > 0
+              ? res.data.industry_fields
+              : preset ? { ...preset.industry_fields } : {},
         }));
       }
       setLoading(false);
     })();
-  }, []);
-
+  }, [activeIndustry?.id]);
   // Applying an industry preset only updates default form values — never touches existing products
 const applyIndustryPreset = (industryKey) => {
     const preset = INDUSTRY_PRESETS[industryKey];
@@ -193,12 +218,16 @@ const applyIndustryPreset = (industryKey) => {
       <SectionTitle>Company Settings</SectionTitle>
       <FormRow cols={3}>
         <FG label="Company Name"><Input value={form.company_name} onChange={f("company_name")} placeholder="Your company name" /></FG>
+     
         <FG label="Industry Type">
-          <Select value={form.industry_type} onChange={(e) => applyIndustryPreset(e.target.value)}>
-            {Object.entries(INDUSTRY_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
+          <Select value={form.industry_type} disabled style={{ background: "#f4f6f8", color: "#666", cursor: "not-allowed" }}>
+            <option value={form.industry_type}>
+              {INDUSTRY_LABELS[form.industry_type] || form.industry_type}
+            </option>
           </Select>
+          <p style={{ fontSize: 11, color: "#999", marginTop: 3 }}>
+            Controlled by the active workspace — switch it from the header dropdown.
+          </p>
         </FG>
         <FG label="Currency">
           <Select value={form.currency} onChange={f("currency")}>

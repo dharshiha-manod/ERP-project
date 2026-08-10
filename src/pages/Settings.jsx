@@ -316,6 +316,7 @@ function BusinessLocations() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name:"",locationId:"",landmark:"",city:"",zip:"",state:"",country:"",mobile:"",altContact:"",email:"",website:"",invoiceSchemePOS:"",invoiceSchemeSale:"",invoiceLayoutPOS:"",invoiceLayoutSale:"",priceGroup:"",custom1:"",custom2:"",custom3:"",custom4:"", payments: paymentMethods.reduce((a,k)=>({...a,[k]:true}),{}) });
   const f = k => e => setForm({ ...form, [k]: e.target.value });
   const togglePay = k => setForm({ ...form, payments: { ...form.payments, [k]: !form.payments[k] } });
@@ -341,13 +342,19 @@ function BusinessLocations() {
   };
 
   const handleSave = async () => {
-  const payload = { location_name: form.name, address: form.landmark, city: form.city, postal_code: form.zip, state: form.state, country: form.country, phone: form.mobile };
-  const res = editingId ? await settingsAPI.updateLocation(editingId, payload) : await settingsAPI.createLocation(payload);
-  if (res.success) {
-    setShowAdd(false);
-    loadLocations();
-  } else {
-    alert(res.message || 'Failed to save location');
+  if (saving) return; // guard against double-click / double-submit firing two creates
+  setSaving(true);
+  try {
+    const payload = { location_name: form.name, address: form.landmark, city: form.city, postal_code: form.zip, state: form.state, country: form.country, phone: form.mobile };
+    const res = editingId ? await settingsAPI.updateLocation(editingId, payload) : await settingsAPI.createLocation(payload);
+    if (res.success) {
+      setShowAdd(false);
+      loadLocations();
+    } else {
+      alert(res.message || 'Failed to save location');
+    }
+  } finally {
+    setSaving(false);
   }
 };
 
@@ -417,7 +424,7 @@ const handleDelete = async (dbId) => {
       </div>
       <p style={{ fontSize: 12, color: "#aaa", marginTop: 10 }}>Showing 1 to {locations.length} of {locations.length} entries</p>
 <Modal open={showAdd} onClose={() => setShowAdd(false)} title={editingId ? "Edit business location" : "Add a new business location"}
-        footer={<><BtnGreen onClick={handleSave}>💾 Save</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
+        footer={<><BtnGreen onClick={handleSave} disabled={saving} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "💾 Save"}</BtnGreen><BtnBlack onClick={() => setShowAdd(false)}>✕ Close</BtnBlack></>}>
         <FormRow cols={1}><FG label="Name" required><Input value={form.name} onChange={f("name")} placeholder="Name" /></FG></FormRow>
         <FormRow cols={2}>
           <FG label="Location ID"><Input value={form.locationId} onChange={f("locationId")} placeholder="Location ID" /></FG>

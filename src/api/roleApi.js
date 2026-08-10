@@ -10,6 +10,7 @@ const BASE_URL = "http://localhost:5000/api";
 
 // ✅ Get token from localStorage
 const getToken = () => localStorage.getItem("manod_token");
+const getIndustryId = () => localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx
 
 // If token expired → clear storage → redirect to login
 const handleUnauthorized = () => {
@@ -19,10 +20,14 @@ const handleUnauthorized = () => {
 };
 
 // Request headers with Authorization Bearer token
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${getToken()}`,
-});
+const headers = () => {
+  const industryId = getIndustryId();
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${getToken()}`,
+    ...(industryId ? { "x-industry-id": industryId } : {}),
+  };
+};
 
 // Handle API response and check for auth errors
 const handleResponse = async (res) => {

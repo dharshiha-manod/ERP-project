@@ -5,9 +5,14 @@ import { useBusiness } from "../context/BusinessContext";
 const BASES = ["http://localhost:5000/api","http://localhost:3000/api","http://127.0.0.1:5000/api"];
 async function apiFetch(path) {
   const token = localStorage.getItem("manod_token");
+  const industryId = localStorage.getItem("manod_active_industry_id");
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(industryId ? { "X-Industry-Id": industryId } : {}),
+  };
   for (const base of BASES) {
     try {
-      const r = await fetch(`${base}${path}`, { headers: token ? { Authorization:`Bearer ${token}` } : {} });
+      const r = await fetch(`${base}${path}`, { headers });
       if (r.ok) return await r.json();
     } catch (e) { /* try next base */ }
   }

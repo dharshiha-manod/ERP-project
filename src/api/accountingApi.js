@@ -13,9 +13,11 @@ const API_BASE = import.meta.env.VITE_API_URL
 
 function authHeaders() {
   const token = localStorage.getItem("manod_token");
+  const industryId = localStorage.getItem("manod_active_industry_id");
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(industryId ? { "X-Industry-Id": industryId } : {}),
   };
 }
 

@@ -178,7 +178,7 @@ const AutoIdField = ({ label, value }) => (
 );
 
 /* ─── HRMTable — NOW WITH WORKING EXPORT BUTTONS + REAL EDIT/DELETE ─── */
-function HRMTable({ columns, rows, setRows, extraActions, onApiDelete, onApiEdit, onEditClick, exportFilename, columnEditors }) {
+function HRMTable({ columns, rows, setRows, extraActions, onApiDelete, onApiEdit, onEditClick, onViewClick, exportFilename, columnEditors }) {
   injectStyles();
 const [editIdx,  setEditIdx]  = useState(null);
   const [editVals, setEditVals] = useState([]);  const [busy, setBusy] = useState(false);
@@ -266,7 +266,7 @@ const [editIdx,  setEditIdx]  = useState(null);
   <><GreenBtn onClick={saveEdit} style={{ padding:"5px 14px", fontSize:12, borderRadius:6, opacity:busy?0.6:1, pointerEvents:busy?"none":"auto" }}>💾 Save</GreenBtn><DarkBtn onClick={cancelEdit} style={{ padding:"5px 12px", fontSize:12 }}>Cancel</DarkBtn></>
 ) : (
   <>
-    <button title="View" onClick={()=>setViewRow(row)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#0ea5e9", fontSize:16 }}>
+    <button title="View" onClick={()=>onViewClick ? onViewClick(i) : setViewRow(row)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#0ea5e9", fontSize:16 }}>
       <i className="ti ti-eye"></i>
     </button>
    <button title="Edit" onClick={()=>onEditClick ? onEditClick(i) : startEdit(i)} style={{ width:32, height:32, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"transparent", border:"none", borderRadius:6, cursor:"pointer", color:"#d97706", fontSize:16 }}>
@@ -417,9 +417,16 @@ function HRMDashboard() {
   };
   useEffect(() => { load(); }, []);
 
-  const att = stats?.attendance || { present:0, late:0, absent:0, on_leave:0 };
-  const leaves = stats?.leaves || { total:0, pending:0, approved:0 };
-  const payroll = stats?.payroll || { total_payrolls:0, paid:0, pending:0, total_payout:0 };
+const totalEmployees = stats?.total_employees ?? 0;
+const birthdaysToday = stats?.birthdays_today || [];
+const anniversariesToday = stats?.anniversaries_today || [];
+const newJoiners = stats?.new_joiners_this_month || [];
+const upcomingHolidays = stats?.upcoming_holidays || [];
+const expiringDocuments = stats?.expiring_documents || [];
+
+const att     = stats?.attendance || { present:0, late:0, absent:0, on_leave:0 };
+const leaves  = stats?.leaves     || { total:0, pending:0, approved:0 };
+const payroll = stats?.payroll    || { total_payrolls:0, paid:0, pending:0, total_payout:0 };
 
   const pendingLeaveRows = leaveRecs
     .filter(l => l.status === "Pending")
@@ -441,6 +448,7 @@ function HRMDashboard() {
         <div style={{ textAlign:"center", padding:32, color:G.muted }}>Loading dashboard…</div>
       ) : (
         <KpiRow cards={[
+          { label:"Total Employees", value:String(totalEmployees), color:G.text },
 { label:"Present Today", value:String(att.present + att.late), sub:`${att.present} on time, ${att.late} late`, accent:true, large:true, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:[...presentAttRows, ...lateAttRows] } },
 { label:"Late Today",    value:String(att.late),    color:G.amber, modalData:{ columns:["Employee","Date","Clock In","Clock Out"], rows:lateAttRows } },
           { label:"Absent Today",  value:String(att.absent),  color:G.red,   modalData:{ columns:["Employee","Date"], rows:absentAttRows } },
@@ -496,7 +504,57 @@ function HRMDashboard() {
           </div>
         </Card>
       </div>
+<div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:18, marginBottom:18 }}>
+  <Card>
+    <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:G.text }}>🎂 Celebrations Today</h4>
+    {(birthdaysToday.length===0 && anniversariesToday.length===0) ? <NoData /> : (
+      <>
+        {birthdaysToday.map((e,i)=>(
+          <div key={`b${i}`} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:`1px solid ${G.border}` }}>
+            <span style={{ fontSize:13, color:G.text }}>{e.full_name}</span>
+            <span style={{ fontSize:11, color:G.muted }}>🎂 Birthday</span>
+          </div>
+        ))}
+        {anniversariesToday.map((e,i)=>(
+          <div key={`a${i}`} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:`1px solid ${G.border}` }}>
+            <span style={{ fontSize:13, color:G.text }}>{e.full_name}</span>
+            <span style={{ fontSize:11, color:G.muted }}>🎉 Anniversary</span>
+          </div>
+        ))}
+      </>
+    )}
+    {newJoiners.length>0 && (
+      <div style={{ fontSize:11, color:G.muted, marginTop:10 }}>{newJoiners.length} new joiner(s) this month</div>
+    )}
+  </Card>
 
+  <Card>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+      <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>📅 Upcoming Holidays</h4>
+      <Link to="/hrm/holiday" style={{ fontSize:12, color:G.green, textDecoration:"none", fontWeight:600 }}>View all →</Link>
+    </div>
+    {upcomingHolidays.length===0 ? <NoData /> :
+     upcomingHolidays.map((h,i)=>(
+      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:i<upcomingHolidays.length-1?`1px solid ${G.border}`:"none" }}>
+        <span style={{ fontSize:13, color:G.text }}>{h.name}</span>
+        <span style={{ fontSize:11, color:G.muted }}>{String(h.start_date).slice(0,10)}</span>
+      </div>
+    ))}
+  </Card>
+
+  <Card>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+      <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:G.text }}>⚠️ Expiring Documents</h4>
+    </div>
+    {expiringDocuments.length===0 ? <NoData /> :
+     expiringDocuments.map((d,i)=>(
+      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:i<expiringDocuments.length-1?`1px solid ${G.border}`:"none" }}>
+        <div><div style={{ fontSize:13, color:G.text }}>{d.full_name}</div><div style={{ fontSize:11, color:G.muted }}>{d.doc_type}</div></div>
+        <span style={{ fontSize:11, color:G.amber, fontWeight:600 }}>{String(d.expiry_date).slice(0,10)}</span>
+      </div>
+    ))}
+  </Card>
+</div>
       <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:18 }}>
         <Card>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
@@ -2234,7 +2292,7 @@ const uniqueDepts = [...new Set(records.map(e => e.department).filter(Boolean))]
       if (deptFilter !== "All" && e.department !== deptFilter) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
-        const hay = `${e.full_name||""} ${e.department||""} ${e.designation||""} ${e.phone||""}`.toLowerCase();
+        const hay = `${e.full_name||""} ${e.employee_code||""} ${e.department||""} ${e.designation||""} ${e.phone||""} ${e.personal_email||""} ${e.branch||""} ${e.status||""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -2259,9 +2317,32 @@ const uniqueDepts = [...new Set(records.map(e => e.department).filter(Boolean))]
     typeBadge(e.source, e.linked_user_id),
   ]);
 
-  const [modal,setModal]=useState(false);
+const [modal,setModal]=useState(false);
   const [editingId,setEditingId]=useState(null);
-  const [form,setForm]=useState({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+  // Full-detail View modal — separate from the generic HRMTable row-only
+  // view, which only ever had the 9 summary columns to show. The full
+  // employee record (personal/address/employment/salary fields) is
+  // already sitting in `records` from the initial load; this just
+  // surfaces it instead of re-fetching.
+  const [viewRec, setViewRec] = useState(null);
+  const openView = (i) => setViewRec(filteredRecords[i]);
+  // NEW — Employee Master (Phase 1) empty form, shared by openAdd/openEdit
+  const emptyEmployeeForm = {
+    fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active",
+    // Personal Details
+    firstName:"", lastName:"", gender:"", dateOfBirth:"", bloodGroup:"", maritalStatus:"", nationality:"",
+    aadhaarNumber:"", panNumber:"", passportNumber:"", drivingLicense:"", personalEmail:"", alternateMobile:"",
+    emergencyContactName:"", emergencyContactRelationship:"", emergencyContactNumber:"",
+    // Address
+    currentAddress:"", permanentAddress:"", country:"", state:"", district:"", city:"", pincode:"",
+    // Employment
+    joiningDate:"", confirmationDate:"", probationPeriodMonths:"", employmentType:"", reportingManagerId:"",
+    branch:"", officeLocation:"", shiftId:"", noticePeriodDays:"", resignationDate:"", exitDate:"", reasonForLeaving:"",
+    // Salary Information
+    salaryStructure:"", pfNumber:"", esiNumber:"", uanNumber:"", professionalTax:"", bankName:"",
+    bankAccountNumber:"", bankIfsc:"", salaryPaymentMode:"", ctc:"", overtimeRate:"",
+  };
+  const [form,setForm]=useState(emptyEmployeeForm);
   const [departments,setDepartments]=useState([]);
   const [designations,setDesignations]=useState([]);
 
@@ -2286,9 +2367,9 @@ const uniqueDepts = [...new Set(records.map(e => e.department).filter(Boolean))]
 
   const newId=()=>`EMP-${String(records.length+1).padStart(3,"0")}`;
 
-  const openAdd = () => {
+const openAdd = () => {
     setEditingId(null);
-    setForm({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+    setForm(emptyEmployeeForm);
     setModal(true);
   };
 const openEdit = (i) => {
@@ -2306,11 +2387,35 @@ const openEdit = (i) => {
       salaryPeriod: rec.salary_period || "Per Month",
       phone: rec.phone || "",
       status: rec.status || "active",
+      // Personal Details
+      firstName: rec.first_name || "", lastName: rec.last_name || "", gender: rec.gender || "",
+      dateOfBirth: rec.date_of_birth || "", bloodGroup: rec.blood_group || "", maritalStatus: rec.marital_status || "",
+      nationality: rec.nationality || "", aadhaarNumber: rec.aadhaar_number || "", panNumber: rec.pan_number || "",
+      passportNumber: rec.passport_number || "", drivingLicense: rec.driving_license || "",
+      personalEmail: rec.personal_email || "", alternateMobile: rec.alternate_mobile || "",
+      emergencyContactName: rec.emergency_contact_name || "", emergencyContactRelationship: rec.emergency_contact_relationship || "",
+      emergencyContactNumber: rec.emergency_contact_number || "",
+      // Address
+      currentAddress: rec.current_address || "", permanentAddress: rec.permanent_address || "",
+      country: rec.country || "", state: rec.state || "", district: rec.district || "",
+      city: rec.city || "", pincode: rec.pincode || "",
+      // Employment
+      joiningDate: rec.joining_date || "", confirmationDate: rec.confirmation_date || "",
+      probationPeriodMonths: String(rec.probation_period_months ?? ""), employmentType: rec.employment_type || "",
+      reportingManagerId: rec.reporting_manager_id ? String(rec.reporting_manager_id) : "",
+      branch: rec.branch || "", officeLocation: rec.office_location || "",
+      shiftId: rec.shift_id ? String(rec.shift_id) : "", noticePeriodDays: String(rec.notice_period_days ?? ""),
+      resignationDate: rec.resignation_date || "", exitDate: rec.exit_date || "", reasonForLeaving: rec.reason_for_leaving || "",
+      // Salary Information
+      salaryStructure: rec.salary_structure || "", pfNumber: rec.pf_number || "", esiNumber: rec.esi_number || "",
+      uanNumber: rec.uan_number || "", professionalTax: String(rec.professional_tax ?? ""), bankName: rec.bank_name || "",
+      bankAccountNumber: rec.bank_account_number || "", bankIfsc: rec.bank_ifsc || "",
+      salaryPaymentMode: rec.salary_payment_mode || "", ctc: String(rec.ctc ?? ""), overtimeRate: String(rec.overtime_rate ?? ""),
     });
     setModal(true);
-  };  
+  };
 
-  const save = async () => {
+const save = async () => {
     if (!form.fullName) return;
     try {
       const payload = {
@@ -2321,6 +2426,32 @@ const openEdit = (i) => {
         salary_period: form.salaryPeriod,
         phone: form.phone || null,
         status: form.status,
+        // Personal Details
+        first_name: form.firstName, last_name: form.lastName, gender: form.gender,
+        date_of_birth: form.dateOfBirth || null, blood_group: form.bloodGroup, marital_status: form.maritalStatus,
+        nationality: form.nationality, aadhaar_number: form.aadhaarNumber, pan_number: form.panNumber,
+        passport_number: form.passportNumber, driving_license: form.drivingLicense,
+        personal_email: form.personalEmail, alternate_mobile: form.alternateMobile,
+        emergency_contact_name: form.emergencyContactName, emergency_contact_relationship: form.emergencyContactRelationship,
+        emergency_contact_number: form.emergencyContactNumber,
+        // Address
+        current_address: form.currentAddress, permanent_address: form.permanentAddress,
+        country: form.country, state: form.state, district: form.district, city: form.city, pincode: form.pincode,
+        // Employment
+        joining_date: form.joiningDate || null, confirmation_date: form.confirmationDate || null,
+        probation_period_months: form.probationPeriodMonths ? parseInt(form.probationPeriodMonths) : null,
+        employment_type: form.employmentType, reporting_manager_id: form.reportingManagerId ? parseInt(form.reportingManagerId) : null,
+        branch: form.branch, office_location: form.officeLocation,
+        shift_id: form.shiftId ? parseInt(form.shiftId) : null,
+        notice_period_days: form.noticePeriodDays ? parseInt(form.noticePeriodDays) : null,
+        resignation_date: form.resignationDate || null, exit_date: form.exitDate || null,
+        reason_for_leaving: form.reasonForLeaving,
+        // Salary Information
+        salary_structure: form.salaryStructure, pf_number: form.pfNumber, esi_number: form.esiNumber,
+        uan_number: form.uanNumber, professional_tax: form.professionalTax ? parseFloat(form.professionalTax) : null,
+        bank_name: form.bankName, bank_account_number: form.bankAccountNumber, bank_ifsc: form.bankIfsc,
+        salary_payment_mode: form.salaryPaymentMode, ctc: form.ctc ? parseFloat(form.ctc) : null,
+        overtime_rate: form.overtimeRate ? parseFloat(form.overtimeRate) : null,
       };
       if (editingId) {
         await hrmAPI.updateHrmEmployee(editingId, payload);
@@ -2330,7 +2461,7 @@ const openEdit = (i) => {
       await load();
     } catch(e){ alert(e.message); }
     setModal(false); setEditingId(null);
-    setForm({ fullName:"", department:"", designation:"", basicSalary:"", salaryPeriod:"Per Month", phone:"", status:"active" });
+    setForm(emptyEmployeeForm);
   };
 
 
@@ -2430,6 +2561,7 @@ const apiDelete = async (i) => {
   exportFilename="employees"
   onApiDelete={apiDelete}
   onEditClick={openEdit}
+  onViewClick={openView}
   extraActions={(i) => {
     const rec = filteredRecords[i];
     if (!rec || rec.source === "user" || rec.linked_user_id) return null;
@@ -2442,8 +2574,73 @@ const apiDelete = async (i) => {
 />
          )}
       </Card>
-      {modal && (
-        <Modal title={editingId ? "Edit Employee" : "Add Employee"} onClose={()=>{setModal(false); setEditingId(null);}}>
+      {viewRec && (
+        <Modal title={`Employee — ${viewRec.full_name || "—"}`} onClose={()=>setViewRec(null)} width={640}>
+          {[
+            ["ID", viewRec.source === "user" ? `USR-${String(viewRec.id).slice(0,8)}` : `EMP-${String(viewRec.id).padStart(3,"0")}`],
+            ["Full Name", viewRec.full_name],
+            ["Type", viewRec.source === "user" ? "User" : viewRec.linked_user_id ? "Login enabled" : "Non-login"],
+            ["Status", viewRec.status || "active"],
+            ["Department", viewRec.department],
+            ["Designation", viewRec.designation],
+            ["Basic Salary", `₹${Number(viewRec.basic_salary||0).toLocaleString("en-IN")}`],
+            ["Salary Period", viewRec.salary_period],
+            ["Phone", viewRec.phone],
+            ["Personal Email", viewRec.personal_email],
+            ["Alternate Mobile", viewRec.alternate_mobile],
+            ["Gender", viewRec.gender],
+            ["Date of Birth", viewRec.date_of_birth],
+            ["Blood Group", viewRec.blood_group],
+            ["Marital Status", viewRec.marital_status],
+            ["Nationality", viewRec.nationality],
+            ["Aadhaar Number", viewRec.aadhaar_number],
+            ["PAN Number", viewRec.pan_number],
+            ["Passport Number", viewRec.passport_number],
+            ["Driving License", viewRec.driving_license],
+            ["Emergency Contact", viewRec.emergency_contact_name],
+            ["Emergency Relationship", viewRec.emergency_contact_relationship],
+            ["Emergency Contact No.", viewRec.emergency_contact_number],
+            ["Current Address", viewRec.current_address],
+            ["Permanent Address", viewRec.permanent_address],
+            ["Country", viewRec.country],
+            ["State", viewRec.state],
+            ["District", viewRec.district],
+            ["City", viewRec.city],
+            ["Pincode", viewRec.pincode],
+            ["Joining Date", viewRec.joining_date],
+            ["Confirmation Date", viewRec.confirmation_date],
+            ["Probation (months)", viewRec.probation_period_months],
+            ["Employment Type", viewRec.employment_type],
+            ["Branch", viewRec.branch],
+            ["Office Location", viewRec.office_location],
+            ["Notice Period (days)", viewRec.notice_period_days],
+            ["Resignation Date", viewRec.resignation_date],
+            ["Exit Date", viewRec.exit_date],
+            ["Reason for Leaving", viewRec.reason_for_leaving],
+            ["Salary Structure", viewRec.salary_structure],
+            ["PF Number", viewRec.pf_number],
+            ["ESI Number", viewRec.esi_number],
+            ["UAN Number", viewRec.uan_number],
+            ["Professional Tax", viewRec.professional_tax],
+            ["Bank Name", viewRec.bank_name],
+            ["Bank Account No.", viewRec.bank_account_number],
+            ["Bank IFSC", viewRec.bank_ifsc],
+            ["Salary Payment Mode", viewRec.salary_payment_mode],
+            ["CTC", viewRec.ctc],
+            ["Overtime Rate", viewRec.overtime_rate],
+          ].filter(([, val]) => val !== undefined && val !== null && val !== "").map(([label, val]) => (
+            <div key={label} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:`1px solid ${G.border}`, gap:16 }}>
+              <span style={{ fontSize:12.5, fontWeight:600, color:G.muted, whiteSpace:"nowrap" }}>{label}</span>
+              <span style={{ fontSize:13, fontWeight:700, color:G.text, textAlign:"right" }}>{String(val)}</span>
+            </div>
+          ))}
+          <div style={{ display:"flex", justifyContent:"flex-end", marginTop:16 }}>
+            <DarkBtn onClick={()=>setViewRec(null)}>Close</DarkBtn>
+          </div>
+        </Modal>
+      )}
+ {modal && (
+        <Modal title={editingId ? "Edit Employee" : "Add Employee"} onClose={()=>{setModal(false); setEditingId(null);}} width={720}>
           {!editingId && <AutoIdField label="Employee ID" value={newId()} />}
           <Field label="Full Name" required><FInput value={form.fullName} onChange={e=>setForm(f=>({...f,fullName:e.target.value}))} placeholder="e.g. Ramesh Kumar" /></Field>
           <Field label="Department">
@@ -2464,7 +2661,124 @@ const apiDelete = async (i) => {
           </div>
           <Field label="Phone"><FInput value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="Phone number" /></Field>
           <Field label="Status"><FSelect value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option value="active">Active</option><option value="inactive">Inactive</option></FSelect></Field>
-          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+
+          {/* NEW — Personal Details (Phase 1) */}
+          <h4 style={{ margin:"18px 0 14px", paddingTop:14, borderTop:`1px solid ${G.border}`, fontSize:14, fontWeight:700, color:G.text }}>🧍 Personal Details</h4>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="First Name"><FInput value={form.firstName} onChange={e=>setForm(f=>({...f,firstName:e.target.value}))} /></Field>
+            <Field label="Last Name"><FInput value={form.lastName} onChange={e=>setForm(f=>({...f,lastName:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16 }}>
+            <Field label="Gender">
+              <FSelect value={form.gender} onChange={e=>setForm(f=>({...f,gender:e.target.value}))}>
+                <option value="">Please Select</option><option>Male</option><option>Female</option><option>Other</option>
+              </FSelect>
+            </Field>
+            <Field label="Date of Birth"><FInput type="date" value={form.dateOfBirth} onChange={e=>setForm(f=>({...f,dateOfBirth:e.target.value}))} /></Field>
+            <Field label="Blood Group">
+              <FSelect value={form.bloodGroup} onChange={e=>setForm(f=>({...f,bloodGroup:e.target.value}))}>
+                <option value="">Please Select</option>
+                {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map(b=><option key={b}>{b}</option>)}
+              </FSelect>
+            </Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Marital Status">
+              <FSelect value={form.maritalStatus} onChange={e=>setForm(f=>({...f,maritalStatus:e.target.value}))}>
+                <option value="">Please Select</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option>
+              </FSelect>
+            </Field>
+            <Field label="Nationality"><FInput value={form.nationality} onChange={e=>setForm(f=>({...f,nationality:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Aadhaar Number"><FInput value={form.aadhaarNumber} onChange={e=>setForm(f=>({...f,aadhaarNumber:e.target.value}))} /></Field>
+            <Field label="PAN Number"><FInput value={form.panNumber} onChange={e=>setForm(f=>({...f,panNumber:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Passport Number"><FInput value={form.passportNumber} onChange={e=>setForm(f=>({...f,passportNumber:e.target.value}))} /></Field>
+            <Field label="Driving License"><FInput value={form.drivingLicense} onChange={e=>setForm(f=>({...f,drivingLicense:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Personal Email"><FInput type="email" value={form.personalEmail} onChange={e=>setForm(f=>({...f,personalEmail:e.target.value}))} /></Field>
+            <Field label="Alternate Mobile"><FInput value={form.alternateMobile} onChange={e=>setForm(f=>({...f,alternateMobile:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16 }}>
+            <Field label="Emergency Contact Name"><FInput value={form.emergencyContactName} onChange={e=>setForm(f=>({...f,emergencyContactName:e.target.value}))} /></Field>
+            <Field label="Relationship"><FInput value={form.emergencyContactRelationship} onChange={e=>setForm(f=>({...f,emergencyContactRelationship:e.target.value}))} /></Field>
+            <Field label="Emergency Contact No."><FInput value={form.emergencyContactNumber} onChange={e=>setForm(f=>({...f,emergencyContactNumber:e.target.value}))} /></Field>
+          </div>
+
+          {/* NEW — Address (Phase 1) */}
+          <h4 style={{ margin:"18px 0 14px", paddingTop:14, borderTop:`1px solid ${G.border}`, fontSize:14, fontWeight:700, color:G.text }}>📍 Address</h4>
+          <Field label="Current Address"><FTextarea value={form.currentAddress} onChange={e=>setForm(f=>({...f,currentAddress:e.target.value}))} /></Field>
+          <Field label="Permanent Address"><FTextarea value={form.permanentAddress} onChange={e=>setForm(f=>({...f,permanentAddress:e.target.value}))} /></Field>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Country"><FInput value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))} /></Field>
+            <Field label="State"><FInput value={form.state} onChange={e=>setForm(f=>({...f,state:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16 }}>
+            <Field label="District"><FInput value={form.district} onChange={e=>setForm(f=>({...f,district:e.target.value}))} /></Field>
+            <Field label="City"><FInput value={form.city} onChange={e=>setForm(f=>({...f,city:e.target.value}))} /></Field>
+            <Field label="Pincode"><FInput value={form.pincode} onChange={e=>setForm(f=>({...f,pincode:e.target.value}))} /></Field>
+          </div>
+
+          {/* NEW — Employment (Phase 1) */}
+          <h4 style={{ margin:"18px 0 14px", paddingTop:14, borderTop:`1px solid ${G.border}`, fontSize:14, fontWeight:700, color:G.text }}>💼 Employment</h4>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Joining Date"><FInput type="date" value={form.joiningDate} onChange={e=>setForm(f=>({...f,joiningDate:e.target.value}))} /></Field>
+            <Field label="Confirmation Date"><FInput type="date" value={form.confirmationDate} onChange={e=>setForm(f=>({...f,confirmationDate:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Probation Period (months)"><FInput type="number" value={form.probationPeriodMonths} onChange={e=>setForm(f=>({...f,probationPeriodMonths:e.target.value}))} /></Field>
+            <Field label="Employment Type">
+              <FSelect value={form.employmentType} onChange={e=>setForm(f=>({...f,employmentType:e.target.value}))}>
+                <option value="">Please Select</option><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Intern</option>
+              </FSelect>
+            </Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Branch"><FInput value={form.branch} onChange={e=>setForm(f=>({...f,branch:e.target.value}))} /></Field>
+            <Field label="Office Location"><FInput value={form.officeLocation} onChange={e=>setForm(f=>({...f,officeLocation:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Notice Period (days)"><FInput type="number" value={form.noticePeriodDays} onChange={e=>setForm(f=>({...f,noticePeriodDays:e.target.value}))} /></Field>
+            <Field label="Reporting Manager ID"><FInput type="number" value={form.reportingManagerId} onChange={e=>setForm(f=>({...f,reportingManagerId:e.target.value}))} placeholder="Employee ID of manager" /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Resignation Date"><FInput type="date" value={form.resignationDate} onChange={e=>setForm(f=>({...f,resignationDate:e.target.value}))} /></Field>
+            <Field label="Exit Date"><FInput type="date" value={form.exitDate} onChange={e=>setForm(f=>({...f,exitDate:e.target.value}))} /></Field>
+          </div>
+          <Field label="Reason for Leaving"><FTextarea value={form.reasonForLeaving} onChange={e=>setForm(f=>({...f,reasonForLeaving:e.target.value}))} /></Field>
+
+          {/* NEW — Salary Information (Phase 1) */}
+          <h4 style={{ margin:"18px 0 14px", paddingTop:14, borderTop:`1px solid ${G.border}`, fontSize:14, fontWeight:700, color:G.text }}>💰 Salary Information</h4>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Salary Structure"><FInput value={form.salaryStructure} onChange={e=>setForm(f=>({...f,salaryStructure:e.target.value}))} /></Field>
+            <Field label="CTC"><FInput type="number" value={form.ctc} onChange={e=>setForm(f=>({...f,ctc:e.target.value}))} placeholder="₹0" /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16 }}>
+            <Field label="PF Number"><FInput value={form.pfNumber} onChange={e=>setForm(f=>({...f,pfNumber:e.target.value}))} /></Field>
+            <Field label="ESI Number"><FInput value={form.esiNumber} onChange={e=>setForm(f=>({...f,esiNumber:e.target.value}))} /></Field>
+            <Field label="UAN Number"><FInput value={form.uanNumber} onChange={e=>setForm(f=>({...f,uanNumber:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Professional Tax"><FInput type="number" value={form.professionalTax} onChange={e=>setForm(f=>({...f,professionalTax:e.target.value}))} /></Field>
+            <Field label="Overtime Rate"><FInput type="number" value={form.overtimeRate} onChange={e=>setForm(f=>({...f,overtimeRate:e.target.value}))} /></Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Bank Name"><FInput value={form.bankName} onChange={e=>setForm(f=>({...f,bankName:e.target.value}))} /></Field>
+            <Field label="Salary Payment Mode">
+              <FSelect value={form.salaryPaymentMode} onChange={e=>setForm(f=>({...f,salaryPaymentMode:e.target.value}))}>
+                <option value="">Please Select</option><option>Bank Transfer</option><option>Cash</option><option>Cheque</option>
+              </FSelect>
+            </Field>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+            <Field label="Account Number"><FInput value={form.bankAccountNumber} onChange={e=>setForm(f=>({...f,bankAccountNumber:e.target.value}))} /></Field>
+            <Field label="IFSC"><FInput value={form.bankIfsc} onChange={e=>setForm(f=>({...f,bankIfsc:e.target.value}))} /></Field>
+          </div>
+
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:8 }}>
             <GreenBtn onClick={save}>{editingId ? "Update" : "Save"}</GreenBtn>
             <DarkBtn onClick={()=>{setModal(false); setEditingId(null);}}>Close</DarkBtn>
           </div>
@@ -3314,4 +3628,4 @@ export function HRMRoutes() {
 
 export function EssentialsRoutes() {
   return <Essentials />;
-}
+} 

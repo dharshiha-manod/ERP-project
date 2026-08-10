@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../pages/ThemeContext";       // ← NEW
 import ThemeSwitcher from "./ThemeSwitcher";            // ← NEW
+import IndustrySwitcher from "./IndustrySwitcher";      // ← NEW: switch active industry workspace
 import { useBusiness } from "../context/BusinessContext"; // ← NEW
 import { usePermissions } from "../context/PermissionsContext"; // ← NEW
 
@@ -129,13 +130,17 @@ function Calculator() {
 const BASES_LOCAL = ["http://localhost:5000/api","http://localhost:3000/api","http://127.0.0.1:5000/api"];
 async function apiFetchLocal(path) {
   const token = localStorage.getItem("manod_token");
+  const industryId = localStorage.getItem("manod_active_industry_id");
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(industryId ? { "X-Industry-Id": industryId } : {}),
+  };
   for (const base of BASES_LOCAL) {
     try {
-      const r = await fetch(`${base}${path}`, { headers: token ? { Authorization:`Bearer ${token}` } : {} });
+      const r = await fetch(`${base}${path}`, { headers });
       if (r.ok) return await r.json();
-    } catch (e) { /* try next base */ }
+    } catch (e) {}
   }
-  return null;
 }
 
 function getRangeFor(filter) {
@@ -507,8 +512,11 @@ const only = (setter) => () => { closeAll(); setter((p) => !p); };
           <span style={{ fontWeight: 700, fontSize: "15px", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {businessName}
           </span>
-          <span title="Online" style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 7px #4ade80", flexShrink: 0 }} />
+      <span title="Online" style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 7px #4ade80", flexShrink: 0 }} />
         </div>
+
+        {/* Industry workspace switcher */}
+        <IndustrySwitcher />
 
         {/* Today's Profit */}
         <button onClick={() => { closeAll(); setProfitOpen(true); }} style={tbBtn}

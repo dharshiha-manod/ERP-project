@@ -14,6 +14,12 @@ const getAuthToken = () => {
   return token;
 };
 
+// ── Industry Workspace Isolation — matches productAPI.js / purchaseAPI.js ──
+const getIndustryHeader = () => {
+  const industryId = localStorage.getItem('manod_active_industry_id');
+  return industryId ? { 'X-Industry-Id': industryId } : {};
+};
+
 const apiFetch = async (url, options = {}) => {
   const token = getAuthToken();
   const response = await fetch(url, {
@@ -21,6 +27,7 @@ const apiFetch = async (url, options = {}) => {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
+      ...getIndustryHeader(),
       ...options.headers,
     },
   });
@@ -81,6 +88,35 @@ export const updateContact = async (id, payload) => {
 // ── DELETE CONTACT ──
 export const deleteContact = async (id) => {
   return apiFetch(`${ENDPOINT}/${id}`, { method: 'DELETE' });
+};
+
+// ── OUTSTANDING (Receivable/Payable, opening balance + real transactions) ──
+export const getContactOutstanding = async (id) => {
+  return apiFetch(`${ENDPOINT}/${id}/outstanding`);
+};
+
+// ── STATEMENT (full ledger with running balance) ──
+export const getContactStatement = async (id, side) => {
+  const query = side ? `?side=${side}` : '';
+  const data = await apiFetch(`${ENDPOINT}/${id}/statement${query}`);
+  return data.statement;
+};
+
+// ── CONTACT LEDGER (purchase/sale history, used by Reports "Send Ledger") ──
+export const getContactLedger = async (id) => {
+  return apiFetch(`${ENDPOINT}/${id}/ledger`);
+};
+
+// ── RECORD A STANDALONE PAYMENT (opening balance settlement, advance/lump-sum) ──
+// direction: 'in' (customer paid us) | 'out' (we paid supplier) — optional,
+// inferred server-side from the contact's type if omitted.
+export const recordContactPayment = async (id, payload) => {
+  return apiFetch(`${ENDPOINT}/${id}/payments`, { method: 'POST', body: JSON.stringify(payload) });
+};
+
+// ── SALES-SIDE CUSTOMER PAYMENT (FIFO invoice allocation) ──
+export const recordSalesPayment = async (id, payload) => {
+  return apiFetch(`${ENDPOINT}/${id}/sales-payments`, { method: 'POST', body: JSON.stringify(payload) });
 };
 
 // ── IMPORT CONTACTS (rows already parsed from CSV/Excel on the client) ──

@@ -281,10 +281,15 @@ useEffect(() => {
     if (pd.defaultCategory && !form.category && categories.some(c => c.value === pd.defaultCategory)) set("category", pd.defaultCategory);
     if (pd.defaultTax && form.tax === "None") set("tax", pd.defaultTax);
   }, [genSettings, units, categories]);
-  const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
   const gpAuthHeaders = () => {
     const token = localStorage.getItem("manod_token");
-    return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    const industryId = localStorage.getItem("manod_active_industry_id");
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(industryId ? { "X-Industry-Id": industryId } : {}),
+    };
   };
 
   useEffect(() => {
@@ -523,7 +528,7 @@ exc_tax_sell:           form.excTaxSell || 0,
           {/* Product Name */}
           <div style={f.field}>
             <label style={f.lbl}>Product Name *</label>
-            <input style={f.inp} placeholder="e.g. Dell Laptop" value={form.name}
+            <input style={f.inp} placeholder="" value={form.name}
               onChange={e => set("name", e.target.value)}/>
           </div>
 

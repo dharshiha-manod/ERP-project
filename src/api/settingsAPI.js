@@ -12,12 +12,36 @@ const API_BASE = import.meta.env.VITE_API_URL
 const getToken = () => localStorage.getItem('manod_token');
 // ── GENERAL SETTINGS ───────────────────────────────────────────
 // NEW
+// NEW
+const getIndustryId = () => localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx
+
+// NEW — shared header builder for every industry-scoped Settings endpoint
+// (Tax Rates, Locations, Printers, Barcode, Invoice). Business Settings/Logo
+// intentionally do NOT use this — those stay global across industries.
+const industryHeaders = (extra = {}) => {
+  const industryId = getIndustryId();
+  return {
+    Authorization: `Bearer ${getToken()}`,
+    ...(industryId ? { "x-industry-id": industryId } : {}),
+    ...extra,
+  };
+};
+
+// NEW
 export const getGeneralSettings = async () => {
   try {
     const token = localStorage.getItem("manod_token");
-    const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings/general`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const industryId = localStorage.getItem("manod_active_industry_id");
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings/general?t=${Date.now()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(industryId ? { "x-industry-id": industryId } : {}),
+        },
+        cache: 'no-store',
+      }
+    );
     const data = await res.json();
     return data;
   } catch (error) {
@@ -25,12 +49,18 @@ export const getGeneralSettings = async () => {
   }
 };
 
+// NEW
 export const updateGeneralSettings = async (payload) => {
   try {
     const token = localStorage.getItem("manod_token");
+    const industryId = localStorage.getItem("manod_active_industry_id");
     const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings/general`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(industryId ? { "x-industry-id": industryId } : {}),
+      },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
@@ -39,12 +69,11 @@ export const updateGeneralSettings = async (payload) => {
     return { success: false, message: error.message };
   }
 };
-
 // ─── TAX RATES ──────────────────────────────────────────────
 export const getTaxRates = async () => {
   try {
     const res = await fetch(`${API_BASE}/tax-rates`, {
-      headers: { 'Authorization': `Bearer ${getToken()}` }
+     headers: industryHeaders()
     });
     const json = await res.json();
     return json;

@@ -13,6 +13,8 @@ const client = axios.create({ baseURL: BASE_URL });
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("manod_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const industryId = localStorage.getItem("manod_active_industry_id");
+  if (industryId) config.headers["X-Industry-Id"] = industryId;
   return config;
 });
 

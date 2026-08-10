@@ -63,6 +63,11 @@ export const getMySalesTarget = () => request('GET', '/ess/sales-target');
 // ── MY PAYROLL / PAYSLIPS ───────────────────────────────────
 export const getMyPayroll      = ()   => request('GET', '/ess/payroll');
 export const getMyPayrollItems = (id) => request('GET', `/ess/payroll/${id}/items`);
+
+// Phase 6 — My Documents / Education / Timeline
+export const getMyDocuments = () => request('GET', '/ess/documents');
+export const getMyEducation = () => request('GET', '/ess/education');
+export const getMyTimeline  = () => request('GET', '/ess/timeline');
 export const getMyNotifications        = () => request('GET', '/ess/notifications');
 export const markNotificationSeen      = (id) => request('PATCH', `/ess/notifications/${id}/seen`);
 export const markAllNotificationsSeen  = () => request('PATCH', '/ess/notifications/seen-all');

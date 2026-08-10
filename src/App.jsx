@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { ThemeProvider } from "./pages/ThemeContext";
 import { PermissionsProvider, usePermissions } from "./context/PermissionsContext";
 import { BusinessProvider } from "./context/BusinessContext";
+import { IndustryProvider } from "./context/IndustryContext";
 import { FEATURE_PERM_MAP } from "./featurePermissionMap";
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
@@ -272,8 +273,9 @@ function AppLayout() {
 // ─── Root App ─────────────────────────────────────────────────────────────
 function App() {
   return (
-    <PermissionsProvider>
+ <PermissionsProvider>
       <BusinessProvider>
+      <IndustryProvider>
       <ThemeProvider>
         <BrowserRouter>
           <Routes>
@@ -283,6 +285,7 @@ function App() {
           </Routes>
    </BrowserRouter>
       </ThemeProvider>
+      </IndustryProvider>
       </BusinessProvider>
     </PermissionsProvider>
   );

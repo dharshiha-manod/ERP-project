@@ -5,6 +5,8 @@ import {
   getAllContacts, getContactById as apiGetContactById, createContact as apiCreateContact, updateContact as apiUpdateContact,
   deleteContact as apiDeleteContact, getContactStats, getAllGroups, createGroup as apiCreateGroup,
   updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup, importContacts as apiImportContacts, parseCSVFile,
+  getContactOutstanding as apiGetContactOutstanding, recordContactPayment as apiRecordContactPayment,
+  getContactStatement as apiGetContactStatement, recordSalesPayment as apiRecordSalesPayment,
 } from "../api/contactsAPI";
 import { usePermissions } from "../context/PermissionsContext";
 
@@ -662,6 +664,105 @@ function PaginationRow({ page, setPage, showEntries, total }) {
 // ─── SUPPLIERS PAGE ───────────────────────────────────────────────────────────
 // ─── Shared Contact Detail Modal ──────────────────────────────────────────────
 function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
+  // ── Real outstanding — opening balance + actual invoice/purchase/payment
+  // transactions, from accountingService (single source of truth, same
+  // function used by the Sell credit-limit check, Reports, and Statement).
+  // NOT the static c.openingBalance field — that alone was the bug.
+  const [outstanding, setOutstanding] = useState(null);
+  const [outstandingLoading, setOutstandingLoading] = useState(true);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("Cash");
+  const [payNote, setPayNote] = useState("");
+  const [paySubmitting, setPaySubmitting] = useState(false);
+  const [payError, setPayError] = useState("");
+  const [payResult, setPayResult] = useState(null); // last FIFO allocation result, shown after a customer payment
+
+  // ── Statement / Ledger tab ──
+  const [activeTab, setActiveTab] = useState("overview"); // 'overview' | 'statement'
+  const [statement, setStatement] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const [statementError, setStatementError] = useState("");
+
+  const loadOutstanding = useCallback(async () => {
+    if (!c?.id) return;
+    setOutstandingLoading(true);
+    try {
+      const data = await apiGetContactOutstanding(c.id);
+      setOutstanding(data);
+    } catch (err) {
+      console.error("Failed to load outstanding:", err.message);
+      setOutstanding(null);
+    } finally {
+      setOutstandingLoading(false);
+    }
+  }, [c?.id]);
+
+  useEffect(() => { loadOutstanding(); }, [loadOutstanding]);
+
+  const isCustomer = c.contactType === "Customers" || c.contactType === "Customer" || c.contactType === "Both";
+  const isSupplier = c.contactType === "Suppliers" || c.contactType === "Supplier" || c.contactType === "Both";
+  const custData = outstanding?.customer;
+  const supData = outstanding?.supplier;
+
+  const loadStatement = useCallback(async () => {
+    if (!c?.id) return;
+    setStatementLoading(true);
+    setStatementError("");
+    try {
+      const side = isSupplier && !isCustomer ? "supplier" : "customer";
+      const data = await apiGetContactStatement(c.id, side);
+      setStatement(data);
+    } catch (err) {
+      setStatementError(err.message || "Failed to load statement");
+      setStatement(null);
+    } finally {
+      setStatementLoading(false);
+    }
+  }, [c?.id, isCustomer, isSupplier]);
+
+  useEffect(() => {
+    if (activeTab === "statement" && !statement) loadStatement();
+  }, [activeTab, statement, loadStatement]);
+
+  // Customer payments use the dedicated Sales-side FIFO endpoint (applies
+  // oldest-invoice-first); supplier payments keep the existing generic
+  // opening-balance/advance endpoint since FIFO purchase allocation is out
+  // of scope here.
+  const submitPayment = async () => {
+    setPayError("");
+    setPayResult(null);
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) { setPayError("Enter a valid amount"); return; }
+    setPaySubmitting(true);
+    try {
+      const useCustomerFIFO = isCustomer && !(isSupplier && !isCustomer);
+      if (useCustomerFIFO) {
+        const result = await apiRecordSalesPayment(c.id, {
+          amount: amt,
+          paymentMethod: payMethod,
+          note: payNote || undefined,
+          allowOverpayAsAdvance: true,
+        });
+        setPayResult(result);
+      } else {
+        await apiRecordContactPayment(c.id, {
+          amount: amt,
+          paymentMethod: payMethod,
+          note: payNote || undefined,
+          direction: "out",
+        });
+      }
+      setPayAmount(""); setPayNote("");
+      await loadOutstanding();
+      setStatement(null); // force statement reload with fresh data next time it's opened
+    } catch (err) {
+      setPayError(err.message || "Failed to record payment");
+    } finally {
+      setPaySubmitting(false);
+    }
+  };
+
   return (
     <div style={overlayStyle}>
       <div style={{ background: "#fff", borderRadius: 14, width: "min(680px, 96vw)", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
@@ -682,6 +783,49 @@ function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
         </div>
 
         <div style={{ padding: 28 }}>
+          {/* ── Real outstanding card — replaces the old static-only display ── */}
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "16px 18px", marginBottom: 20 }}>
+            {outstandingLoading ? (
+              <div style={{ fontSize: 13, color: "#6b7280" }}>Loading outstanding…</div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: (isCustomer && isSupplier) ? "1fr 1fr" : "1fr", gap: 16 }}>
+                  {isCustomer && custData && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Customer Outstanding (Receivable)</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: "#166534" }}>₹{custData.total.toFixed(2)}</div>
+                      <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>
+                        Opening ₹{custData.openingBalance.toFixed(2)} + Invoiced ₹{custData.invoiced.toFixed(2)} − Paid ₹{custData.paid.toFixed(2)}
+                      </div>
+                      {custData.creditLimit > 0 && (
+                        <div style={{ fontSize: 12, color: "#2563eb", marginTop: 4, fontWeight: 600 }}>
+                          Available credit: ₹{custData.availableCredit.toFixed(2)} of ₹{custData.creditLimit.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {isSupplier && supData && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#991b1b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Supplier Payable</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: "#991b1b" }}>₹{supData.total.toFixed(2)}</div>
+                      <div style={{ fontSize: 12, color: "#4b5563", marginTop: 4 }}>
+                        Opening ₹{supData.openingBalance.toFixed(2)} + Purchased ₹{supData.purchased.toFixed(2)} − Paid ₹{supData.paid.toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {((custData && custData.total > 0) || (supData && supData.total > 0)) && (
+                  <button
+                    onClick={() => setShowPayModal(true)}
+                    style={{ marginTop: 14, background: GREEN, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Record Payment
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
             {[
               { label: "Opening Balance", value: c.openingBalance, color: "#16a34a" },
@@ -695,6 +839,156 @@ function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
             ))}
           </div>
 
+          {showPayModal && (
+            <div style={{ ...overlayStyle, zIndex: 1100 }}>
+              <div style={{ background: "#fff", borderRadius: 12, width: "min(440px, 92vw)", padding: 24, boxShadow: "0 24px 64px rgba(0,0,0,0.25)" }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Record Payment — {c.name}</div>
+                {payError && <div style={{ background: "#fef2f2", color: "#991b1b", padding: "8px 12px", borderRadius: 6, fontSize: 13, marginBottom: 12 }}>{payError}</div>}
+
+                {payResult ? (
+                  <div>
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 6 }}>Payment applied (FIFO)</div>
+                      {payResult.allocations?.length > 0 ? payResult.allocations.map((a) => (
+                        <div key={a.invoiceId} style={{ fontSize: 12, color: "#374151", display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+                          <span>{a.invoiceNo || `Invoice #${a.invoiceId}`}</span>
+                          <span>₹{a.appliedAmount.toFixed(2)} applied · ₹{a.remainingBalance.toFixed(2)} left</span>
+                        </div>
+                      )) : (
+                        <div style={{ fontSize: 12, color: "#6b7280" }}>No open invoices — full amount credited as advance.</div>
+                      )}
+                      {payResult.advanceCredited > 0 && (
+                        <div style={{ fontSize: 12, color: "#7c3aed", marginTop: 6, fontWeight: 600 }}>
+                          ₹{payResult.advanceCredited.toFixed(2)} credited to advance balance
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button onClick={() => { setShowPayModal(false); setPayResult(null); }} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: GREEN, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Done</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Amount (₹)</label>
+                    <input type="number" min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0.00"
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #e5e7eb", marginBottom: 12, fontSize: 14 }} />
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Payment Method</label>
+                    <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #e5e7eb", marginBottom: 12, fontSize: 14 }}>
+                      <option>Cash</option><option>Bank</option><option>UPI</option><option>Card</option><option>Other</option>
+                    </select>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Note (optional)</label>
+                    <input value={payNote} onChange={(e) => setPayNote(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #e5e7eb", marginBottom: 8, fontSize: 14 }} />
+                    {isCustomer && (
+                      <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 12 }}>Applied oldest-invoice-first (FIFO). Any excess is credited to advance balance.</div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button onClick={() => setShowPayModal(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                      <button disabled={paySubmitting} onClick={submitPayment} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: GREEN, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: paySubmitting ? 0.6 : 1 }}>
+                        {paySubmitting ? "Saving…" : "Save Payment"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Overview / Statement tabs ── */}
+          <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #f3f4f6", marginBottom: 18 }}>
+            {["overview", "statement"].map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "8px 16px", border: "none", background: "none", cursor: "pointer",
+                  fontSize: 13, fontWeight: 700, textTransform: "capitalize",
+                  color: activeTab === tab ? GREEN : "#9ca3af",
+                  borderBottom: activeTab === tab ? `2px solid ${GREEN}` : "2px solid transparent",
+                }}>
+                {tab === "statement" ? "Statement / Ledger" : "Overview"}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "statement" ? (
+            <div style={{ marginBottom: 24 }}>
+              {statementLoading ? (
+                <div style={{ fontSize: 13, color: "#6b7280" }}>Loading statement…</div>
+              ) : statementError ? (
+                <div style={{ background: "#fef2f2", color: "#991b1b", padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{statementError}</div>
+              ) : statement ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                      Outstanding: ₹{Number(statement.summary?.total || 0).toFixed(2)}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => {
+                          const cols = ["date", "type", "ref", "debit", "credit", "runningBalance"];
+                          const csv = toCSV(statement.lines.map(l => ({
+                            date: l.date ? new Date(l.date).toLocaleDateString("en-IN") : "-",
+                            type: l.type, ref: l.ref,
+                            debit: Number(l.debit || 0).toFixed(2), credit: Number(l.credit || 0).toFixed(2),
+                            runningBalance: Number(l.runningBalance || 0).toFixed(2),
+                          })), cols);
+                          downloadBlob(csv, `${c.name.replace(/\s+/g, "_")}_statement.csv`, "text/csv");
+                        }}
+                        style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                      >
+                        Export CSV
+                      </button>
+                      <button
+                        onClick={() => {
+                          const rows = statement.lines.map(l => `<tr>
+                            <td>${l.date ? new Date(l.date).toLocaleDateString("en-IN") : "-"}</td>
+                            <td>${l.type}</td><td>${l.ref}</td>
+                            <td>${Number(l.debit || 0).toFixed(2)}</td>
+                            <td>${Number(l.credit || 0).toFixed(2)}</td>
+                            <td>${Number(l.runningBalance || 0).toFixed(2)}</td>
+                          </tr>`).join("");
+                          printHTML(`Statement — ${c.name}`,
+                            `<table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>${rows}</tbody></table>`
+                          );
+                        }}
+                        style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                      >
+                        Print / PDF
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid #f3f4f6", borderRadius: 8 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "#f9fafb", position: "sticky", top: 0 }}>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Date</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Description</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>Reference</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px" }}>Debit</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px" }}>Credit</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px" }}>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {statement.lines.map((l, i) => (
+                          <tr key={i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                            <td style={{ padding: "8px 10px" }}>{l.date ? new Date(l.date).toLocaleDateString("en-IN") : "-"}</td>
+                            <td style={{ padding: "8px 10px" }}>{l.type}</td>
+                            <td style={{ padding: "8px 10px" }}>{l.ref}</td>
+                            <td style={{ padding: "8px 10px", textAlign: "right" }}>{Number(l.debit || 0) > 0 ? Number(l.debit).toFixed(2) : ""}</td>
+                            <td style={{ padding: "8px 10px", textAlign: "right" }}>{Number(l.credit || 0) > 0 ? Number(l.credit).toFixed(2) : ""}</td>
+                            <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>{Number(l.runningBalance || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: "#6b7280" }}>No statement data.</div>
+              )}
+            </div>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
             {[
               { label: "Mobile",       value: c.mobile },
@@ -707,8 +1001,26 @@ function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
               { label: "Added On",      value: c.addedOn },
               { label: "Assigned To",   value: c.assignedTo || "—" },
               { label: "Country / ZIP", value: [c.country, c.zip].filter(Boolean).join(" - ") || "—" },
-              { label: "Total Purchase Due", value: c.totalPurchaseDue },
-              { label: "Total Purchase Return Due", value: c.totalPurchaseReturnDue },
+              // Was reading the static c.totalPurchaseDue field, which the
+              // backend only ever computes for Suppliers (fetchContactById
+              // skips it entirely for Customers, leaving it stuck at the
+              // stored — and never updated — DB column value of 0). Also,
+              // even the supplier-side static value ignored opening_balance
+              // and purchase_returns. Switched both to the same live
+              // `outstanding` data (opening balance + invoices/purchases −
+              // payments − returns) this modal already fetches and uses
+              // elsewhere for the Statement tab and payment flow — single
+              // source of truth, correct for both contact types.
+              {
+                label: isCustomer ? "Total Sale Due" : "Total Purchase Due",
+                value: outstandingLoading
+                  ? "Loading…"
+                  : `₹${Number((isCustomer ? custData?.total : supData?.total) || 0).toFixed(2)}`,
+              },
+              ...(isSupplier ? [{
+                label: "Total Purchase Return Due",
+                value: outstandingLoading ? "Loading…" : `₹${Number(supData?.returns || 0).toFixed(2)}`,
+              }] : []),
             ].map((row) => (
               <div key={row.label} style={{ padding: "12px 0", borderBottom: "1px solid #f3f4f6", display: "flex", flexDirection: "column", gap: 2 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>{row.label}</span>
@@ -716,6 +1028,7 @@ function ContactDetailModal({ c, onClose, onEdit, canEdit }) {
               </div>
             ))}
           </div>
+          )}
 
           {c.persons?.length > 0 && (
             <div style={{ marginTop: 20 }}>
@@ -1128,10 +1441,15 @@ export function CustomerGroupsPage() {
 
   // NEW — real Selling Price Groups, for the "Linked Selling Price Group" dropdown
   const [sellingPriceGroups, setSellingPriceGroups] = useState([]);
-  const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
   const gpAuthHeaders = () => {
     const token = localStorage.getItem("manod_token");
-    return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    const industryId = localStorage.getItem("manod_active_industry_id");
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(industryId ? { "X-Industry-Id": industryId } : {}),
+    };
   };
   const loadSellingPriceGroups = useCallback(async () => {
     try {

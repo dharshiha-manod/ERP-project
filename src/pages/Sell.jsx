@@ -40,6 +40,7 @@ const BASES = [
 ];
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("manod_token");
+  const industryId = localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx
   for (const base of BASES) {
     try {
       const r = await fetch(`${base}${path}`, {
@@ -47,6 +48,7 @@ async function apiFetch(path, opts = {}) {
         headers: {
           ...(opts.headers || {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(industryId ? { "x-industry-id": industryId } : {}),
         },
         signal: AbortSignal.timeout(8000),
       });
@@ -1322,8 +1324,8 @@ const handleSave = async () => {
     });
 
   // Invoice number collided (409) — regenerate a fresh one and retry once.
-    // Only retry on an actual 409 conflict, not on validation/server errors —
-    // otherwise real bugs get masked as "just try a new number".
+    // Only auto-retry on an actual 409 conflict, not on validation/server
+    // errors — otherwise real bugs get masked as "just try a new number".
     if (!res && apiFetch.lastStatus === 409) {
       invNoToUse = genNo("INV");
       setInvoiceNo(invNoToUse);
@@ -1342,12 +1344,21 @@ const handleSave = async () => {
       });
     }
 
-    if (!res && apiFetch.lastStatus !== 409) {
+ if (!res) {
       setSaving(false);
+      // Whatever failed (500, network error, etc.), the invoice number that
+      // was just submitted is now "used" from the counter's perspective if
+      // the server got far enough to insert before rolling back, or is at
+      // minimum tainted for the user's next click. Regenerate it so a
+      // manual resubmit doesn't resend the identical invoiceNo and turn a
+      // real server error into a confusing 409 on the next attempt.
+      if (!invoiceNoTouched) {
+        invNoToUse = genNo("INV");
+        setInvoiceNo(invNoToUse);
+      }
       alert(`Save failed: ${apiFetch.lastMessage || "Unknown error — check server logs"}`);
       return;
     }
-
     if (res) {
       // This was a Convert-to-Invoice — remove the original draft/quotation
       // now that a real invoice has been created from it, so it doesn't
@@ -3839,6 +3850,7 @@ const handleImport = async () => {
   }
   setImporting(true);
   const token = localStorage.getItem("manod_token");
+  const industryId = localStorage.getItem("manod_active_industry_id");
   try {
     const rawText = await file.text();
     const normalizedCSV = buildNormalizedCSV(rawText, headerMap);
@@ -3849,7 +3861,10 @@ const handleImport = async () => {
       try {
         r = await fetch(`${base}/import/sales`, {
           method:"POST",
-          headers: token ? { Authorization:`Bearer ${token}` } : {},
+          headers: {
+            ...(token ? { Authorization:`Bearer ${token}` } : {}),
+            ...(industryId ? { "x-industry-id": industryId } : {}),
+          },
           body: form,
         });
         if (r.ok) break;

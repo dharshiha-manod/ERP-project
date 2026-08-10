@@ -8,11 +8,15 @@
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const MFG  = `${BASE}/manufacturing`;
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization:  `Bearer ${localStorage.getItem("manod_token") || ""}`,
-});
-
+// NEW
+const headers = () => {
+  const industryId = localStorage.getItem("manod_active_industry_id");
+  return {
+    "Content-Type": "application/json",
+    Authorization:  `Bearer ${localStorage.getItem("manod_token") || ""}`,
+    ...(industryId ? { "X-Industry-Id": industryId } : {}),
+  };
+};
 async function request(url, options = {}) {
   const res = await fetch(url, { headers: headers(), ...options });
   let body;

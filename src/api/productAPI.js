@@ -8,11 +8,13 @@
   const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   // ── Auth headers — matches PermissionsContext.jsx pattern ──
-  const authHeaders = () => {
+const authHeaders = () => {
     const token = localStorage.getItem('manod_token'); // ← FIXED: was 'token'
+    const industryId = localStorage.getItem('manod_active_industry_id');
     return {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(industryId ? { 'X-Industry-Id': industryId } : {}),
     };
   };
 

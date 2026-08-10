@@ -55,7 +55,16 @@ function useProductOptions() {
 
 // ─── Auto-ref generators (frontend fallback; backend auto-generates too) ──────
 const pad = (n, len = 4) => String(n).padStart(len, "0");
-const genRef = (prefix, list) => `${prefix}-${pad(list.length + 1)}`;
+const genRef = (prefix, list, field = "ref_no") => {
+  const maxNum = list.reduce((max, item) => {
+    const code = item?.[field];
+    if (!code) return max;
+    const match = String(code).match(/(\d+)$/); // grab trailing digits
+    const num = match ? parseInt(match[1], 10) : 0;
+    return num > max ? num : max;
+  }, 0);
+  return `${prefix}-${pad(maxNum + 1)}`;
+};
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -808,8 +817,7 @@ function BOMTab({ show }) {
 
   const totalCost = bom => bom.ingredients?.reduce((s, x) => s + (parseFloat(x.cost) || 0) * (parseFloat(x.quantity) || 0), 0) || 0;
   const fil = rows.filter(r => `${r.product_name} ${r.product_code}`.toLowerCase().includes(search.toLowerCase()));
-
-  const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows) }); setEdit(null); setModal(true); };
+const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "product_code") }); setEdit(null); setModal(true); };
   const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()] }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete BOM for "${r.product_name}"?`)) return;
@@ -1050,7 +1058,7 @@ function WorkOrdersTab({ show }) {
 
   const fil = rows.filter(r => (!fStatus || r.status === fStatus) && `${r.wo_number} ${r.product_name} ${r.assigned_team}`.toLowerCase().includes(search.toLowerCase()));
 
-  const openAdd = () => { setForm({ ...blank, wo_number: genRef("WO", rows) }); setEdit(null); setModal(true); };
+const openAdd = () => { setForm({ ...blank, wo_number: genRef("WO", rows, "wo_number") }); setEdit(null); setModal(true); };
   const openEdit = r => { setForm({ wo_number: r.wo_number, plan_id: r.plan_id || "", product_id: r.product_id || "", product_name: r.product_name, quantity: r.quantity, unit: r.unit, bom_id: r.bom_id || "", start_date: r.start_date?.slice(0, 10) || "", end_date: r.end_date?.slice(0, 10) || "", priority: r.priority, status: r.status, assigned_team: r.assigned_team || "", progress: r.progress || 0, notes: r.notes || "", resource_ids: r.resource_ids || [], machine_ids: r.machine_ids || [] }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.wo_number}"?`)) return;
@@ -1974,7 +1982,7 @@ function MachinesTab({ show }) {
 
   const fil = rows.filter(r => `${r.name} ${r.machine_code} ${r.type} ${r.location}`.toLowerCase().includes(search.toLowerCase()));
 
-  const openAdd = () => { setForm({ ...blank, machine_code: genRef("MCH", rows) }); setEdit(null); setModal(true); };
+ const openAdd = () => { setForm({ ...blank, machine_code: genRef("MCH", rows, "machine_code") }); setEdit(null); setModal(true); };
   const openEdit = r => { setForm({ name: r.name, machine_code: r.machine_code || "", type: r.type || "", location: r.location || "", manufacturer: r.manufacturer || "", model: r.model || "", purchase_date: r.purchase_date?.slice(0, 10) || "", status: r.status, last_maintenance: r.last_maintenance?.slice(0, 10) || "", next_maintenance: r.next_maintenance?.slice(0, 10) || "", notes: r.notes || "", rated_capacity: r.rated_capacity || "", rated_capacity_unit: r.rated_capacity_unit || "units/hr", power_rating: r.power_rating || "", serial_number: r.serial_number || "", warranty_expiry: r.warranty_expiry?.slice(0, 10) || "", install_date: r.install_date?.slice(0, 10) || "" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete "${r.name}"?`)) return;
@@ -2248,7 +2256,7 @@ const blank = { ref_no: "", machine_name: "", machine_id: "", maintenance_type: 
     if (!quickMachineName.trim()) { show("Machine name required.", "error"); return; }
     setSavingQuickMachine(true);
     try {
-      const created = await api("/machines", { method: "POST", body: JSON.stringify({ name: quickMachineName, machine_code: genRef("MCH", machines) }) });
+const created = await api("/machines", { method: "POST", body: JSON.stringify({ name: quickMachineName, machine_code: genRef("MCH", machines, "machine_code") }) });
       setMachines(m => [...m, created]);
       setForm(f => ({ ...f, machine_id: created.id, machine_name: created.name }));
       setShowQuickMachine(false);
