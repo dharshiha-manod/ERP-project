@@ -437,7 +437,7 @@ export default function TopHeader() {
   const navigate    = useNavigate();
   const { theme }   = useTheme();      // ← live theme colours
   const { business } = useBusiness();  // ← live business settings
-  const { clearPermissions } = usePermissions(); // ← needed so signOut can actually clear it
+const { clearPermissions, isAdmin } = usePermissions(); // ← isAdmin gates Industry Switcher + Today's Profit to admins only
 
   const businessName = business?.business_name || "Manodtechnologies";
   const [profitOpen,  setProfitOpen]  = useState(false);
@@ -515,18 +515,20 @@ const only = (setter) => () => { closeAll(); setter((p) => !p); };
       <span title="Online" style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 7px #4ade80", flexShrink: 0 }} />
         </div>
 
-        {/* Industry workspace switcher */}
-        <IndustrySwitcher />
+        {/* Industry workspace switcher — admin only */}
+        {isAdmin && <IndustrySwitcher />}
 
-        {/* Today's Profit */}
-        <button onClick={() => { closeAll(); setProfitOpen(true); }} style={tbBtn}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.26)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}>
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-          </svg>
-          Today's Profit
-        </button>
+        {/* Today's Profit — admin only */}
+        {isAdmin && (
+          <button onClick={() => { closeAll(); setProfitOpen(true); }} style={tbBtn}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.26)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}>
+            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            Today's Profit
+          </button>
+        )}
 
         {/* POS */}
         <button onClick={() => navigate("/pos")} style={{ ...tbBtn, border: "none" }}

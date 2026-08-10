@@ -169,10 +169,11 @@ const navItems = [
   { label: "Settings",               icon: Settings,     path: "/settings",      feature: FEATURES.SETTINGS },
   { label: "CRM",                    icon: HeartHandshake,path: "/crm",          feature: FEATURES.CRM },
 
-  {
+{
     label: "HRM", icon: BriefcaseBusiness, path: "/hrm", feature: FEATURES.HRM,
     children: [
       { label: "Dashboard",     path: "/hrm",                exact: true },
+      { label: "Employees",     path: "/hrm/employees" },
       { label: "Leave Type",    path: "/hrm/leave-type" },
       { label: "Leave",         path: "/hrm/leave",          exact: true },
       { label: "Attendance",    path: "/hrm/attendance" },

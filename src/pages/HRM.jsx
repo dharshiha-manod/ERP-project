@@ -3627,5 +3627,18 @@ export function HRMRoutes() {
 }
 
 export function EssentialsRoutes() {
-  return <Essentials />;
+  return (
+    <EssLayout>
+      <Routes>
+        <Route path="/"                element={<EssentialsDashboard />} />
+        <Route path="/todo"            element={<EssTodoPage />} />
+        <Route path="/document"        element={<EssDocumentPage />} />
+        <Route path="/memos"           element={<EssMemosPage />} />
+        <Route path="/reminders"       element={<EssRemindersPage />} />
+        <Route path="/messages"        element={<EssMessagesPage />} />
+        <Route path="/knowledge-base"  element={<EssKnowledgePage />} />
+        <Route path="/settings"        element={<EssentialsSettingsPage />} />
+      </Routes>
+    </EssLayout>
+  );
 } 
