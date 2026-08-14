@@ -5,16 +5,16 @@ import { useIndustry } from "../context/IndustryContext";
 // label a user picks here matches what they'd see there.
 
 const INDUSTRY_TYPE_OPTIONS = [
-  ["general_manufacturing",     "General Manufacturing"],
-  ["automobile_manufacturing",  "Automobile Manufacturing"],
-  ["jewellery_manufacturing",   "Jewellery Manufacturing"],
-  ["furniture_manufacturing",   "Furniture Manufacturing"],
-  ["textile_manufacturing",     "Textile Manufacturing"],
-  ["electronics_manufacturing", "Electronics Manufacturing"],
-  ["food_manufacturing",        "Food Manufacturing"],
-  ["garments_manufacturing",    "Garments Manufacturing"],
+  ["general_manufacturing",                 "General Manufacturing"],
+  ["automobile_manufacturing",              "Automobile Manufacturing"],
+  ["jewellery_manufacturing",               "Jewellery Manufacturing"],
+  ["furniture_manufacturing",               "Furniture Manufacturing"],
+  ["textile_manufacturing",                 "Textile Manufacturing"],
+  ["electronics_manufacturing",             "Electronics Manufacturing"],
+  ["food_manufacturing",                    "Food Manufacturing"],
+  ["garments_manufacturing",                "Garments Manufacturing"],
+  ["engineering_components_manufacturing",  "Engineering Components Manufacturing"],
 ];
-
 function useOutsideClick(ref, cb) {
   useEffect(() => {
     const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) cb(); };

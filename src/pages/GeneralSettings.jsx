@@ -107,6 +107,21 @@ const INDUSTRY_PRESETS = {
       size: true, color: true, fabric_type: true, season: true, gender: true,
     },
   },
+  // NEW — Engineering Components Manufacturing
+  engineering_components_manufacturing: {
+    default_unit: "Piece",
+    default_category: "CNC Components",
+    // Categories/types only — no predefined products. Admins add their own
+    // products under these on the Products page.
+    suggested_categories: [
+      "CNC Components", "Shafts", "Gears", "Fasteners", "Bearings",
+      "Bushes", "Valves", "Flanges", "Precision Components", "Tooling",
+    ],
+    industry_fields: {
+      material_grade: true, drawing_number: true, tolerance: true,
+      surface_finish: true, heat_treatment: true,
+    },
+  },
 };
 
 const INDUSTRY_LABELS = {
@@ -118,6 +133,8 @@ const INDUSTRY_LABELS = {
   electronics_manufacturing: "Electronics Manufacturing",
   food_manufacturing: "Food Manufacturing",
   garments_manufacturing: "Garments Manufacturing",
+  // NEW
+  engineering_components_manufacturing: "Engineering Components Manufacturing",
 };
 
 // NEW
@@ -130,6 +147,9 @@ const INDUSTRY_FIELD_LABELS = {
   wood_type: "Wood Type", material: "Material", dimensions: "Dimensions", finish: "Finish",
   fabric_type: "Fabric Type", gsm: "GSM", roll_length: "Roll Length", pattern: "Pattern", color: "Color",
   size: "Size", season: "Season", gender: "Gender",
+  // NEW — Engineering Components Manufacturing
+  material_grade: "Material Grade", drawing_number: "Drawing Number", tolerance: "Tolerance",
+  surface_finish: "Surface Finish", heat_treatment: "Heat Treatment",
 };
 
 // ─── Default form state ─────────────────────────────────────────────────────

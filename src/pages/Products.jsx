@@ -273,6 +273,44 @@ const pd = {
   const activeIndustryFieldKeys = Object.keys(industryFields).filter(k => industryFields[k]);
   const [customFieldValues, setCustomFieldValues] = useState(editProduct?.custom_fields || {});
   const setCF = (k, v) => setCustomFieldValues(c => ({ ...c, [k]: v }));
+
+  // NEW — Suggested category chips for the active Industry Type (categories/
+  // types only, never predefined products). Admin can still search/create
+  // any category freely; these are just quick-pick shortcuts.
+  const SUGGESTED_CATEGORIES_BY_INDUSTRY = {
+    engineering_components_manufacturing: [
+      "CNC Components", "Shafts", "Gears", "Fasteners", "Bearings",
+      "Bushes", "Valves", "Flanges", "Precision Components", "Tooling",
+    ],
+  };
+  const suggestedCategories = SUGGESTED_CATEGORIES_BY_INDUSTRY[genSettings?.industry_type] || [];
+  const [addingSuggestedCat, setAddingSuggestedCat] = useState(null);
+
+  const pickSuggestedCategory = async (catName) => {
+    const existing = categories.find(c => c.value.toLowerCase() === catName.toLowerCase());
+    if (existing) {
+      set("category", existing.value);
+      set("subCategory", "");
+      set("hsnCode", "");
+      return;
+    }
+    setAddingSuggestedCat(catName);
+    try {
+      const res = await categoriesAPI.create({ name: catName });
+      const created = res.category || res.data;
+      if (created?.name) {
+        setCategories(prev => [...prev, { value: created.name, label: created.name }]);
+        setAllCats(prev => [...prev, created]);
+        set("category", created.name);
+        set("subCategory", "");
+        set("hsnCode", "");
+      }
+    } catch (e) {
+      console.error("Suggested category create error:", e.message);
+    } finally {
+      setAddingSuggestedCat(null);
+    }
+  };
   // Auto-populate Default Unit / Default Category for NEW products only,
   // and only if the admin hasn't already typed something in.
 useEffect(() => {
@@ -613,12 +651,40 @@ exc_tax_sell:           form.excTaxSell || 0,
             <SearchableSelect options={brands} value={form.brand} onChange={v => set("brand", v)} placeholder="Search brand..."/>
           </div>
 
-          {/* Category - searchable */}
+        {/* Category - searchable */}
           <div style={f.field}>
             <label style={f.lbl}>Category</label>
      <SearchableSelect options={categories} value={form.category}
               onChange={v => { set("category", v); set("subCategory", ""); set("hsnCode", ""); }}
               placeholder="Search category..."/>
+            {suggestedCategories.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {suggestedCategories.map(cat => {
+                  const active = form.category === cat;
+                  const busy = addingSuggestedCat === cat;
+                  return (
+                    <button
+                      type="button"
+                      key={cat}
+                      disabled={busy}
+                      onClick={() => pickSuggestedCategory(cat)}
+                      title={categories.some(c => c.value.toLowerCase() === cat.toLowerCase())
+                        ? "Select this category"
+                        : "Add this category"}
+                      style={{
+                        padding: "4px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                        border: active ? "1px solid #1a6b3c" : "1px solid #ddd",
+                        background: active ? "#eafaf1" : "#f9fafb",
+                        color: active ? "#1a6b3c" : "#444",
+                        cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1,
+                      }}
+                    >
+                      {busy ? "Adding…" : cat}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
