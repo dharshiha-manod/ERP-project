@@ -41,6 +41,10 @@ const BASES = [
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("manod_token");
   const industryId = localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx
+  // Reset per-call so a stale status/message from a previous request can
+  // never be misread by the caller before this call actually finishes.
+  apiFetch.lastStatus = null;
+  apiFetch.lastMessage = null;
   for (const base of BASES) {
     try {
       const r = await fetch(`${base}${path}`, {
@@ -53,10 +57,15 @@ async function apiFetch(path, opts = {}) {
         signal: AbortSignal.timeout(8000),
       });
       if (r.ok) return await r.json();
-      const errBody = await r.json().catch(() => ({}));
-      const msg = errBody.message || errBody.error || `HTTP ${r.status}`;
+const errBody = await r.json().catch(() => ({}));
+const msg = errBody.error || errBody.message || `HTTP ${r.status}`;
       console.error(`[apiFetch] ${path} failed (${r.status}):`, msg);
-      return { __error: true, status: r.status, message: msg }; // caller can now tell WHY it failed
+      // Callers (e.g. the 409 invoice-number-collision retry in handleSave)
+      // read these off the function itself — they were never being set
+      // before, so that retry path could never trigger.
+      apiFetch.lastStatus = r.status;
+      apiFetch.lastMessage = msg;
+      return null; // caller treats any falsy return as "failed"; status/message carry the reason
    } catch (e) {
       // Network failures AND timeouts should both fall through to the
       // next base URL — only a genuine app-level throw should stop the loop.
@@ -65,6 +74,7 @@ async function apiFetch(path, opts = {}) {
       /* network-level failure only — try next base */
     }
   }
+  apiFetch.lastMessage = apiFetch.lastMessage || "Could not reach the server";
   return null;
 }
 // ── Module-level cache so products only load once per session ─────────────────
