@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "react-router-dom";
-import { fetchAllUsers } from "../api/userAPI";
+import { fetchAllUsers } from "../api/userApi";
 import {
   getAllContacts, getContactById as apiGetContactById, createContact as apiCreateContact, updateContact as apiUpdateContact,
   deleteContact as apiDeleteContact, getContactStats, getAllGroups, createGroup as apiCreateGroup,
