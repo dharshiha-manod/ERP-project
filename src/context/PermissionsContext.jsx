@@ -53,7 +53,7 @@ export function PermissionsProvider({ children }) {
     }
 
     try {
-      const res  = await fetch("http://localhost:5000/api/auth/my-permissions", {
+      const res  = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/auth/my-permissions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
