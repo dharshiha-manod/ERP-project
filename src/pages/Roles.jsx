@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef } from "react";
 import CreatableSelect from "react-select/creatable";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api`;
 
 const DEFAULT_PERMISSIONS = [
   { group: "Others",          items: ["View export to buttons (csv/excel/print/pdf) on tables","Payment Received","Payment Reminder"] },

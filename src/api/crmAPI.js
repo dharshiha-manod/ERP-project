@@ -4,7 +4,7 @@
  * We reshape to named keys so CRM.jsx can use res.lead, res.leads, etc.
  */
 
-const BASE = 'http://localhost:5000/api/crm';
+const BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/crm`;
 
 function authHeaders() {
   const token = localStorage.getItem('manod_token');

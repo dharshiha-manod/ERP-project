@@ -7,7 +7,7 @@
 
 const API_BASE = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api/settings`
-  : 'http://localhost:5000/api/settings';
+  : `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/settings`;
 
 const getToken = () => localStorage.getItem('manod_token');
 // ── GENERAL SETTINGS ───────────────────────────────────────────

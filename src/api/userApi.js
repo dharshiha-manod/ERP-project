@@ -3,7 +3,7 @@
 // Handles token expiry + all CRUD + reset password
 // ====================================================
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api`;
 // ✅ CORRECT
 const getToken = () => localStorage.getItem("manod_token");
 const getIndustryId = () => localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx

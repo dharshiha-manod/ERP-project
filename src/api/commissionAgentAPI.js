@@ -4,7 +4,7 @@
  * Frontend API calls to backend
  * ====================================================
  */
-const ENDPOINT = "http://localhost:5000/api/sales-commission-agents";
+const ENDPOINT = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/sales-commission-agents`;
 // ── Get auth token from localStorage ──
 const getAuthToken = () => {
   const token = localStorage.getItem('manod_token');

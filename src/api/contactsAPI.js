@@ -6,7 +6,7 @@
  * commissionAgentAPI.js
  * ====================================================
  */
-const ENDPOINT = "http://localhost:5000/api/contacts";
+const ENDPOINT = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/contacts`;
 
 const getAuthToken = () => {
   const token = localStorage.getItem('manod_token');

@@ -4,7 +4,7 @@
  * the other files in src/api/ (contactsAPI.js, expensesAPI.js, etc).
  */
 
-export const API_ORIGIN = "http://localhost:5000";
+export const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const API_BASE = `${API_ORIGIN}/api/essentials`;
 function authHeaders(json = true) {
   const token = localStorage.getItem("manod_token");
