@@ -52,6 +52,17 @@ export const createBOM = (data) => request(`${MFG}/bom`, { method: "POST", body:
 export const updateBOM = (id, data) => request(`${MFG}/bom/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const deleteBOM = (id) => request(`${MFG}/bom/${id}`, { method: "DELETE" });
 
+// Size-wise fabric consumption + cutting efficiency for a BOM.
+// sizes: [{ size: "M", consumption_per_unit: 1.2 }, ...] (same unit as the BOM, e.g. metres/kg)
+export const fetchBomSizes = (bomId) => request(`${MFG}/bom/${bomId}/sizes`);
+export const saveBomSizes  = (bomId, data) => request(`${MFG}/bom/${bomId}/sizes`, { method: "PUT", body: JSON.stringify(data) });
+
+// Expected-quantity calculator:
+//   Available Fabric ÷ Consumption per Size × Cutting Efficiency = Expected Qty
+// Pass { available_fabric, size } for one size, or omit size for every configured size.
+export const calculateExpectedQuantity = (bomId, data) =>
+  request(`${MFG}/bom/${bomId}/calculate`, { method: "POST", body: JSON.stringify(data) });
+
 // ══════════════════════════════════════════════════════════════════════════════
 // WORK ORDERS
 // ══════════════════════════════════════════════════════════════════════════════

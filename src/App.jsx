@@ -54,6 +54,7 @@ import "./App.css";
 import Accounting from "./pages/Accounting";
 import Notifications from "./pages/Notifications"; // adjust path as needed
 import EmployeeSelfService from "./pages/EmployeeSelfService";
+import CarbonFootprint from "./pages/carbonfoot";
 
 // ─── Auth helpers ──────────────────────────────────────────────────────────
 function isAuthenticated() {
@@ -185,6 +186,14 @@ function AppLayout() {
   element={
     <FeatureRoute feature={FEATURES.ACCOUNTING}>
       <Accounting />
+    </FeatureRoute>
+  }
+/>
+<Route
+  path="/carbon-footprint"
+  element={
+    <FeatureRoute feature={FEATURES.MANUFACTURING}>
+      <CarbonFootprint />
     </FeatureRoute>
   }
 />

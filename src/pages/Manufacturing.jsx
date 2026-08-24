@@ -783,11 +783,24 @@ function BOMTab({ show }) {
   const finishedProducts = products.filter(p => !p.item_type || p.item_type === "Finished Product" || p.item_type === "Semi-Finished Product");
   const rawMaterials = products.filter(p => !p.item_type || p.item_type === "Raw Material" || p.item_type === "Packing Material" || p.item_type === "Semi-Finished Product");
 
-  const blankI = () => ({ product_id: "", item_name: "", quantity: "", unit: "pcs", cost: "" });
-  const blank = { product_id: "", product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()] };
+   const blankI = () => ({ product_id: "", item_name: "", quantity: "", unit: "pcs", cost: "" });
+  const blankS = () => ({ size: "", consumption_per_unit: "" });
+  const blank = { product_id: "", product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()], size_consumption: [], cutting_efficiency: "92" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const si = (i, k, v) => setForm(f => ({ ...f, ingredients: f.ingredients.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+  const ss = (i, k, v) => setForm(f => ({ ...f, size_consumption: f.size_consumption.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+
+  // Expected quantity per size = Available Fabric (current_stock of the fabric
+  // ingredient, first raw-material row) ÷ Consumption per Size × Cutting Efficiency
+  const fabricIngredient = form.ingredients.find(x => x.product_id);
+  const fabricStock = fabricIngredient ? (products.find(p => String(p.id) === String(fabricIngredient.product_id))?.current_stock ?? 0) : 0;
+  const effPct = (parseFloat(form.cutting_efficiency) || 0) / 100;
+  const expectedBySize = form.size_consumption.map(sRow => {
+    const perUnit = parseFloat(sRow.consumption_per_unit) || 0;
+    const expected = perUnit > 0 ? Math.floor((fabricStock / perUnit) * effPct) : 0;
+    return { ...sRow, expected };
+  });
 
   // When an ingredient row's product changes, snapshot name/unit/cost from the product record
   const selectIngredientProduct = (i, productId) => {
@@ -818,7 +831,7 @@ function BOMTab({ show }) {
   const totalCost = bom => bom.ingredients?.reduce((s, x) => s + (parseFloat(x.cost) || 0) * (parseFloat(x.quantity) || 0), 0) || 0;
   const fil = rows.filter(r => `${r.product_name} ${r.product_code}`.toLowerCase().includes(search.toLowerCase()));
 const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "product_code") }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()] }); setEdit(r); setModal(true); };
+  const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()], size_consumption: r.size_consumption?.length ? r.size_consumption.map(x => ({ ...x })) : [], cutting_efficiency: r.cutting_efficiency ?? "92" }); setEdit(r); setModal(true); };
   const del = async r => {
     if (!confirm(`Delete BOM for "${r.product_name}"?`)) return;
     try { await api(`/bom/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
@@ -932,9 +945,42 @@ const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "p
                 <td style={{ padding: "4px 4px", width: 70 }}><input style={{ ...inp, fontSize: 12 }} value={ing.unit} onChange={e => si(i, "unit", e.target.value)} /></td>
                 <td style={{ padding: "4px 4px", width: 90 }}><input type="number" style={{ ...inp, fontSize: 12 }} value={ing.cost} onChange={e => si(i, "cost", e.target.value)} min={0} /></td>
                 <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, ingredients: f.ingredients.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
+               </tr>
+            ))}</tbody>
+          </table>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "20px 0 8px" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Size-wise Fabric Consumption</span>
+            <button onClick={() => setForm(f => ({ ...f, size_consumption: [...f.size_consumption, blankS()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Size</button>
+          </div>
+          {!fabricIngredient && (
+            <div style={{ fontSize: 12, color: C.gray500, marginBottom: 8, fontFamily: font }}>Select a raw material above (e.g. Fabric) first — its stock is used as "Available Fabric" below.</div>
+          )}
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+            <thead><tr style={{ background: C.gray50, borderBottom: `1px solid ${C.gray200}` }}>{["Size", `Consumption / pc (${fabricIngredient?.unit || "unit"})`, "Expected Qty", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+            <tbody>{expectedBySize.map((sRow, i) => (
+              <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}` }}>
+                <td style={{ padding: "4px 4px", width: 90 }}>
+                  <input style={{ ...inp, fontSize: 12 }} value={sRow.size} onChange={e => ss(i, "size", e.target.value)} placeholder="S / M / L / XL" />
+                </td>
+                <td style={{ padding: "4px 4px", width: 130 }}>
+                  <input type="number" style={{ ...inp, fontSize: 12 }} value={sRow.consumption_per_unit} onChange={e => ss(i, "consumption_per_unit", e.target.value)} min={0} step="0.01" />
+                </td>
+                <td style={{ padding: "4px 4px", fontWeight: 700, color: C.green }}>
+                  {sRow.expected.toLocaleString("en-IN")} pcs
+                </td>
+                <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, size_consumption: f.size_consumption.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
               </tr>
             ))}</tbody>
           </table>
+          <G2>
+            <Fld label="Cutting Efficiency %"><input type="number" style={inp} value={form.cutting_efficiency} onChange={e => sf("cutting_efficiency", e.target.value)} min={0} max={100} /></Fld>
+            <Fld label="Available Fabric (auto)"><input style={{ ...inp, background: C.gray50 }} value={fabricIngredient ? `${fabricStock} ${fabricIngredient.unit || ""}` : "—"} readOnly /></Fld>
+          </G2>
+          <div style={{ background: C.gray50, border: `1px dashed ${C.gray300}`, borderRadius: 8, padding: "8px 12px", marginTop: 4, fontSize: 11.5, color: C.gray500, fontFamily: font }}>
+            Expected Qty = Available Fabric ÷ Consumption per Size × Cutting Efficiency. "Available Fabric" is pulled live from the selected raw material's current stock.
+          </div>
+
           <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Create BOM"} />
         </Modal>
       )}

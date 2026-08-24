@@ -12,6 +12,7 @@ import {
   BadgeDollarSign, ArrowLeftRight, SlidersHorizontal, Wallet,
   BarChart3, Bell, Settings, HeartHandshake, BriefcaseBusiness,
   ClipboardCheck, Search, ChevronDown, Lock, Landmark, UserCircle,
+  Leaf,
 } from "lucide-react";
 import { hasFeature, FEATURES, getPlanLabel } from "../planAccess";
 import { usePermissions } from "../context/PermissionsContext";
@@ -56,7 +57,6 @@ const navItems = [
       { label: "Warranties",           path: "/warranties" },
     ],
   },
-
   {
     label: "Manufacturing", icon: Factory, path: "/manufacturing", feature: FEATURES.MANUFACTURING,
     children: [
@@ -72,6 +72,9 @@ const navItems = [
       { label: "Production Reports",      path: "/manufacturing?tab=reports" },
     ],
   },
+
+  { label: "Carbon Footprint", icon: Leaf, path: "/carbon-footprint", feature: FEATURES.MANUFACTURING },
+
   {
   label: "Accounting", icon: Landmark, path: "/accounting", feature: FEATURES.ACCOUNTING,
   children: [
