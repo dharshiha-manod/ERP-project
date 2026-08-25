@@ -81,13 +81,21 @@ export const logConsumption = (data) => request(`${CARBON}/consumption`, { metho
 // ══════════════════════════════════════════════════════════════════════════════
 export const fetchFabricPlans = (batchId) =>
   request(`${CARBON}/fabric-plans${batchId ? `?batch_id=${encodeURIComponent(batchId)}` : ""}`).then(d => d.plans);
-export const fetchFabricPlanDetail = (id) =>
-  request(`${CARBON}/fabric-plans/${id}`).then(d => ({ plan: d.plan, sizes: d.sizes, computed: d.computed }));
+export const fetchFabricPlanDetail = (id) => {
+  if (!id) return Promise.resolve({ plan: null, sizes: [], computed: null });
+  return request(`${CARBON}/fabric-plans/${id}`).then(d => ({ plan: d.plan, sizes: d.sizes, computed: d.computed }));
+};
+
 export const createFabricPlan = (data) =>
   request(`${CARBON}/fabric-plans`, { method: "POST", body: JSON.stringify(data) }).then(d => ({ plan: d.plan, sizes: d.sizes, computed: d.computed }));
-export const updateFabricPlan = (id, data) =>
-  request(`${CARBON}/fabric-plans/${id}`, { method: "PUT", body: JSON.stringify(data) }).then(d => ({ plan: d.plan, sizes: d.sizes, computed: d.computed }));
-export const deleteFabricPlan = (id) => request(`${CARBON}/fabric-plans/${id}`, { method: "DELETE" });
+export const updateFabricPlan = (id, data) => {
+  if (!id) return Promise.reject(new Error("Missing plan id"));
+  return request(`${CARBON}/fabric-plans/${id}`, { method: "PUT", body: JSON.stringify(data) }).then(d => ({ plan: d.plan, sizes: d.sizes, computed: d.computed }));
+};
+export const deleteFabricPlan = (id) => {
+  if (!id) return Promise.reject(new Error("Missing plan id"));
+  return request(`${CARBON}/fabric-plans/${id}`, { method: "DELETE" });
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
