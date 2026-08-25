@@ -124,15 +124,29 @@ function useAPI(path) {
 }
 
 // ── Typed shortcuts ───────────────────────────────────────────────────────────
-function useProducts() {
-  const { data, loading } = useAPI("/products");
+// locationId scopes the returned `stock` field to a single warehouse — pass
+// the sale's selected warehouseId so the picker/line-item stock badges show
+// what's actually available AT THAT LOCATION, not the cross-location total
+// (products.current_stock). Without this, a product with plenty of stock in
+// one warehouse looked "in stock" for every other warehouse too, and the
+// sale would only fail at save time with a confusing "Insufficient stock"
+// error the UI gave no warning about beforehand.
+function useProducts(locationId) {
+  const path = locationId ? `/products?location_id=${locationId}` : "/products";
+  const { data, loading } = useAPI(path);
   const raw = data?.data || data?.products || [];
   const products = raw.map(p => ({
     ...p,
     name: p.name || p.product_name || p.title || "Unnamed Product",
     selling_price: Number(p.exc_tax_sell || p.selling_price || p.sale_price || p.price || p.cost_price || 0),
     purchase_price: Number(p.exc_tax || p.purchase_price || p.cost || 0),
-    stock: p.current_stock ?? p.stock ?? p.quantity ?? p.stock_quantity ?? 0,
+    // When a location is selected, location_stock (the per-warehouse
+    // quantity) is authoritative. Otherwise fall back to the old
+    // cross-location fields so pages that don't pass a locationId
+    // (e.g. general Products list) keep working unchanged.
+    stock: locationId
+      ? Number(p.location_stock ?? 0)
+      : (p.current_stock ?? p.stock ?? p.quantity ?? p.stock_quantity ?? 0),
   }));
   return { products, loading };
 }
@@ -792,9 +806,20 @@ function ProductSearchDropdown({ products, loading: prodLoading, onSelect, place
             <div style={{ padding:"14px", fontSize:13, color:TEXT_MUTED }}>No products match "{q}"</div>
           ) : filtered.slice(0,15).map(p => (
             <div key={p.id||p.name}
-              onMouseDown={()=>{ onSelect(p); setQ(""); setOpen(false); }}
-              style={{ padding:"10px 14px", cursor:"pointer", fontSize:13,
+              onMouseDown={()=>{
+                // Block adding an item with 0 stock at the selected
+                // warehouse instead of only failing later at Save —
+                // p.stock now reflects the per-location quantity once a
+                // warehouse is selected (see useProducts()).
+                if (p.stock !== undefined && p.stock <= 0) {
+                  alert(`"${p.name}" has no stock at the selected warehouse.`);
+                  return;
+                }
+                onSelect(p); setQ(""); setOpen(false);
+              }}
+              style={{ padding:"10px 14px", cursor: (p.stock !== undefined && p.stock <= 0) ? "not-allowed" : "pointer", fontSize:13,
                 borderBottom:`1px solid ${BORDER}`, display:"flex",
+                opacity: (p.stock !== undefined && p.stock <= 0) ? 0.55 : 1,
                 justifyContent:"space-between", alignItems:"center" }}
               onMouseEnter={e=>e.currentTarget.style.background=LIGHT_GRN}
               onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
@@ -1086,13 +1111,17 @@ const cols = [
 export function AddSale() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
  const { groups: priceGroups } = useSellingPriceGroups();
 const { locations } = useLocations();
   const invoiceSettings = useInvoiceSettings();
   const { taxRates } = useTaxRates();
   const [priceGroupId, setPriceGroupId] = useState("");
+  // warehouseId must be declared before useProducts() below so the product
+  // list can be scoped to it — see useProducts() comment for why this matters.
+  const [warehouse,   setWarehouse]   = useState("");
+  const [warehouseId, setWarehouseId] = useState(null);
+  const { products, loading: prodLoading } = useProducts(warehouseId);
 
  const getPriceForGroup = (product) => {
     if (!priceGroupId) return product.selling_price;
@@ -1117,7 +1146,6 @@ const { locations } = useLocations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceSettings]);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0,10));
-const [warehouse,   setWarehouse]   = useState("");
 // ── NEW CODE ──
   const [customer,    setCustomer]    = useState("Walk-In Customer");
   const [customerId,  setCustomerId]  = useState(null);
@@ -1152,7 +1180,10 @@ const [items,       setItems]       = useState([]);
   // here as /sells/create?from=draft&id=123 or ?from=quotation&id=123,
   // fetch that record and pre-fill the form + line items.
 useEffect(() => {
-    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations]);
 
@@ -1325,7 +1356,7 @@ const handleSave = async () => {
       const res = await apiFetch("/sales-drafts", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          invoiceNo, invoiceDate, customer, customerType, warehouse,
+          invoiceNo, invoiceDate, customer, customerType, warehouse, warehouseId,
           salesperson, notes, grandTotal: grandTotal.toFixed(2), items,
         }),
       });
@@ -1340,7 +1371,7 @@ const handleSave = async () => {
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-   invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
+   invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse, warehouseId,
         salesperson, salespersonEmployeeId: salespersonId || null, salespersonSource,
         paymentMethod:payMethod, paymentTerms:payTerm,  
         paymentStatus, paidAmount:Number(paidAmount)||0,
@@ -1361,7 +1392,7 @@ const handleSave = async () => {
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           docType:"Sales Invoice", docStatus, affectsStock:docStatus==="Submitted",
-          invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse,
+          invoiceNo: invNoToUse, invoiceDate, customer, customerId, customerType, warehouse, warehouseId,
           salesperson, paymentMethod:payMethod, paymentTerms:payTerm,
           paymentStatus, paidAmount:Number(paidAmount)||0,
           useAdvanceAmount:Number(useAdvanceAmount)||0,
@@ -1432,10 +1463,14 @@ const handleSave = async () => {
               <div><FL>Invoice Number</FL><Inp value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)}/></div>
               <div><FL>Invoice Date</FL><Inp type="date" value={invoiceDate} onChange={e=>setInvoiceDate(e.target.value)}/></div>
           <div><FL>Warehouse</FL>
-                <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+                <Sel value={warehouseId ?? ""} onChange={e=>{
+                  const loc = locations.find(l => String(l.id) === e.target.value);
+                  setWarehouseId(loc ? loc.id : null);
+                  setWarehouse(loc ? loc.location_name : "");
+                }}>
                   {locations.length===0
                     ? <option>Manod HQ</option>
-                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
+                    : locations.map(l=><option key={l.id} value={l.id}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -1950,10 +1985,23 @@ export function ListPOS() {
 export function POSCreate() {
   const navigate = useNavigate();
   const { business } = useBusiness();
-  const { products, loading: prodLoading } = useProducts();
 const { customers } = useCustomers();
   const { locations } = useLocations();
   const { groups: priceGroups } = useSellingPriceGroups();
+  // POS always sells from a single warehouse for the session — default to
+  // the first location, same as Add Sale, and scope the product grid's
+  // stock numbers to it so POS can't show items as available that aren't
+  // actually in stock at this counter's location.
+  const [warehouse,   setWarehouse]   = useState("");
+  const [warehouseId, setWarehouseId] = useState(null);
+  useEffect(() => {
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locations]);
+  const { products, loading: prodLoading } = useProducts(warehouseId);
 const [cart,     setCart]     = useState([]);
   const [customer, setCustomer] = useState("Walk-In Customer");
   const [customerId, setCustomerId] = useState(null);
@@ -2046,6 +2094,13 @@ const handleCompleteSale = async () => {
         customer, customerId, paymentMethod:payMethod, paymentStatus:"Paid",
         discount, taxAmt:taxAmt.toFixed(2), grandTotal:grandTotal.toFixed(2),
         affectsStock:true, notes, items:cart,
+        // Previously omitted entirely — the backend silently defaulted to
+        // "Manod HQ" for every POS sale regardless of which warehouse was
+        // actually selling, so POS stock deductions never matched the real
+        // location. Send both: warehouse (name) for display/storage in the
+        // pos_sales.location column, warehouseId so the backend resolves
+        // the exact location row instead of doing a name lookup.
+        location: warehouse, warehouseId,
       }),
     });
     setSaving(false);
@@ -2273,7 +2328,6 @@ const handleCompleteSale = async () => {
 // ═══════════════════════════════════════════════════════════════
 export function AddDraft() {
   const navigate = useNavigate();
-  const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
   const { locations } = useLocations();
   const [draftNo,  setDraftNo]  = useState(()=>genNo("DRF"));
@@ -2281,13 +2335,18 @@ export function AddDraft() {
   const [customer, setCustomer] = useState("");
   const [customerType, setCustomerType] = useState("Walk-In");
  const [warehouse,setWarehouse]= useState("");
+ const [warehouseId, setWarehouseId] = useState(null);
+  const { products, loading: prodLoading } = useProducts(warehouseId);
   const [notes,    setNotes]    = useState("");
   const [items,    setItems]    = useState([]);
   const [saving,   setSaving]   = useState(false);
   const [errMsg,   setErrMsg]   = useState("");
 
 useEffect(() => {
-    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations]);
 
@@ -2345,10 +2404,14 @@ useEffect(() => {
               <div><FL>Draft Number</FL><Inp value={draftNo} onChange={e=>setDraftNo(e.target.value)}/></div>
               <div><FL>Draft Date</FL><Inp type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)}/></div>
               <div><FL>Warehouse</FL>
-               <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+               <Sel value={warehouseId ?? ""} onChange={e=>{
+                 const loc = locations.find(l => String(l.id) === e.target.value);
+                 setWarehouseId(loc ? loc.id : null);
+                 setWarehouse(loc ? loc.location_name : "");
+               }}>
                   {locations.length===0
                     ? <option>Manod HQ</option>
-                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
+                    : locations.map(l=><option key={l.id} value={l.id}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -2508,7 +2571,6 @@ export function ListDrafts() {
 // ═══════════════════════════════════════════════════════════════
 export function AddQuotation() {
   const navigate = useNavigate();
-  const { products, loading: prodLoading } = useProducts();
   const { customers } = useCustomers();
   const { locations } = useLocations();
   const [quotNo,      setQuotNo]      = useState(()=>genNo("QOT"));
@@ -2529,6 +2591,8 @@ const [salesperson, setSalesperson] = useState("");
     });
   }, []);
 const [warehouse,   setWarehouse]   = useState("");
+  const [warehouseId, setWarehouseId] = useState(null);
+  const { products, loading: prodLoading } = useProducts(warehouseId);
   const [items,       setItems]       = useState([]);
   const [globalDisc,  setGlobalDisc]  = useState(0);
   const [taxRate,     setTaxRate]     = useState(0);
@@ -2539,7 +2603,10 @@ const [warehouse,   setWarehouse]   = useState("");
   const [saving,      setSaving]      = useState(false);
 
   useEffect(() => {
-    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations]);
 
@@ -2575,7 +2642,7 @@ const handleSave = async () => {
       body:JSON.stringify({
         quotNo, quotDate, validUntil, docStatus,
         customer, customerType, contactPerson, email, phone,
-        salesperson, warehouse,
+        salesperson, warehouse, warehouseId,
         globalDisc,
         taxTotal,
         shipping: Number(shipping),
@@ -2624,10 +2691,14 @@ const handleSave = async () => {
                 </Sel>
               </div>  
              <div><FL>Warehouse</FL>
-                <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+                <Sel value={warehouseId ?? ""} onChange={e=>{
+                  const loc = locations.find(l => String(l.id) === e.target.value);
+                  setWarehouseId(loc ? loc.id : null);
+                  setWarehouse(loc ? loc.location_name : "");
+                }}>
                   {locations.length===0
                     ? <option>Manod HQ</option>
-                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
+                    : locations.map(l=><option key={l.id} value={l.id}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -2832,6 +2903,7 @@ export function SellReturn() {
   const [invoiceRef,setInvoiceRef]= useState("");
   const [items,     setItems]     = useState([]);
 const [warehouse, setWarehouse] = useState("");
+  const [warehouseId, setWarehouseId] = useState(null);
   const [reason,    setReason]    = useState("Damaged Product");
   const [notes,     setNotes]     = useState("");
   const [docStatus, setDocStatus] = useState("Draft");
@@ -2842,7 +2914,10 @@ const [warehouse, setWarehouse] = useState("");
   const [saving,    setSaving]    = useState(false);
 
   useEffect(() => {
-    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations]);
 
@@ -2876,7 +2951,7 @@ const [warehouse, setWarehouse] = useState("");
     const res = await apiFetch("/sales-returns",{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
-        returnNo, returnDate, customer, invoiceRef, warehouse, reason,
+        returnNo, returnDate, customer, invoiceRef, warehouse, warehouseId, reason,
         docStatus, affectsStock:docStatus==="Completed",
         refundStatus, refundMethod, refundAmount:Number(refundAmount)||0,
         taxAmt:taxAmt.toFixed(2), grandTotal:grandTotal.toFixed(2),
@@ -3038,10 +3113,14 @@ if (view==="list") {
               <div><FL>Return Number</FL><Inp value={returnNo} onChange={e=>setReturnNo(e.target.value)}/></div>
               <div><FL>Return Date</FL><Inp type="date" value={returnDate} onChange={e=>setReturnDate(e.target.value)}/></div>
              <div><FL>Warehouse</FL>
-                <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+                <Sel value={warehouseId ?? ""} onChange={e=>{
+                  const loc = locations.find(l => String(l.id) === e.target.value);
+                  setWarehouseId(loc ? loc.id : null);
+                  setWarehouse(loc ? loc.location_name : "");
+                }}>
                   {locations.length===0
                     ? <option>Manod HQ</option>
-                    : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
+                    : locations.map(l=><option key={l.id} value={l.id}>{l.location_name}</option>)}
                 </Sel>
               </div>
             </div>
@@ -3174,6 +3253,7 @@ export function Shipments() {
   const [carrier,     setCarrier]     = useState("FedEx");
   const [trackingNo,  setTrackingNo]  = useState("");
 const [warehouse,   setWarehouse]   = useState("");
+  const [warehouseId, setWarehouseId] = useState(null);
   const [deliveryAddr,setDeliveryAddr]= useState("");
   const [estimatedDel,setEstimatedDel]= useState("");
   const [weight,      setWeight]      = useState("");
@@ -3187,7 +3267,10 @@ const [warehouse,   setWarehouse]   = useState("");
   // NEW — when an invoice is picked, auto-fill customer, delivery address,
   // invoice total, and populate the Product Details table with its items.
 useEffect(() => {
-    if (!warehouse && locations.length > 0) setWarehouse(locations[0].location_name);
+    if (!warehouse && locations.length > 0) {
+      setWarehouse(locations[0].location_name);
+      setWarehouseId(locations[0].id);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locations]);
 
@@ -3225,7 +3308,7 @@ useEffect(() => {
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         shipmentNo:shipNo, date:shipDate, customer, invoiceRef,
-        carrier, trackingNo, warehouse, deliveryAddress:deliveryAddr,
+        carrier, trackingNo, warehouse, warehouseId, deliveryAddress:deliveryAddr,
         estimatedDelivery:estimatedDel, weight, shippingCost:shipCost,
         status:shipStatus, notes,
         items: shipItems.map(it => ({
@@ -3280,10 +3363,14 @@ useEffect(() => {
                 <div><FL>Shipment Number</FL><Inp value={shipNo} onChange={e=>setShipNo(e.target.value)}/></div>
                 <div><FL>Ship Date</FL><Inp type="date" value={shipDate} onChange={e=>setShipDate(e.target.value)}/></div>
                <div><FL>Warehouse / Origin</FL>
-                  <Sel value={warehouse} onChange={e=>setWarehouse(e.target.value)}>
+                  <Sel value={warehouseId ?? ""} onChange={e=>{
+                    const loc = locations.find(l => String(l.id) === e.target.value);
+                    setWarehouseId(loc ? loc.id : null);
+                    setWarehouse(loc ? loc.location_name : "");
+                  }}>
                     {locations.length===0
                       ? <option>Manod HQ</option>
-                      : locations.map(l=><option key={l.id} value={l.location_name}>{l.location_name}</option>)}
+                      : locations.map(l=><option key={l.id} value={l.id}>{l.location_name}</option>)}
                   </Sel>
                 </div>
                 <div><FL>Estimated Delivery</FL><Inp type="date" value={estimatedDel} onChange={e=>setEstimatedDel(e.target.value)}/></div>
