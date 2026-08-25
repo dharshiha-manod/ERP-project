@@ -46,6 +46,15 @@ async function apiFetch(path, opts = {}) {
   // never be misread by the caller before this call actually finishes.
   apiFetch.lastStatus = null;
   apiFetch.lastMessage = null;
+  // Writes (POST/PUT/PATCH/DELETE) must NEVER be silently retried against a
+  // different base URL after a timeout — a timeout only means the response
+  // was slow, not that the server didn't process the request. Retrying blindly
+  // here was creating duplicate records (e.g. two sales invoices from one
+  // Save click: the first attempt succeeds server-side but times out on the
+  // client, then the retry against another base creates a second one).
+  // GETs are read-only and safe to retry across bases exactly as before.
+  const method = (opts.method || "GET").toUpperCase();
+  const isWrite = method !== "GET";
   for (const base of BASES) {
     try {
       const r = await fetch(`${base}${path}`, {
@@ -68,9 +77,17 @@ const msg = errBody.error || errBody.message || `HTTP ${r.status}`;
       apiFetch.lastMessage = msg;
       return null; // caller treats any falsy return as "failed"; status/message carry the reason
    } catch (e) {
-      // Network failures AND timeouts should both fall through to the
-      // next base URL — only a genuine app-level throw should stop the loop.
-      if (e.name === "AbortError" || e.name === "TimeoutError") continue;
+      // A timeout/abort is ambiguous for a write — the request may already
+      // have reached and been processed by the server. Do NOT fall through
+      // to another base and resend it; surface the ambiguity to the caller
+      // instead so it doesn't get silently duplicated.
+      if (e.name === "AbortError" || e.name === "TimeoutError") {
+        if (isWrite) {
+          apiFetch.lastMessage = "Request timed out — it may have already saved. Please check before retrying.";
+          return null;
+        }
+        continue;
+      }
       if (e.message && !e.message.includes("Failed to fetch")) throw e;
       /* network-level failure only — try next base */
     }
