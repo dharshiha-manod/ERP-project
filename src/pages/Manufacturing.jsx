@@ -17,7 +17,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Eye, Pencil, Trash2 } from "lucide-react";
-
+import { useIndustry } from "../context/IndustryContext";
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const BASE = `${API_ORIGIN}/api/manufacturing`;
@@ -763,6 +763,8 @@ function BOMTab({ show }) {
   const [hidden, setHidden] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const { activeIndustry } = useIndustry();
+  const isGarmentIndustry = (activeIndustry?.name || "").toLowerCase().includes("garment");
   const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
   const bulkDelete = async () => {
@@ -950,38 +952,41 @@ const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "p
             ))}</tbody>
           </table>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "20px 0 8px" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Size-wise Fabric Consumption</span>
-            <button onClick={() => setForm(f => ({ ...f, size_consumption: [...f.size_consumption, blankS()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Size</button>
-          </div>
-          {!fabricIngredient && (
-            <div style={{ fontSize: 12, color: C.gray500, marginBottom: 8, fontFamily: font }}>Select a raw material above (e.g. Fabric) first — its stock is used as "Available Fabric" below.</div>
+                  {isGarmentIndustry && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "20px 0 8px" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Size-wise Fabric Consumption</span>
+                <button onClick={() => setForm(f => ({ ...f, size_consumption: [...f.size_consumption, blankS()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Size</button>
+              </div>
+              {!fabricIngredient && (
+                <div style={{ fontSize: 12, color: C.gray500, marginBottom: 8, fontFamily: font }}>Select a raw material above (e.g. Fabric) first — its stock is used as "Available Fabric" below.</div>
+              )}
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                <thead><tr style={{ background: C.gray50, borderBottom: `1px solid ${C.gray200}` }}>{["Size", `Consumption / pc (${fabricIngredient?.unit || "unit"})`, "Expected Qty", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+                <tbody>{expectedBySize.map((sRow, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}` }}>
+                    <td style={{ padding: "4px 4px", width: 90 }}>
+                      <input style={{ ...inp, fontSize: 12 }} value={sRow.size} onChange={e => ss(i, "size", e.target.value)} placeholder="S / M / L / XL" />
+                    </td>
+                    <td style={{ padding: "4px 4px", width: 130 }}>
+                      <input type="number" style={{ ...inp, fontSize: 12 }} value={sRow.consumption_per_unit} onChange={e => ss(i, "consumption_per_unit", e.target.value)} min={0} step="0.01" />
+                    </td>
+                    <td style={{ padding: "4px 4px", fontWeight: 700, color: C.green }}>
+                      {sRow.expected.toLocaleString("en-IN")} pcs
+                    </td>
+                    <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, size_consumption: f.size_consumption.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <G2>
+                <Fld label="Cutting Efficiency %"><input type="number" style={inp} value={form.cutting_efficiency} onChange={e => sf("cutting_efficiency", e.target.value)} min={0} max={100} /></Fld>
+                <Fld label="Available Fabric (auto)"><input style={{ ...inp, background: C.gray50 }} value={fabricIngredient ? `${fabricStock} ${fabricIngredient.unit || ""}` : "—"} readOnly /></Fld>
+              </G2>
+              <div style={{ background: C.gray50, border: `1px dashed ${C.gray300}`, borderRadius: 8, padding: "8px 12px", marginTop: 4, fontSize: 11.5, color: C.gray500, fontFamily: font }}>
+                Expected Qty = Available Fabric ÷ Consumption per Size × Cutting Efficiency. "Available Fabric" is pulled live from the selected raw material's current stock.
+              </div>
+            </>
           )}
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
-            <thead><tr style={{ background: C.gray50, borderBottom: `1px solid ${C.gray200}` }}>{["Size", `Consumption / pc (${fabricIngredient?.unit || "unit"})`, "Expected Qty", ""].map(h => <th key={h} style={{ padding: "6px 8px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.gray500, textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
-            <tbody>{expectedBySize.map((sRow, i) => (
-              <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}` }}>
-                <td style={{ padding: "4px 4px", width: 90 }}>
-                  <input style={{ ...inp, fontSize: 12 }} value={sRow.size} onChange={e => ss(i, "size", e.target.value)} placeholder="S / M / L / XL" />
-                </td>
-                <td style={{ padding: "4px 4px", width: 130 }}>
-                  <input type="number" style={{ ...inp, fontSize: 12 }} value={sRow.consumption_per_unit} onChange={e => ss(i, "consumption_per_unit", e.target.value)} min={0} step="0.01" />
-                </td>
-                <td style={{ padding: "4px 4px", fontWeight: 700, color: C.green }}>
-                  {sRow.expected.toLocaleString("en-IN")} pcs
-                </td>
-                <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, size_consumption: f.size_consumption.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
-              </tr>
-            ))}</tbody>
-          </table>
-          <G2>
-            <Fld label="Cutting Efficiency %"><input type="number" style={inp} value={form.cutting_efficiency} onChange={e => sf("cutting_efficiency", e.target.value)} min={0} max={100} /></Fld>
-            <Fld label="Available Fabric (auto)"><input style={{ ...inp, background: C.gray50 }} value={fabricIngredient ? `${fabricStock} ${fabricIngredient.unit || ""}` : "—"} readOnly /></Fld>
-          </G2>
-          <div style={{ background: C.gray50, border: `1px dashed ${C.gray300}`, borderRadius: 8, padding: "8px 12px", marginTop: 4, fontSize: 11.5, color: C.gray500, fontFamily: font }}>
-            Expected Qty = Available Fabric ÷ Consumption per Size × Cutting Efficiency. "Available Fabric" is pulled live from the selected raw material's current stock.
-          </div>
-
           <MFoot onClose={() => setModal(false)} onSave={save} saving={saving} label={edit ? "Save Changes" : "Create BOM"} />
         </Modal>
       )}

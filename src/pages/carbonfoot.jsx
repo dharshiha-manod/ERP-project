@@ -1210,7 +1210,9 @@ function FabricTab({ show }) {
 // during a rolling deploy). Once carbonAPI.js ships the real exports,
 // these are simply never called (the `?.` checks above prefer the real ones).
 const FALLBACK_BASE = (() => {
-  try { return (import.meta.env.VITE_API_URL || "http://localhost:5000/api") + "/carbon"; } catch { return "/api/carbon"; }
+  try {
+    return (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : "http://localhost:5000/api") + "/carbon";
+  } catch { return "/api/carbon"; }
 })();
 const fallbackHeaders = () => {
   const industryId = localStorage.getItem("manod_active_industry_id");

@@ -319,7 +319,9 @@ useEffect(() => {
     if (pd.defaultCategory && !form.category && categories.some(c => c.value === pd.defaultCategory)) set("category", pd.defaultCategory);
     if (pd.defaultTax && form.tax === "None") set("tax", pd.defaultTax);
   }, [genSettings, units, categories]);
-const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const gpBase = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : "http://localhost:5000/api";
   const gpAuthHeaders = () => {
     const token = localStorage.getItem("manod_token");
     const industryId = localStorage.getItem("manod_active_industry_id");

@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : "http://localhost:5000/api";
 const authHeaders = () => {
   const token = localStorage.getItem("manod_token");
   const industryId = localStorage.getItem("manod_active_industry_id");

@@ -8,8 +8,9 @@ import { useNavigate } from "react-router-dom";
 const USE_BACKEND = false;
 
 // ─── API base (used only when USE_BACKEND = true) ─────────────────────────────
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-
+const API = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : "http://localhost:5000/api";
 function authHeaders() {
   const token = localStorage.getItem("manod_token");
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };

@@ -1441,7 +1441,9 @@ export function CustomerGroupsPage() {
 
   // NEW — real Selling Price Groups, for the "Linked Selling Price Group" dropdown
   const [sellingPriceGroups, setSellingPriceGroups] = useState([]);
-const gpBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const gpBase = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : "http://localhost:5000/api";
   const gpAuthHeaders = () => {
     const token = localStorage.getItem("manod_token");
     const industryId = localStorage.getItem("manod_active_industry_id");
