@@ -19,8 +19,9 @@ import { useSearchParams } from "react-router-dom";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-const BASE = "/api/manufacturing";
-const PROD_BASE = "/api/products";
+const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BASE = `${API_ORIGIN}/api/manufacturing`;
+const PROD_BASE = `${API_ORIGIN}/api/products`;
 const hdrs = () => ({
   "Content-Type": "application/json",
   Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}`,
