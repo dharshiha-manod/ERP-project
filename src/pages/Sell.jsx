@@ -34,10 +34,11 @@ const PAGE = {
 
 // ── Central API fetch — tries multiple ports, sends auth token ────────────────
 const BASES = [
+  import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : null,
   "http://localhost:5000/api",
   "http://localhost:3000/api",
   "http://127.0.0.1:5000/api",
-];
+].filter(Boolean);
 async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem("manod_token");
   const industryId = localStorage.getItem("manod_active_industry_id"); // matches STORAGE_KEY in IndustryContext.jsx

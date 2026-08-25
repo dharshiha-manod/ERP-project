@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 
-const BASES_LOCAL = ["http://localhost:5000/api", "http://localhost:3000/api", "http://127.0.0.1:5000/api"];
+const BASES_LOCAL = [
+  import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : null,
+  "http://localhost:5000/api",
+  "http://localhost:3000/api",
+  "http://127.0.0.1:5000/api",
+].filter(Boolean);
 const READ_KEY = "manod_read_notifs";
 const getReadIds = () => {
   try { return JSON.parse(localStorage.getItem(READ_KEY) || "[]"); } catch { return []; }
