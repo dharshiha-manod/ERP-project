@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import * as api from "../api/essentialsAPI";
 import { API_ORIGIN } from "../api/essentialsAPI";
 
@@ -2367,9 +2368,28 @@ const TABS = [
   { key:"Settings",       label:"Settings"        },
 ];
 
+const PATH_TO_TAB = {
+  "": "Essentials", "todo": "To Do", "document": "Document", "memos": "Memos",
+  "reminders": "Reminders", "messages": "Messages",
+  "knowledge-base": "Knowledge Base", "settings": "Settings",
+};
+const TAB_TO_PATH = Object.fromEntries(Object.entries(PATH_TO_TAB).map(([p, t]) => [t, p]));
+
 export default function Essentials() {
   injectStyles();
-  const [tab, setTab] = useState("Essentials");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const segment = location.pathname.replace(/^\/essentials\/?/, "");
+  const [tab, _setTab] = useState(PATH_TO_TAB[segment] || "Essentials");
+  const setTab = (t) => {
+    _setTab(t);
+    navigate(`/essentials${TAB_TO_PATH[t] ? "/" + TAB_TO_PATH[t] : ""}`, { replace: true });
+  };
+  useEffect(() => {
+    const t = PATH_TO_TAB[segment];
+    if (t && t !== tab) _setTab(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment]);
   const { ts, show: toast } = useToast();
 
   const [todos, setTodos]         = useState([]);

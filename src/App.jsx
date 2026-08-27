@@ -35,7 +35,8 @@ import { ListStockTransfers, AddStockTransfer, EditStockTransfer } from "./pages
 import { ListStockAdjustments, AddStockAdjustment } from "./pages/StockAdjustments";
 import { ListExpenses, AddExpense, EditExpense, ViewExpense, ImportExpenses, ExpenseCategories } from "./pages/Expenses";
 import NotificationTemplates from "./pages/NotificationTemplates";
-import { HRMRoutes, EssentialsRoutes } from "./pages/HRM";
+import { HRMRoutes } from "./pages/HRM";
+import Essentials from "./pages/Essentials";
 import { CRMRoutes } from "./pages/CRM";
 import Settings from "./pages/Settings";
 import {
@@ -240,7 +241,7 @@ function AppLayout() {
           {/* CRM / HRM / Essentials */}
           <Route path="/crm/*"        element={<FeatureRoute feature={FEATURES.CRM}><CRMRoutes /></FeatureRoute>} />
           <Route path="/hrm/*"        element={<FeatureRoute feature={FEATURES.HRM}><HRMRoutes /></FeatureRoute>} />
-          <Route path="/essentials/*" element={<FeatureRoute feature={FEATURES.ESSENTIALS}><EssentialsRoutes /></FeatureRoute>} />
+<Route path="/essentials/*" element={<FeatureRoute feature={FEATURES.ESSENTIALS}><Essentials /></FeatureRoute>} />
 
           {/* Settings */}
           <Route path="/settings"                  element={<FeatureRoute feature={FEATURES.SETTINGS}><Settings defaultTab="business" /></FeatureRoute>} />

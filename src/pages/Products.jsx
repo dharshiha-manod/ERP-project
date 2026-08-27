@@ -1412,7 +1412,7 @@ const stockColor = (qty, alertQty) => {
       {/* Edit Modal */}
       {showView && viewProduct && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:1000, overflowY:"auto", display:"flex", justifyContent:"center", padding:"32px 16px" }}>
-          <div style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:480, padding:"28px 24px", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
+         <div style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:600, padding:"28px 24px", maxHeight:"90vh", overflowY:"auto", position:"relative" }}>
             <button onClick={()=>{setShowView(false);setViewProduct(null);}}
               style={{ position:"absolute", right:20, top:20, background:"none", border:"none", fontSize:24, cursor:"pointer", color:"#666" }}>×</button>
             <h2 style={{ margin:"0 0 18px", fontSize:20, fontWeight:700 }}>Product Details</h2>
@@ -1428,17 +1428,50 @@ const stockColor = (qty, alertQty) => {
                 </span>
               </div>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 20px", fontSize:13 }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 20px", fontSize:13 }}>
               <div><b>Brand:</b> {viewProduct.brand||"—"}</div>
               <div><b>Category:</b> {viewProduct.category||"—"}</div>
+              <div><b>Sub Category:</b> {viewProduct.sub_category||"—"}</div>
               <div><b>Unit:</b> {viewProduct.unit||"—"}</div>
               <div><b>Product Type:</b> {viewProduct.product_type||"—"}</div>
+              <div><b>Item Type:</b> {viewProduct.item_type||"—"}</div>
               <div><b>Purchase Price:</b> {viewProduct.exc_tax>0?`₹${Number(viewProduct.exc_tax).toLocaleString("en-IN")}`:"—"}</div>
               <div><b>Selling Price:</b> {viewProduct.exc_tax_sell>0?`₹${Number(viewProduct.exc_tax_sell).toLocaleString("en-IN")}`:"—"}</div>
+              <div><b>Margin:</b> {viewProduct.margin!=null && viewProduct.margin!==""?`${viewProduct.margin}%`:"—"}</div>
               <div><b>Current Stock:</b> {viewProduct.current_stock??0}</div>
+              <div><b>Alert Quantity:</b> {viewProduct.alert_qty??"—"}</div>
               <div><b>Tax:</b> {viewProduct.tax||"—"}</div>
+              <div><b>Selling Price Tax Type:</b> {viewProduct.selling_price_tax_type||"—"}</div>
               <div><b>Business Location:</b> {viewProduct.business_location||"—"}</div>
+              <div><b>Default Supplier:</b> {viewProduct.default_supplier_name||"—"}</div>
+              <div><b>Warranty:</b> {viewProduct.warranty||"—"}</div>
+              <div><b>HSN/SAC Code:</b> {viewProduct.hsn_code||"—"}</div>
+              <div><b>Barcode Type:</b> {viewProduct.barcode_type||"—"}</div>
+              <div><b>Barcode:</b> {viewProduct.barcode_value||"—"}</div>
+              {viewProduct.batch_number && <div><b>Batch Number:</b> {viewProduct.batch_number}</div>}
+              {viewProduct.serial_number && <div><b>Serial Number:</b> {viewProduct.serial_number}</div>}
+              {(viewProduct.weight!=null && viewProduct.weight!=="") && <div><b>Weight:</b> {viewProduct.weight}</div>}
+              {(viewProduct.prep_time!=null && viewProduct.prep_time!=="") && <div><b>Prep Time:</b> {viewProduct.prep_time}</div>}
             </div>
+
+            {/* Industry-specific fields (e.g. Gsm, Color, Pattern, Fabric Type — driven by active Industry Type) */}
+            {viewProduct.custom_fields && Object.keys(viewProduct.custom_fields).some(k => viewProduct.custom_fields[k]) && (
+              <div style={{ marginTop:16 }}>
+                <b style={{ fontSize:13 }}>Additional Details:</b>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 20px", fontSize:13, marginTop:8 }}>
+                  {Object.entries(viewProduct.custom_fields).filter(([,v]) => v).map(([k,v]) => (
+                    <div key={k}><b>{k.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())}:</b> {v}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {viewProduct.description && (
+              <div style={{ marginTop:16 }}>
+                <b style={{ fontSize:13 }}>Description:</b>
+                <div style={{ fontSize:13, color:"#4b5563", marginTop:6 }}>{viewProduct.description}</div>
+              </div>
+            )}
 
             <div style={{ marginTop:16 }}>
               <b style={{ fontSize:13 }}>Stock by Location:</b>

@@ -732,12 +732,20 @@ const handleSave = async () => {
                 <div style={row2}>
                   <div style={fieldWrap}>
                     <label style={lbl}>Role <span style={{ color: "#dc2626" }}>*</span></label>
-                 <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
+                               <select disabled={modalMode === "view"} value={form.role} onChange={f("role")}
                       style={{ ...inp, borderColor: errors.role ? "#dc2626" : "#d1d5db" }}>
                       <option value="">Select Role</option>
                       {roles.map((r) => (
                         <option key={r.id} value={r.name}>{r.name}</option>
                       ))}
+                      {/* If this user's saved role doesn't exist in the current
+                          industry's roles list (e.g. it was assigned under a
+                          different workspace, or the role row was deleted),
+                          show it anyway so the field isn't silently blanked out
+                          and admin doesn't accidentally overwrite it. */}
+                      {form.role && !roles.some(r => r.name === form.role) && (
+                        <option value={form.role}>{form.role} (not in this industry)</option>
+                      )}
                     </select>
                     {errors.role && <span style={errTxt}>{errors.role}</span>}
                   </div>

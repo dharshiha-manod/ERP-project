@@ -11,16 +11,23 @@ const getAuthToken = () => {
   if (!token) throw new Error('Authentication token not found. Please login.');
   return token;
 };
-
 // ── Helper: Make API call with error handling ──
 const apiFetch = async (url, options = {}) => {
   const token = getAuthToken();
-  
+
+  // Same convention as the other API modules (purchaseAPI.js, hrmAPI.js,
+  // etc.) — send the active industry workspace so the backend scopes the
+  // query correctly. Only meaningful for admins in practice; requireIndustry
+  // ignores this header for non-admins and uses their own users.industry_id
+  // instead (see middleware/industry.js).
+  const industryId = localStorage.getItem('manod_active_industry_id');
+
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
+      ...(industryId ? { 'X-Industry-Id': industryId } : {}),
       ...options.headers
     }
   });

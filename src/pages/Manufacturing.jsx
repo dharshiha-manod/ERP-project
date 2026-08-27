@@ -764,7 +764,7 @@ function BOMTab({ show }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const { activeIndustry } = useIndustry();
-  const isGarmentIndustry = (activeIndustry?.name || "").toLowerCase().includes("garment");
+const isGarmentIndustry = activeIndustry?.industry_type === "garments_manufacturing";
   const toggleRow = id => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const toggleAll = (checked) => setSelectedIds(checked ? fil.map(r => r.id) : []);
   const bulkDelete = async () => {
@@ -788,18 +788,18 @@ function BOMTab({ show }) {
 
    const blankI = () => ({ product_id: "", item_name: "", quantity: "", unit: "pcs", cost: "" });
   const blankS = () => ({ size: "", consumption_per_unit: "" });
-  const blank = { product_id: "", product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()], size_consumption: [], cutting_efficiency: "92" };
+const blank = { product_id: "", product_name: "", product_code: "", quantity: "", unit: "pcs", version: "1.0", status: "active", notes: "", ingredients: [blankI()], sizes: [], cutting_efficiency: "92" };
   const [form, setForm] = useState(blank);
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const si = (i, k, v) => setForm(f => ({ ...f, ingredients: f.ingredients.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
-  const ss = (i, k, v) => setForm(f => ({ ...f, size_consumption: f.size_consumption.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+const ss = (i, k, v) => setForm(f => ({ ...f, sizes: f.sizes.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
 
   // Expected quantity per size = Available Fabric (current_stock of the fabric
   // ingredient, first raw-material row) ÷ Consumption per Size × Cutting Efficiency
   const fabricIngredient = form.ingredients.find(x => x.product_id);
   const fabricStock = fabricIngredient ? (products.find(p => String(p.id) === String(fabricIngredient.product_id))?.current_stock ?? 0) : 0;
   const effPct = (parseFloat(form.cutting_efficiency) || 0) / 100;
-  const expectedBySize = form.size_consumption.map(sRow => {
+const expectedBySize = form.sizes.map(sRow => {
     const perUnit = parseFloat(sRow.consumption_per_unit) || 0;
     const expected = perUnit > 0 ? Math.floor((fabricStock / perUnit) * effPct) : 0;
     return { ...sRow, expected };
@@ -834,8 +834,7 @@ function BOMTab({ show }) {
   const totalCost = bom => bom.ingredients?.reduce((s, x) => s + (parseFloat(x.cost) || 0) * (parseFloat(x.quantity) || 0), 0) || 0;
   const fil = rows.filter(r => `${r.product_name} ${r.product_code}`.toLowerCase().includes(search.toLowerCase()));
 const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "product_code") }); setEdit(null); setModal(true); };
-  const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()], size_consumption: r.size_consumption?.length ? r.size_consumption.map(x => ({ ...x })) : [], cutting_efficiency: r.cutting_efficiency ?? "92" }); setEdit(r); setModal(true); };
-  const del = async r => {
+const openEdit = r => { setForm({ product_id: r.product_id || "", product_name: r.product_name, product_code: r.product_code || "", quantity: r.quantity, unit: r.unit, version: r.version || "1.0", status: r.status, notes: r.notes || "", ingredients: r.ingredients?.length ? r.ingredients.map(x => ({ ...x })) : [blankI()], sizes: r.sizes?.length ? r.sizes.map(x => ({ ...x })) : [], cutting_efficiency: r.cutting_efficiency ?? "92" }); setEdit(r); setModal(true); };  const del = async r => {
     if (!confirm(`Delete BOM for "${r.product_name}"?`)) return;
     try { await api(`/bom/${r.id}`, { method: "DELETE" }); setRows(p => p.filter(x => x.id !== r.id)); show("Deleted.", "info"); } catch (e) { show(e.message, "error"); }
   };
@@ -903,6 +902,34 @@ const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "p
               </table>
             </div>
           )}
+          {viewRow.sizes?.length > 0 && (() => {
+            const fabricIng = viewRow.ingredients?.find(x => x.product_id);
+            const fabricStock = fabricIng ? (products.find(p => String(p.id) === String(fabricIng.product_id))?.current_stock ?? 0) : 0;
+            const effPct = (parseFloat(viewRow.cutting_efficiency) || 0) / 100;
+            return (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, marginBottom: 10, fontFamily: font }}>Size-wise Fabric Consumption</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                  <thead><tr style={{ background: C.green }}>{["Size", `Consumption / pc (${fabricIng?.unit || "unit"})`, "Expected Qty"].map(h => <th key={h} style={{ padding: "7px 12px", textAlign: "left", color: C.white, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+                  <tbody>{viewRow.sizes.map((s, i) => {
+                    const perUnit = parseFloat(s.consumption_per_unit) || 0;
+                    const expected = perUnit > 0 ? Math.floor((fabricStock / perUnit) * effPct) : 0;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${C.gray100}`, background: i % 2 ? C.gray50 : C.white }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{s.size || "—"}</td>
+                        <td style={{ padding: "8px 12px" }}>{s.consumption_per_unit}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 700, color: C.green }}>{expected.toLocaleString("en-IN")} pcs</td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+                <div style={{ display: "flex", gap: 24, marginTop: 10, fontSize: 12, color: C.gray500, fontFamily: font }}>
+                  <span><b>Cutting Efficiency:</b> {viewRow.cutting_efficiency ?? "—"}%</span>
+                  <span><b>Available Fabric:</b> {fabricIng ? `${fabricStock} ${fabricIng.unit || ""}` : "—"}</span>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setViewRow(null)} style={{ padding: "8px 20px", background: C.gray100, border: "none", cursor: "pointer", borderRadius: 6, fontWeight: 600, color: C.gray700, fontFamily: font }}>Close</button>
           </div>
@@ -956,7 +983,7 @@ const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "p
             <>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "20px 0 8px" }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5, fontFamily: font }}>Size-wise Fabric Consumption</span>
-                <button onClick={() => setForm(f => ({ ...f, size_consumption: [...f.size_consumption, blankS()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Size</button>
+               <button onClick={() => setForm(f => ({ ...f, sizes: [...f.sizes, blankS()] }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1.5px solid ${C.green}`, background: C.white, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font }}>+ Add Size</button>
               </div>
               {!fabricIngredient && (
                 <div style={{ fontSize: 12, color: C.gray500, marginBottom: 8, fontFamily: font }}>Select a raw material above (e.g. Fabric) first — its stock is used as "Available Fabric" below.</div>
@@ -974,8 +1001,7 @@ const openAdd = () => { setForm({ ...blank, product_code: genRef("BOM", rows, "p
                     <td style={{ padding: "4px 4px", fontWeight: 700, color: C.green }}>
                       {sRow.expected.toLocaleString("en-IN")} pcs
                     </td>
-                    <td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, size_consumption: f.size_consumption.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>
-                  </tr>
+<td style={{ padding: "4px 4px", width: 32 }}><button onClick={() => setForm(f => ({ ...f, sizes: f.sizes.filter((_, j) => j !== i) }))} style={{ background: C.redBg, color: C.red, border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}>✕</button></td>                  </tr>
                 ))}</tbody>
               </table>
               <G2>

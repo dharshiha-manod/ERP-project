@@ -274,10 +274,20 @@ export default function Roles() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const authHeader = () => ({
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("manod_token")}`,
-  });
+   const authHeader = () => {
+    // Same convention as roleApi.js / other API modules — without this,
+    // every fetch on this page (list/add/edit/delete role) silently falls
+    // back to the backend's default industry instead of whichever
+    // workspace is active in the top header, so the Roles page and the
+    // Add/Edit User modal's Role dropdown end up looking at two different
+    // industries' role lists.
+    const industryId = localStorage.getItem("manod_active_industry_id");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("manod_token")}`,
+      ...(industryId ? { "x-industry-id": industryId } : {}),
+    };
+  };
 
   const loadRoles = async () => {
     setPageLoading(true);

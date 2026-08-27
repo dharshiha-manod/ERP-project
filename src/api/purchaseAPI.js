@@ -14,7 +14,11 @@ const BASE_URL = import.meta.env.VITE_API_URL
 
 const authHeaders = () => {
   const token = localStorage.getItem('manod_token');
-  const industryId = localStorage.getItem('manod_active_industry_id');
+  // Only meaningful for admins (who can switch workspaces). For non-admin
+  // users this will be empty/stale and is fine to omit — the backend
+  // ignores this header for them and scopes every request to their own
+  // users.industry_id instead (see middleware/industry.js).
+  const industryId = localStorage.getItem('manod_active_industry_id');  
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
