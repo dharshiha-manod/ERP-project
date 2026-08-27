@@ -22,10 +22,14 @@ import { useIndustry } from "../context/IndustryContext";
 const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const BASE = `${API_ORIGIN}/api/manufacturing`;
 const PROD_BASE = `${API_ORIGIN}/api/products`;
-const hdrs = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}`,
-});
+const hdrs = () => {
+  const industryId = localStorage.getItem("manod_active_industry_id");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("manod_token") || ""}`,
+    ...(industryId ? { "x-industry-id": industryId } : {}),
+  };
+};
 async function api(path, opts = {}) {
   const res = await fetch(`${BASE}${path}`, { headers: hdrs(), ...opts });
   let body;
